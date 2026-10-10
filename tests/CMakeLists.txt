@@ -40,6 +40,7 @@ gaslib_compile_fail_test(species_density_as_fractions "SpeciesRangeOf<.*kind::ma
 gaslib_compile_fail_test(thermo_density_density "ClosesInAnyOrder<.*IdealGas")
 gaslib_compile_fail_test(thermo_gas_model_missing_closure "GasModel<.*NoPressureTemperatureGas")
 gaslib_compile_fail_test(thermo_missing_extra_input "ClosesInAnyOrder<.*GuessRequiredGas")
+gaslib_compile_fail_test(quantity_implicit_precision "conversion from .*double.* to .*float|no viable conversion from .*double.* to .*float")
 gaslib_compile_fail_test(quantity_molar_scaled "KindUnits<(K, U|gaslib::kind::molar_mass, gaslib::scaled)>")
 
 # Each public header is compiled alone, as strict C++20, with only the

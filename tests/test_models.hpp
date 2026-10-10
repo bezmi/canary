@@ -25,9 +25,15 @@ template <Scalar T>
 Closure<T, si>
   ideal_from_rho_e(const IdealParameters& g, Density<T, si> rho, SpecificEnergy<T, si> e)
 {
-    const auto temp = temperature(e, g.cv);
+    const Temperature<T, si> temp {temperature(e, g.cv)};
     return {
-      .state = {.rho = rho, .e = e, .p = pressure(rho, g.gas_constant, temp), .temp = temp},
+      .state =
+        {
+          .rho = rho,
+          .e = e,
+          .p = Pressure<T, si> {pressure(rho, g.gas_constant, temp)},
+          .temp = temp,
+        },
       .status = Status::Valid,
     };
 }
@@ -40,8 +46,8 @@ Closure<T, si>
       .state =
         {
           .rho = rho,
-          .e = specific_energy(g.cv, temp),
-          .p = pressure(rho, g.gas_constant, temp),
+          .e = SpecificEnergy<T, si> {specific_energy(g.cv, temp)},
+          .p = Pressure<T, si> {pressure(rho, g.gas_constant, temp)},
           .temp = temp,
         },
       .status = Status::Valid,
@@ -58,7 +64,7 @@ Properties<T, si> ideal_properties(const IdealParameters& g, const ThermoState<T
       .cv = SpecificHeat<T, si> {T(g.cv.value())},
       .cp = SpecificHeat<T, si> {T(cp)},
       .gamma = HeatCapacityRatio<T> {T(gamma.value())},
-      .sound_speed = SoundSpeed<T, si> {a.value()},
+      .sound_speed = SoundSpeed<T, si> {a},
       .gas_constant = SpecificGasConstant<T, si> {T(g.gas_constant.value())},
     };
 }
@@ -77,7 +83,11 @@ Closure<T, si> close(const IdealGas& g, Density<T, si> rho, SpecificEnergy<T, si
 { return ideal_from_rho_e(g.parameters, rho, e); }
 
 template <Scalar T> Closure<T, si> close(const IdealGas& g, Density<T, si> rho, Pressure<T, si> p)
-{ return ideal_from_rho_temp(g.parameters, rho, temperature(p, rho, g.parameters.gas_constant)); }
+{
+    return ideal_from_rho_temp(g.parameters,
+                               rho,
+                               Temperature<T, si> {temperature(p, rho, g.parameters.gas_constant)});
+}
 
 template <Scalar T>
 Closure<T, si> close(const IdealGas& g, Density<T, si> rho, Temperature<T, si> temp)
@@ -85,7 +95,11 @@ Closure<T, si> close(const IdealGas& g, Density<T, si> rho, Temperature<T, si> t
 
 template <Scalar T>
 Closure<T, si> close(const IdealGas& g, Pressure<T, si> p, Temperature<T, si> temp)
-{ return ideal_from_rho_temp(g.parameters, density(p, g.parameters.gas_constant, temp), temp); }
+{
+    return ideal_from_rho_temp(g.parameters,
+                               Density<T, si> {density(p, g.parameters.gas_constant, temp)},
+                               temp);
+}
 
 template <Scalar T> Properties<T, si> properties(const IdealGas& g, const ThermoState<T, si>& s)
 { return ideal_properties(g.parameters, s); }
@@ -122,7 +136,11 @@ Closure<T, si> close(const GuessGas& g,
 }
 
 template <Scalar T> Closure<T, si> close(const GuessGas& g, Density<T, si> rho, Pressure<T, si> p)
-{ return ideal_from_rho_temp(g.parameters, rho, temperature(p, rho, g.parameters.gas_constant)); }
+{
+    return ideal_from_rho_temp(g.parameters,
+                               rho,
+                               Temperature<T, si> {temperature(p, rho, g.parameters.gas_constant)});
+}
 
 template <Scalar T>
 Closure<T, si> close(const GuessGas& g, Density<T, si> rho, Temperature<T, si> temp)
@@ -130,7 +148,11 @@ Closure<T, si> close(const GuessGas& g, Density<T, si> rho, Temperature<T, si> t
 
 template <Scalar T>
 Closure<T, si> close(const GuessGas& g, Pressure<T, si> p, Temperature<T, si> temp)
-{ return ideal_from_rho_temp(g.parameters, density(p, g.parameters.gas_constant, temp), temp); }
+{
+    return ideal_from_rho_temp(g.parameters,
+                               Density<T, si> {density(p, g.parameters.gas_constant, temp)},
+                               temp);
+}
 
 template <Scalar T> Properties<T, si> properties(const GuessGas& g, const ThermoState<T, si>& s)
 { return ideal_properties(g.parameters, s); }
@@ -173,7 +195,11 @@ Closure<T, si> close(const NoPressureTemperatureGas& g, Density<T, si> rho, Spec
 
 template <Scalar T>
 Closure<T, si> close(const NoPressureTemperatureGas& g, Density<T, si> rho, Pressure<T, si> p)
-{ return ideal_from_rho_temp(g.parameters, rho, temperature(p, rho, g.parameters.gas_constant)); }
+{
+    return ideal_from_rho_temp(g.parameters,
+                               rho,
+                               Temperature<T, si> {temperature(p, rho, g.parameters.gas_constant)});
+}
 
 template <Scalar T>
 Closure<T, si> close(const NoPressureTemperatureGas& g, Density<T, si> rho, Temperature<T, si> temp)

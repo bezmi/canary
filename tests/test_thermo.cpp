@@ -5,6 +5,7 @@
 #include <array>
 #include <boost/ut.hpp>
 #include <cmath>
+#include <concepts>
 #include <cstddef>
 #include <gaslib/quantity.hpp>
 #include <gaslib/species.hpp>
@@ -50,6 +51,7 @@ static_assert(!gaslib::StateVariable<gaslib::test::TemperatureGuess>);
 
 static_assert(gaslib::GasModel<gaslib::test::IdealGas, double>);
 static_assert(gaslib::GasModel<gaslib::test::IdealGas, D>);
+static_assert(gaslib::GasModel<gaslib::test::IdealGas, float>);
 static_assert(gaslib::GasModel<gaslib::test::GuessGas, double>);
 static_assert(!gaslib::GasModel<gaslib::test::NoPressureTemperatureGas, double>);
 static_assert(!gaslib::GasModel<gaslib::test::GuessRequiredGas, double>);
@@ -134,6 +136,19 @@ void test_thermo()
                                     gaslib::SpecificEnergy<D, si> {D(2.15e5)},
                                     gaslib::Density<D, si> {D(1.2, 1.0)});
         expect(c.state.p.value().dual() == 287.0 * c.state.temp.value().real());
+    };
+
+    "a float state with double parameters closes and agrees with the double result"_test = [&] {
+        const auto c = thermo_state(gas,
+                                    gaslib::Density<float, si> {1.2F},
+                                    gaslib::SpecificEnergy<float, si> {2.15e5F});
+        static_assert(std::same_as<decltype(c), const gaslib::Closure<float, si>>);
+        const auto reference = thermo_state(gas, Rho {1.2F}, E {2.15e5F});
+        const double tol = 2.0 * 0x1p-23;
+        expect(std::abs(c.state.p.value() - reference.state.p.value()) <=
+               tol * reference.state.p.value());
+        expect(std::abs(c.state.temp.value() - reference.state.temp.value()) <=
+               tol * reference.state.temp.value());
     };
 
     "a mixture model takes its mixture value before the state variables"_test = [&] {

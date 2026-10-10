@@ -37,6 +37,17 @@ static_assert(std::is_standard_layout_v<gaslib::Pressure<double, scaled>>);
 static_assert(!std::convertible_to<double, gaslib::Density<double, si>>);
 static_assert(std::constructible_from<gaslib::Density<double, si>, double>);
 
+// Value-type conversion within one kind and unit system is explicit only, and
+// does not drop the derivative of a dual number.
+static_assert(std::constructible_from<gaslib::Pressure<float, si>, gaslib::Pressure<double, si>>);
+static_assert(!std::convertible_to<gaslib::Pressure<double, si>, gaslib::Pressure<float, si>>);
+static_assert(
+  !std::constructible_from<gaslib::Pressure<float, si>, gaslib::Temperature<double, si>>);
+static_assert(
+  !std::constructible_from<gaslib::Pressure<double, si>, gaslib::Pressure<double, scaled>>);
+static_assert(std::constructible_from<gaslib::Density<D, si>, gaslib::Density<double, si>>);
+static_assert(!std::constructible_from<gaslib::Density<double, si>, gaslib::Density<D, si>>);
+
 static_assert(gaslib::KindOf<gaslib::Temperature<double, si>, gaslib::kind::temperature>);
 static_assert(!gaslib::KindOf<gaslib::ModeTemperature<double, si>, gaslib::kind::temperature>);
 static_assert(gaslib::QuantityKind<const gaslib::Pressure<float, scaled>&>);
@@ -81,6 +92,13 @@ void test_quantity()
         static_assert(std::same_as<decltype(y), const gaslib::MassFraction<double>>);
         static_assert(std::same_as<decltype(gamma), const gaslib::HeatCapacityRatio<float>>);
         expect(y.value() == 0.25_d);
+    };
+
+    "explicit conversion between value types rounds to the target type"_test = [] {
+        const gaslib::Pressure<float, si> p {gaslib::Pressure<double, si> {0.1}};
+        expect(p.value() == 0.1_f);
+        const gaslib::Density<D, si> rho {gaslib::Density<double, si> {2.0}};
+        expect(rho.value().real() == 2.0_d && rho.value().dual() == 0.0_d);
     };
 
     "same-kind addition, subtraction and comparison"_test = [] {

@@ -101,6 +101,17 @@ class Quantity
     constexpr Quantity() = default;
     GASLIB_HOST_DEVICE constexpr explicit Quantity(T value) : value_(value) {}
 
+    // Conversion from another value type of the same kind and unit system,
+    // for example a double result stored in a float state, or a constant
+    // stored as a dual number. Explicit, so every precision change is
+    // visible.
+    template <Scalar V>
+        requires(!std::same_as<V, T>) && std::constructible_from<T, V>
+    GASLIB_HOST_DEVICE constexpr explicit Quantity(const Quantity<K, V, U>& other) :
+        value_(T(other.value()))
+    {
+    }
+
     [[nodiscard]] GASLIB_HOST_DEVICE constexpr T value() const { return value_; }
 
   private:
