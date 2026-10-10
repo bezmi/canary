@@ -1,8 +1,12 @@
 // Closure throughput from (rho, rho_e) over 10^6 cells: the one-species
-// model through gaslib and on plain doubles, and mixtures of 5 and 11
-// species with the exact capacity and with capacity 16. Each case runs
-// several times; the fastest run is reported in nanoseconds per cell.
+// model through gaslib and on plain doubles, mixtures of 5 and 11 species
+// with the exact capacity and with capacity 16, and the thermally perfect
+// model for N2 alone and for air (N2 and O2 in the five-species model),
+// without and with a temperature guess equal to the previous cell's
+// temperature. Each case runs several times; the fastest run is reported in
+// nanoseconds per cell.
 
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdio>
@@ -105,6 +109,35 @@ template <std::size_t Capacity> double mixture_case(const char* name, const Cell
     });
 }
 
+// Thermally perfect model G with the same mass fractions y in every cell.
+// With guess, each cell starts from the temperature of the previous cell
+// (300 K for the first).
+template <typename G, std::size_t N>
+double thermally_perfect_case(
+  const char* name, const Cells& c, const G& gas, const std::array<double, N>& y, bool guess)
+{
+    const auto fractions = gaslib::as_kind<gaslib::kind::mass_fraction>(
+      Kokkos::mdspan<const double, Kokkos::dextents<std::size_t, 1>>(y.data(), N));
+    return time_per_cell(name, [&] {
+        double sum = 0;
+        gaslib::Temperature<double, si> previous {300.0};
+        for (std::size_t i = 0; i < cells; ++i) {
+            const gaslib::Density<double, si> rho {c.rho[i]};
+            const gaslib::EnergyDensity<double, si> rho_e {c.rho_e[i]};
+            const auto closure =
+              guess ? gaslib::thermo_state(gas,
+                                           fractions,
+                                           rho,
+                                           rho_e,
+                                           gaslib::TemperatureGuess<double, si> {previous})
+                    : gaslib::thermo_state(gas, fractions, rho, rho_e);
+            previous = closure.state.temp;
+            sum += closure.state.p.value() + closure.state.temp.value();
+        }
+        return sum;
+    });
+}
+
 }  // namespace
 
 int main()
@@ -140,4 +173,15 @@ int main()
     mixture_case<16>("5 species, capacity 16", c, 5);
     mixture_case<11>("11 species, capacity 11", c, 11);
     mixture_case<16>("11 species, capacity 16", c, 11);
+
+    const gaslib::UnitScales<double, si> si_scales {};
+    const auto n2 =
+      gaslib::make_thermally_perfect_mixture(std::array {gaslib::air5_species[0]}, si_scales).model;
+    const std::array<double, 1> n2_y {1.0};
+    thermally_perfect_case("thermally perfect N2", c, n2, n2_y, false);
+    thermally_perfect_case("thermally perfect N2, guess", c, n2, n2_y, true);
+    const auto air5 = gaslib::make_air5<double>(si_scales).model;
+    const std::array<double, 5> air_y {0.767, 0.233, 0.0, 0.0, 0.0};
+    thermally_perfect_case("thermally perfect air (5 species)", c, air5, air_y, false);
+    thermally_perfect_case("thermally perfect air (5 species), guess", c, air5, air_y, true);
 }
