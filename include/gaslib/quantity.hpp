@@ -286,6 +286,48 @@ template <Scalar A, Scalar B, UnitSystem U>
 GASLIB_HOST_DEVICE constexpr auto specific_energy(SpecificHeat<A, U> cv, Temperature<B, U> temp)
 { return detail::make_quantity<kind::specific_energy, U>(cv.value() * temp.value()); }
 
+// rho_e = rho * e
+template <Scalar A, Scalar B, UnitSystem U>
+    requires ScalarPair<A, B>
+GASLIB_HOST_DEVICE constexpr auto energy_density(Density<A, U> rho, SpecificEnergy<B, U> e)
+{ return detail::make_quantity<kind::energy_density, U>(rho.value() * e.value()); }
+
+// rho_e = p / (gamma - 1)
+template <Scalar G, Scalar A, UnitSystem U>
+    requires ScalarPair<G, typename ScalarTraits<G>::value_type> &&
+             ScalarPair<A, detail::difference_t<G, typename ScalarTraits<G>::value_type>>
+GASLIB_HOST_DEVICE constexpr auto energy_density(HeatCapacityRatio<G> gamma, Pressure<A, U> p)
+{
+    using V = ScalarTraits<G>::value_type;
+    return detail::make_quantity<kind::energy_density, U>(p.value() / (gamma.value() - V(1)));
+}
+
+// R = k_B / m
+template <Scalar A, Scalar B, UnitSystem U>
+    requires ScalarPair<A, B>
+GASLIB_HOST_DEVICE constexpr auto specific_gas_constant(BoltzmannConstant<A, U> boltzmann,
+                                                        ParticleMass<B, U> mass)
+{ return detail::make_quantity<kind::specific_gas_constant, U>(boltzmann.value() / mass.value()); }
+
+// cv = R / (gamma - 1)
+template <Scalar A, Scalar G, UnitSystem U>
+    requires ScalarPair<G, typename ScalarTraits<G>::value_type> &&
+             ScalarPair<A, detail::difference_t<G, typename ScalarTraits<G>::value_type>>
+GASLIB_HOST_DEVICE constexpr auto isochoric_specific_heat(SpecificGasConstant<A, U> gas_constant,
+                                                          HeatCapacityRatio<G> gamma)
+{
+    using V = ScalarTraits<G>::value_type;
+    return detail::make_quantity<kind::specific_heat, U>(gas_constant.value() /
+                                                         (gamma.value() - V(1)));
+}
+
+// cp = gamma * cv
+template <Scalar A, Scalar G, UnitSystem U>
+    requires ScalarPair<G, A>
+GASLIB_HOST_DEVICE constexpr auto isobaric_specific_heat(SpecificHeat<A, U> cv,
+                                                         HeatCapacityRatio<G> gamma)
+{ return detail::make_quantity<kind::specific_heat, U>(gamma.value() * cv.value()); }
+
 // k = (mu * cp) / Pr
 template <Scalar A, Scalar B, Scalar C, UnitSystem U>
     requires ScalarPair<A, B> && ScalarPair<detail::product_t<A, B>, C>

@@ -193,6 +193,35 @@ void test_quantity()
         expect(gaslib::temperature(e, cv).value() == 300.0_d);
     };
 
+    "energy density from density and specific energy, and from pressure and gamma"_test = [] {
+        const KindOf<kind::energy_density> auto rho_e =
+          gaslib::energy_density(Density<double, si> {1.2}, SpecificEnergy<double, si> {2.15e5});
+        expect(rho_e.value() == 1.2 * 2.15e5);
+        const KindOf<kind::energy_density> auto from_p =
+          gaslib::energy_density(HeatCapacityRatio {1.4}, Pressure<double, si> {1.0e5});
+        expect(from_p.value() == 1.0e5 / (1.4 - 1.0));
+        expect(gaslib::pressure(
+                 HeatCapacityRatio {1.5},
+                 gaslib::energy_density(HeatCapacityRatio {1.5}, Pressure<double, si> {3.0}))
+                 .value() == 3.0_d);
+    };
+
+    "gas constant and heat capacities from particle mass, Boltzmann constant and gamma"_test = [] {
+        const KindOf<kind::specific_gas_constant> auto r =
+          gaslib::specific_gas_constant(gaslib::BoltzmannConstant<double, si> {1.380649e-23},
+                                        gaslib::ParticleMass<double, si> {4.65e-26});
+        expect(r.value() == 1.380649e-23 / 4.65e-26);
+        const KindOf<kind::specific_heat> auto cv =
+          gaslib::isochoric_specific_heat(r, HeatCapacityRatio {1.4});
+        const KindOf<kind::specific_heat> auto cp =
+          gaslib::isobaric_specific_heat(cv, HeatCapacityRatio {1.4});
+        expect(cv.value() == r.value() / (1.4 - 1.0));
+        expect(cp.value() == 1.4 * cv.value());
+        // cp - cv = R and cp / cv = gamma within rounding.
+        expect(std::abs((cp - cv).value() - r.value()) <= 4.0 * 0x1p-52 * r.value());
+        expect(std::abs((cp.value() / cv.value()) - 1.4) <= 2.0 * 0x1p-52 * 1.4);
+    };
+
     "conductivity from viscosity, heat capacity and Prandtl number"_test = [] {
         const KindOf<kind::thermal_conductivity> auto k =
           gaslib::conductivity(gaslib::DynamicViscosity<double, si> {1.8e-5},
