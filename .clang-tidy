@@ -31,6 +31,7 @@ Checks: >
        -misc-no-recursion,
      modernize-*,
        -modernize-avoid-c-arrays,
+       -modernize-avoid-c-style-cast,
        -modernize-macro-to-enum,
        -modernize-return-braced-init-list,
        -modernize-use-trailing-return-type,
