@@ -332,9 +332,7 @@ GASLIB_HOST_DEVICE constexpr auto isobaric_specific_heat(SpecificHeat<A, U> cv,
 template <Scalar A, Scalar B, UnitSystem U>
     requires ScalarPair<A, B>
 GASLIB_HOST_DEVICE constexpr auto heat_capacity_ratio(SpecificHeat<A, U> cp, SpecificHeat<B, U> cv)
-{
-    return detail::make_quantity<kind::heat_capacity_ratio, unitless>(cp.value() / cv.value());
-}
+{ return detail::make_quantity<kind::heat_capacity_ratio, unitless>(cp.value() / cv.value()); }
 
 // k = (mu * cp) / Pr
 template <Scalar A, Scalar B, Scalar C, UnitSystem U>
