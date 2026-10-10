@@ -15,4 +15,5 @@ int main()
     test_units();
     test_status();
     test_species();
+    test_state();
 }

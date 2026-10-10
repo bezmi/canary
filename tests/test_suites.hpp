@@ -11,5 +11,6 @@ void test_quantity();
 void test_units();
 void test_status();
 void test_species();
+void test_state();
 
 #endif  // GASLIB_TESTS_TEST_SUITES_HPP
