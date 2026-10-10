@@ -22,22 +22,27 @@ template <std::floating_point T> struct ScalarTraits<T> {
 
 // Type of the per-cell values that gaslib functions compute with: double,
 // float, or a dual number that carries derivatives. Comparisons use the
-// value part. The ScalarTraits requirement is checked first, so a type
-// without it is rejected before any operator lookup.
+// value part. A constant (a value with zero derivative) is built from a
+// plain value of the value type. The ScalarTraits requirement is checked
+// first, so a type without it is rejected before any operator lookup.
 template <typename T>
 concept HasScalarTraits = requires { typename ScalarTraits<T>::value_type; } &&
                           std::floating_point<typename ScalarTraits<T>::value_type>;
 
 template <typename T>
-concept Scalar = HasScalarTraits<T> && std::copyable<T> && requires(const T a, const T b) {
-    { ScalarTraits<T>::value(a) } -> std::same_as<typename ScalarTraits<T>::value_type>;
-    { -a } -> std::convertible_to<T>;
-    { a + b } -> std::convertible_to<T>;
-    { a - b } -> std::convertible_to<T>;
-    { a * b } -> std::convertible_to<T>;
-    { a / b } -> std::convertible_to<T>;
-    { a < b } -> std::convertible_to<bool>;
-};
+concept Scalar = HasScalarTraits<T> && std::copyable<T> &&
+                 std::constructible_from<T, typename ScalarTraits<T>::value_type> &&
+                 requires(const T a, const T b) {
+                     {
+                         ScalarTraits<T>::value(a)
+                     } -> std::same_as<typename ScalarTraits<T>::value_type>;
+                     { -a } -> std::convertible_to<T>;
+                     { a + b } -> std::convertible_to<T>;
+                     { a - b } -> std::convertible_to<T>;
+                     { a * b } -> std::convertible_to<T>;
+                     { a / b } -> std::convertible_to<T>;
+                     { a < b } -> std::convertible_to<bool>;
+                 };
 
 // A state scalar T that combines directly with a model parameter of
 // floating-point type P, in either operand position, without first
