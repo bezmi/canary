@@ -10,4 +10,5 @@ int main()
 
     test_config_default();
     test_config_consumer();
+    test_scalar();
 }

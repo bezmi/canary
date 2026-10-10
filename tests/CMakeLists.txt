@@ -5,7 +5,7 @@ function(gaslib_test_options target)
   target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endfunction()
 
-add_executable(gaslib_tests test_main.cpp test_config_default.cpp test_config_consumer.cpp)
+add_executable(gaslib_tests test_main.cpp test_config_default.cpp test_config_consumer.cpp test_scalar.cpp)
 target_link_libraries(gaslib_tests PRIVATE gaslib::gaslib Boost::ut)
 gaslib_test_options(gaslib_tests)
 add_test(NAME gaslib.unit COMMAND gaslib_tests)
@@ -29,6 +29,9 @@ function(gaslib_compile_fail_test name regex)
 endfunction()
 
 gaslib_compile_fail_test(self_test "compile-fail self test")
+gaslib_compile_fail_test(scalar_pointer "satisf(y|action of) [^ ]*Scalar")
+gaslib_compile_fail_test(scalar_without_traits "satisf(y|action of) [^ ]*Scalar")
+gaslib_compile_fail_test(math_function_missing "satisf(y|action of) [^ ]*HasExp")
 
 # Each public header is compiled alone, as strict C++20, with only the
 # include directories of gaslib::gaslib (include/ and mdspan). This checks

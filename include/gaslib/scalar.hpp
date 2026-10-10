@@ -1,0 +1,204 @@
+#ifndef GASLIB_SCALAR_HPP
+#define GASLIB_SCALAR_HPP
+
+#include <cmath>
+#include <concepts>
+#include <gaslib/config.hpp>
+
+namespace gaslib
+{
+
+// Access to the value part of a state scalar: the number itself for a
+// floating-point type, the real part for a dual number. A consumer
+// specialises it for its own scalar type, giving value_type (a
+// floating-point type) and a static function value(x) that returns it.
+template <typename T> struct ScalarTraits;
+
+template <std::floating_point T> struct ScalarTraits<T> {
+    using value_type = T;
+
+    GASLIB_HOST_DEVICE static constexpr T value(T x) { return x; }
+};
+
+// Type of the per-cell values that gaslib functions compute with: double,
+// float, or a dual number that carries derivatives. Comparisons use the
+// value part.
+template <typename T>
+concept Scalar = std::copyable<T> && requires(const T a, const T b) {
+    requires std::floating_point<typename ScalarTraits<T>::value_type>;
+    { ScalarTraits<T>::value(a) } -> std::same_as<typename ScalarTraits<T>::value_type>;
+    { -a } -> std::convertible_to<T>;
+    { a + b } -> std::convertible_to<T>;
+    { a - b } -> std::convertible_to<T>;
+    { a * b } -> std::convertible_to<T>;
+    { a / b } -> std::convertible_to<T>;
+    { a < b } -> std::convertible_to<bool>;
+};
+
+// A state scalar T that combines directly with a model parameter of
+// floating-point type P, in either operand position, without first
+// converting the parameter to T. The result of a mixed operation may have a
+// wider type than T (float state with a double parameter gives double), but
+// must convert to T.
+template <typename T, typename P>
+concept ScalarWith = Scalar<T> && std::floating_point<P> && requires(const T t, const P p) {
+    { t + p } -> std::convertible_to<T>;
+    { p + t } -> std::convertible_to<T>;
+    { t - p } -> std::convertible_to<T>;
+    { p - t } -> std::convertible_to<T>;
+    { t * p } -> std::convertible_to<T>;
+    { p * t } -> std::convertible_to<T>;
+    { t / p } -> std::convertible_to<T>;
+    { p / t } -> std::convertible_to<T>;
+};
+
+namespace detail::scalar_lookup
+{
+
+// Deleted declarations stop ordinary lookup here, so that an unqualified call
+// below finds only the overloads declared next to the argument's type
+// (argument-dependent lookup).
+void sqrt() = delete;
+void pow() = delete;
+void exp() = delete;
+void log() = delete;
+void abs() = delete;
+void min() = delete;
+void max() = delete;
+
+template <typename T>
+concept HasOwnSqrt = requires(const T x) {
+    { sqrt(x) } -> std::convertible_to<T>;
+};
+template <typename T>
+concept HasOwnPow = requires(const T x, const T y) {
+    { pow(x, y) } -> std::convertible_to<T>;
+};
+template <typename T>
+concept HasOwnExp = requires(const T x) {
+    { exp(x) } -> std::convertible_to<T>;
+};
+template <typename T>
+concept HasOwnLog = requires(const T x) {
+    { log(x) } -> std::convertible_to<T>;
+};
+template <typename T>
+concept HasOwnAbs = requires(const T x) {
+    { abs(x) } -> std::convertible_to<T>;
+};
+template <typename T>
+concept HasOwnMin = requires(const T x, const T y) {
+    { min(x, y) } -> std::convertible_to<T>;
+};
+template <typename T>
+concept HasOwnMax = requires(const T x, const T y) {
+    { max(x, y) } -> std::convertible_to<T>;
+};
+
+template <HasOwnSqrt T> GASLIB_HOST_DEVICE T call_sqrt(const T& x) { return sqrt(x); }
+template <HasOwnPow T> GASLIB_HOST_DEVICE T call_pow(const T& x, const T& y) { return pow(x, y); }
+template <HasOwnExp T> GASLIB_HOST_DEVICE T call_exp(const T& x) { return exp(x); }
+template <HasOwnLog T> GASLIB_HOST_DEVICE T call_log(const T& x) { return log(x); }
+template <HasOwnAbs T> GASLIB_HOST_DEVICE T call_abs(const T& x) { return abs(x); }
+template <HasOwnMin T> GASLIB_HOST_DEVICE T call_min(const T& x, const T& y) { return min(x, y); }
+template <HasOwnMax T> GASLIB_HOST_DEVICE T call_max(const T& x, const T& y) { return max(x, y); }
+
+}  // namespace detail::scalar_lookup
+
+// Each math function below has its own concept. A floating-point type uses
+// the standard library function; any other scalar type must declare the
+// function next to its type. A scalar type that lacks one of them can still
+// be used with every model that does not call it.
+template <typename T>
+concept HasSqrt = Scalar<T> && (std::floating_point<T> || detail::scalar_lookup::HasOwnSqrt<T>);
+template <typename T>
+concept HasPow = Scalar<T> && (std::floating_point<T> || detail::scalar_lookup::HasOwnPow<T>);
+template <typename T>
+concept HasExp = Scalar<T> && (std::floating_point<T> || detail::scalar_lookup::HasOwnExp<T>);
+template <typename T>
+concept HasLog = Scalar<T> && (std::floating_point<T> || detail::scalar_lookup::HasOwnLog<T>);
+template <typename T>
+concept HasAbs = Scalar<T> && (std::floating_point<T> || detail::scalar_lookup::HasOwnAbs<T>);
+template <typename T>
+concept HasMin = Scalar<T> && (std::floating_point<T> || detail::scalar_lookup::HasOwnMin<T>);
+template <typename T>
+concept HasMax = Scalar<T> && (std::floating_point<T> || detail::scalar_lookup::HasOwnMax<T>);
+
+namespace math
+{
+
+template <HasSqrt T> GASLIB_HOST_DEVICE T sqrt(const T& x)
+{
+    if constexpr (std::floating_point<T>) {
+        return std::sqrt(x);
+    } else {
+        return detail::scalar_lookup::call_sqrt(x);
+    }
+}
+
+// The exponent has the scalar type, so a dual-number exponent carries its
+// derivative.
+template <HasPow T> GASLIB_HOST_DEVICE T pow(const T& base, const T& exponent)
+{
+    if constexpr (std::floating_point<T>) {
+        return std::pow(base, exponent);
+    } else {
+        return detail::scalar_lookup::call_pow(base, exponent);
+    }
+}
+
+template <HasExp T> GASLIB_HOST_DEVICE T exp(const T& x)
+{
+    if constexpr (std::floating_point<T>) {
+        return std::exp(x);
+    } else {
+        return detail::scalar_lookup::call_exp(x);
+    }
+}
+
+template <HasLog T> GASLIB_HOST_DEVICE T log(const T& x)
+{
+    if constexpr (std::floating_point<T>) {
+        return std::log(x);
+    } else {
+        return detail::scalar_lookup::call_log(x);
+    }
+}
+
+template <HasAbs T> GASLIB_HOST_DEVICE T abs(const T& x)
+{
+    if constexpr (std::floating_point<T>) {
+        return std::abs(x);
+    } else {
+        return detail::scalar_lookup::call_abs(x);
+    }
+}
+
+template <HasMin T> GASLIB_HOST_DEVICE T min(const T& x, const T& y)
+{
+    if constexpr (std::floating_point<T>) {
+        return y < x ? y : x;
+    } else {
+        return detail::scalar_lookup::call_min(x, y);
+    }
+}
+
+template <HasMax T> GASLIB_HOST_DEVICE T max(const T& x, const T& y)
+{
+    if constexpr (std::floating_point<T>) {
+        return x < y ? y : x;
+    } else {
+        return detail::scalar_lookup::call_max(x, y);
+    }
+}
+
+// True when the value part is finite. The derivative part of a dual number
+// is not checked.
+template <Scalar T> GASLIB_HOST_DEVICE bool isfinite(const T& x)
+{ return std::isfinite(ScalarTraits<T>::value(x)); }
+
+}  // namespace math
+
+}  // namespace gaslib
+
+#endif  // GASLIB_SCALAR_HPP
