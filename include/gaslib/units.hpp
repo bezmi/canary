@@ -15,6 +15,11 @@ namespace constants
 // Exact SI values (2019 definition of the SI base units).
 template <std::floating_point P> inline constexpr P boltzmann = P(1.380649e-23);             // J/K
 template <std::floating_point P> inline constexpr P elementary_charge = P(1.602176634e-19);  // C
+template <std::floating_point P> inline constexpr P avogadro = P(6.02214076e23);  // 1/mol
+// Universal gas constant N_A k_B [J/(mol K)], the product of two exact
+// values rounded to P.
+template <std::floating_point P>
+inline constexpr P universal_gas_constant = avogadro<P> * boltzmann<P>;
 }  // namespace constants
 
 // Reference scales of a unit system. A value in the system is the SI value

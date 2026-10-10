@@ -58,6 +58,12 @@ struct temperature            { static constexpr Dimension dimension {.temperatu
 struct specific_energy        { static constexpr Dimension dimension {.length = 2, .time = -2}; };
 // Internal energy per unit volume.
 struct energy_density         { static constexpr Dimension dimension {.mass = 1, .length = -1, .time = -2}; };
+// Enthalpy per unit mass.
+struct specific_enthalpy      { static constexpr Dimension dimension {.length = 2, .time = -2}; };
+// Entropy per unit mass.
+struct specific_entropy       { static constexpr Dimension dimension {.length = 2, .time = -2, .temperature = -1}; };
+// Gibbs energy per unit mass.
+struct specific_gibbs_energy  { static constexpr Dimension dimension {.length = 2, .time = -2}; };
 // cv or cp, per unit mass.
 struct specific_heat          { static constexpr Dimension dimension {.length = 2, .time = -2, .temperature = -1}; };
 struct specific_gas_constant  { static constexpr Dimension dimension {.length = 2, .time = -2, .temperature = -1}; };
@@ -145,6 +151,9 @@ template <Scalar T, UnitSystem U> using Pressure             = Quantity<kind::pr
 template <Scalar T, UnitSystem U> using Temperature          = Quantity<kind::temperature, T, U>;
 template <Scalar T, UnitSystem U> using SpecificEnergy       = Quantity<kind::specific_energy, T, U>;
 template <Scalar T, UnitSystem U> using EnergyDensity        = Quantity<kind::energy_density, T, U>;
+template <Scalar T, UnitSystem U> using SpecificEnthalpy     = Quantity<kind::specific_enthalpy, T, U>;
+template <Scalar T, UnitSystem U> using SpecificEntropy      = Quantity<kind::specific_entropy, T, U>;
+template <Scalar T, UnitSystem U> using SpecificGibbsEnergy  = Quantity<kind::specific_gibbs_energy, T, U>;
 template <Scalar T, UnitSystem U> using SpecificHeat         = Quantity<kind::specific_heat, T, U>;
 template <Scalar T, UnitSystem U> using SpecificGasConstant  = Quantity<kind::specific_gas_constant, T, U>;
 template <Scalar T, UnitSystem U> using SoundSpeed           = Quantity<kind::sound_speed, T, U>;

@@ -22,4 +22,6 @@ int main()
     test_cerberus_parity();
     test_transport();
     test_solve();
+    test_nasa9();
+    test_thermally_perfect();
 }

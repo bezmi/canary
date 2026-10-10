@@ -6,7 +6,7 @@ function(gaslib_test_options target)
 endfunction()
 
 add_executable(gaslib_tests test_main.cpp test_config_default.cpp test_config_consumer.cpp test_scalar.cpp test_quantity.cpp test_units.cpp test_status.cpp test_species.cpp test_state.cpp test_thermo.cpp test_calorically_perfect.cpp test_calorically_perfect_mixture.cpp
-                            test_cerberus_parity.cpp test_transport.cpp test_solve.cpp)
+                            test_cerberus_parity.cpp test_transport.cpp test_solve.cpp test_nasa9.cpp test_thermally_perfect.cpp)
 target_link_libraries(gaslib_tests PRIVATE gaslib::gaslib Boost::ut)
 gaslib_test_options(gaslib_tests)
 add_test(NAME gaslib.unit COMMAND gaslib_tests)
@@ -43,6 +43,7 @@ gaslib_compile_fail_test(thermo_gas_model_missing_closure "GasModel<.*NoPressure
 gaslib_compile_fail_test(thermo_missing_extra_input "ClosesInAnyOrder<.*GuessRequiredGas")
 gaslib_compile_fail_test(quantity_implicit_precision "conversion from .*double.* to .*float|no viable conversion from .*double.* to .*float")
 gaslib_compile_fail_test(calorically_perfect_si_in_scaled "ClosesInAnyOrder<.*CaloricallyPerfect<double, gaslib::scaled>")
+gaslib_compile_fail_test(thermally_perfect_si_in_scaled "ClosesInAnyOrder<.*ThermallyPerfectMixture<double, gaslib::scaled")
 gaslib_compile_fail_test(calorically_perfect_swapped_kinds "no matching function for call to [^ ]*make_calorically_perfect")
 gaslib_compile_fail_test(transport_other_units "no matching function for call to [^ ]*viscosity")
 gaslib_compile_fail_test(quantity_molar_scaled "KindUnits<(K, U|gaslib::kind::molar_mass, gaslib::scaled)>")

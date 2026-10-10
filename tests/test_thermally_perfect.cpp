@@ -1,0 +1,337 @@
+#include "dual.hpp"
+#include "test_suites.hpp"
+
+#include <array>
+#include <boost/ut.hpp>
+#include <cmath>
+#include <cstddef>
+#include <gaslib/build.hpp>
+#include <gaslib/data/air5.hpp>
+#include <gaslib/models/thermally_perfect.hpp>
+#include <gaslib/quantity.hpp>
+#include <gaslib/species.hpp>
+#include <gaslib/state.hpp>
+#include <gaslib/status.hpp>
+#include <gaslib/thermo.hpp>
+#include <gaslib/units.hpp>
+#include <limits>
+#include <mdspan/mdspan.hpp>
+#include <string>
+#include <type_traits>
+
+namespace
+{
+
+using gaslib::scaled;
+using gaslib::si;
+using gaslib::Status;
+using D = gaslib::test::Dual<double>;
+using Rho = gaslib::Density<double, si>;
+using E = gaslib::SpecificEnergy<double, si>;
+using RhoE = gaslib::EnergyDensity<double, si>;
+using P = gaslib::Pressure<double, si>;
+using Temp = gaslib::Temperature<double, si>;
+using Guess = gaslib::TemperatureGuess<double, si>;
+using Extents = Kokkos::dextents<std::size_t, 1>;
+using Air = gaslib::Air5<double, si>;
+using AirScaled = gaslib::Air5<double, scaled>;
+
+constexpr double eps = std::numeric_limits<double>::epsilon();
+// Relative tolerance of the temperature solve (the model default).
+constexpr double solve_tolerance = 1.0e-10;
+
+const gaslib::UnitScales<double, scaled> reference_scales {
+  .mass = 4.65e-26,
+  .density = 1.0e-3,
+  .temperature = 1000.0,
+  .length = 1.0,
+};
+
+template <typename T> auto fractions(const std::array<T, 5>& y)
+{
+    return gaslib::as_kind<gaslib::kind::mass_fraction>(
+      Kokkos::mdspan<const T, Extents>(y.data(), 5));
+}
+
+bool relative(double a, double b, double bound) { return std::abs(a - b) <= bound * std::abs(b); }
+
+constexpr std::array<double, 5> air {0.767, 0.233, 0.0, 0.0, 0.0};
+constexpr std::array<double, 5> dissociated {0.2, 0.05, 0.3, 0.4, 0.05};
+constexpr std::array<double, 5> nitrogen {1.0, 0.0, 0.0, 0.0, 0.0};
+
+}  // namespace
+
+static_assert(gaslib::GasModel<Air, double>);
+static_assert(gaslib::MixtureGasModel<Air, double>);
+static_assert(gaslib::MixtureGasModel<Air, float>);
+static_assert(gaslib::MixtureGasModel<Air, D>);
+static_assert(gaslib::MixtureGasModel<AirScaled, double>);
+static_assert(gaslib::MixtureGasModel<AirScaled, float>);
+static_assert(gaslib::MixtureGasModel<AirScaled, D>);
+static_assert(gaslib::AcceptsInput<Air, gaslib::TemperatureGuess<double, si>>);
+static_assert(gaslib::AcceptsInput<AirScaled, gaslib::TemperatureGuess<double, scaled>>);
+static_assert(!gaslib::AcceptsInput<AirScaled, gaslib::TemperatureGuess<double, si>>);
+static_assert(std::is_trivially_copyable_v<Air>);
+static_assert(std::is_trivially_copyable_v<AirScaled>);
+static_assert(std::is_trivially_copyable_v<Air::Mixture<double>>);
+static_assert(std::is_trivially_copyable_v<Air::Mixture<D>>);
+static_assert(std::is_trivially_copyable_v<gaslib::SpeciesProperties<double, si, 5>>);
+
+void test_thermally_perfect()
+{
+    using namespace boost::ut;
+    using gaslib::mixture;
+    using gaslib::thermo_state;
+    const auto built = gaslib::make_air5<double>(gaslib::UnitScales<double, si> {});
+    const Air& gas = built.model;
+
+    "the builder derives gas constants, species data and settings"_test = [&] {
+        const double r_u = gaslib::constants::universal_gas_constant<double>;
+        expect(gas.n == 5_i);
+        expect(built.species.n == 5_i);
+        for (std::size_t i = 0; i < 5; ++i) {
+            const auto& sp = gaslib::air5_species[i];
+            expect(relative(gas.gas_constant[i].value(), r_u / sp.molar_mass, 2.0 * eps));
+            expect(relative(built.species.mass[i].value(),
+                            sp.molar_mass / gaslib::constants::avogadro<double>,
+                            2.0 * eps));
+            expect(built.species.charge[i].value() == 0.0);
+        }
+        expect(gas.temperature_min.value() == 10.0);
+        expect(gas.temperature_max.value() == 100000.0);
+        expect(gas.bracket_width.value() == 1000.0);
+        expect(gas.relative_tolerance == solve_tolerance);
+        expect(gas.max_iterations == 30_i);
+    };
+
+    "the builder names the species of an invalid parameter"_test = [] {
+        auto species = gaslib::air5_species;
+        species[3].molar_mass = -1.0;
+        try {
+            gaslib::make_thermally_perfect_mixture(species, gaslib::UnitScales<double, si> {});
+            expect(false) << "no exception";
+        } catch (const gaslib::ParameterError& error) {
+            expect(std::string(error.what()).starts_with("species O: molar mass")) << error.what();
+        }
+        species = gaslib::air5_species;
+        species[1].fit.blends[0] = -1.0;
+        try {
+            gaslib::make_thermally_perfect_mixture(species, gaslib::UnitScales<double, si> {});
+            expect(false) << "no exception";
+        } catch (const gaslib::ParameterError& error) {
+            expect(std::string(error.what()).starts_with("species O2: blending width"))
+              << error.what();
+        }
+    };
+
+    "(rho, e) inverts (rho, T) and all closures agree"_test = [&] {
+        for (const auto& y : {air, dissociated}) {
+            const auto mix = mixture(gas, fractions(y));
+            expect(mix.status == Status::Valid);
+            for (const double rho_value : {1.0e-4, 1.0, 100.0}) {
+                for (const double t : {250.0, 1000.0, 5000.0, 15000.0, 30000.0}) {
+                    const Rho rho {rho_value};
+                    const auto from_t = thermo_state(gas, mix, rho, Temp {t});
+                    const auto from_e = thermo_state(gas, mix, rho, from_t.state.e);
+                    expect(from_t.status == Status::Valid);
+                    expect(from_e.status == Status::Valid) << rho_value << t;
+                    expect(relative(from_e.state.temp.value(), t, solve_tolerance))
+                      << rho_value << t << from_e.state.temp.value();
+                    expect(relative(from_e.state.p.value(), from_t.state.p.value(), 1.0e-9));
+                    expect(from_e.state.e == from_t.state.e);
+
+                    const auto from_p = thermo_state(gas, mix, rho, from_t.state.p);
+                    expect(relative(from_p.state.temp.value(), t, 4.0 * eps));
+                    expect(relative(from_p.state.e.value(), from_t.state.e.value(), 1.0e-12));
+                    expect(from_p.status == Status::Valid);
+
+                    const auto from_pt = thermo_state(gas, mix, from_t.state.p, Temp {t});
+                    expect(relative(from_pt.state.rho.value(), rho_value, 4.0 * eps));
+                    expect(from_pt.state.e == from_t.state.e);
+                    expect(from_pt.status == Status::Valid);
+
+                    // (rho, rho e) is (rho, e) with e = rho_e / rho.
+                    const RhoE rho_e {gaslib::energy_density(rho, from_t.state.e)};
+                    const auto a = thermo_state(gas, mix, rho, rho_e);
+                    const auto b = thermo_state(gas, mix, rho, gaslib::specific_energy(rho_e, rho));
+                    expect(a.state.temp == b.state.temp && a.state.e == b.state.e &&
+                           a.state.p == b.state.p && a.status == b.status);
+                }
+            }
+        }
+    };
+
+    "partial densities give the same closure as the equivalent fractions"_test = [&] {
+        const Rho rho {2.0};
+        std::array<double, 5> rho_i {};
+        for (std::size_t i = 0; i < 5; ++i) { rho_i[i] = rho.value() * dissociated[i]; }
+        const auto view = gaslib::as_kind<gaslib::kind::density, si>(
+          Kokkos::mdspan<const double, Extents>(rho_i.data(), 5));
+        const E e = thermo_state(gas, fractions(dissociated), rho, Temp {3000.0}).state.e;
+        const auto a = thermo_state(gas, view, rho, e);
+        const auto b = thermo_state(gas, fractions(dissociated), rho, e);
+        expect(relative(a.state.temp.value(), b.state.temp.value(), 1.0e-12));
+        expect(a.status == Status::Valid);
+    };
+
+    "nitrogen at 300 K has gamma 1.4 within 0.1 percent"_test = [&] {
+        const auto mix = mixture(gas, fractions(nitrogen));
+        const auto c = thermo_state(gas, mix, Rho {1.0}, Temp {300.0});
+        const auto props = gaslib::properties(gas, mix, c.state);
+        expect(relative(props.gamma.value(), 1.4, 1.0e-3)) << props.gamma.value();
+        expect(relative(props.cp.value() - props.cv.value(), mix.gas_constant.value(), 1.0e-12));
+        expect(relative(props.sound_speed.value(),
+                        std::sqrt(props.gamma.value() * c.state.p.value() / c.state.rho.value()),
+                        4.0 * eps));
+    };
+
+    "dT/de at fixed density and composition is 1 / cv"_test = [&] {
+        const auto mix_d = mixture(gas, fractions(std::array<D, 5> {0.767, 0.233, 0.0, 0.0, 0.0}));
+        const auto mix = mixture(gas, fractions(air));
+        for (const double t : {300.0, 2500.0, 8000.0}) {
+            const auto ref = thermo_state(gas, mix, Rho {1.0}, Temp {t});
+            const auto c =
+              thermo_state(gas,
+                           mix_d,
+                           gaslib::Density<D, si> {D(1.0)},
+                           gaslib::SpecificEnergy<D, si> {D(ref.state.e.value(), 1.0)});
+            const auto props = gaslib::properties(gas, mix, ref.state);
+            expect(relative(c.state.temp.value().dual(), 1.0 / props.cv.value(), 1.0e-9))
+              << t << c.state.temp.value().dual() << 1.0 / props.cv.value();
+        }
+    };
+
+    "dT/d(epsilon) at fixed e is -(e_1 - e_2) / cv"_test = [&] {
+        // y_1 = a + epsilon, y_2 = b - epsilon.
+        const std::array<D, 5> y {D(0.4, 1.0), D(0.1, -1.0), D(0.2), D(0.25), D(0.05)};
+        const std::array<double, 5> y_value {0.4, 0.1, 0.2, 0.25, 0.05};
+        const auto mix = mixture(gas, fractions(y_value));
+        for (const double t : {600.0, 3000.0, 9000.0}) {
+            const auto ref = thermo_state(gas, mix, Rho {1.0}, Temp {t});
+            const auto c = thermo_state(gas,
+                                        fractions(y),
+                                        gaslib::Density<D, si> {D(1.0)},
+                                        gaslib::SpecificEnergy<D, si> {D(ref.state.e.value())});
+            const auto sp = gaslib::species_properties(gas, ref.state.temp);
+            const double cv = gaslib::properties(gas, mix, ref.state).cv.value();
+            const double expected = -(sp.energy[0].value() - sp.energy[1].value()) / cv;
+            expect(relative(c.state.temp.value().dual(), expected, 1.0e-9))
+              << t << c.state.temp.value().dual() << expected;
+        }
+    };
+
+    "a scaled model gives the SI state after conversion"_test = [&] {
+        const auto scaled_built = gaslib::make_air5<double>(reference_scales);
+        const AirScaled& gas_s = scaled_built.model;
+        for (const auto& y : {air, dissociated}) {
+            const auto mix = mixture(gas, fractions(y));
+            const auto mix_s = mixture(gas_s, fractions(y));
+            for (const double rho_value : {1.0e-4, 1.0, 100.0}) {
+                for (const double t : {1000.0, 5000.0, 15000.0}) {
+                    const Rho rho {rho_value};
+                    const auto e = thermo_state(gas, mix, rho, Temp {t}).state.e;
+                    const auto a = thermo_state(gas, mix, rho, e);
+                    const auto b = thermo_state(gas_s,
+                                                mix_s,
+                                                gaslib::convert<scaled>(rho, reference_scales),
+                                                gaslib::convert<scaled>(e, reference_scales));
+                    expect(b.status == Status::Valid);
+                    const auto temp = gaslib::convert<si>(b.state.temp, reference_scales);
+                    const auto p = gaslib::convert<si>(b.state.p, reference_scales);
+                    const auto e_si = gaslib::convert<si>(b.state.e, reference_scales);
+                    expect(relative(temp.value(), a.state.temp.value(), 1.0e-12))
+                      << rho_value << t << temp.value() << a.state.temp.value();
+                    expect(relative(p.value(), a.state.p.value(), 1.0e-12));
+                    expect(relative(e_si.value(), a.state.e.value(), 1.0e-12));
+                }
+            }
+        }
+    };
+
+    "status reports non-convergence, invalid states and composition violations"_test = [&] {
+        const auto mix = mixture(gas, fractions(air));
+        const E e = thermo_state(gas, mix, Rho {1.0}, Temp {5000.0}).state.e;
+        Air one_iteration = gas;
+        one_iteration.max_iterations = 1;
+        expect(thermo_state(one_iteration, mix, Rho {1.0}, e).status == Status::NotConverged);
+        expect(thermo_state(gas, mix, Rho {0.0}, e).status == Status::Invalid);
+        expect(thermo_state(gas, mix, Rho {-1.0}, e).status == Status::Invalid);
+        expect(
+          thermo_state(gas, mix, Rho {1.0}, E {std::numeric_limits<double>::quiet_NaN()}).status ==
+          Status::Invalid);
+        expect(thermo_state(gas, mix, Rho {1.0}, Temp {-5.0}).status == Status::Invalid);
+        const std::array<double, 5> violated {0.767, 0.233 + 1.0e-10, 0.0, 0.0, 0.0};
+        expect(thermo_state(gas, fractions(violated), Rho {1.0}, e).status ==
+               Status::CompositionViolation);
+        expect(thermo_state(gas, fractions(violated), Rho {1.0}, Temp {500.0}).status ==
+               Status::CompositionViolation);
+        expect(thermo_state(gas, fractions(violated), Rho {-1.0}, e).status == Status::Invalid);
+    };
+
+    "a temperature guess near the answer gives the same temperature"_test = [&] {
+        for (const auto& y : {air, dissociated}) {
+            const auto mix = mixture(gas, fractions(y));
+            for (const double t : {250.0, 1000.0, 5000.0, 30000.0}) {
+                const Rho rho {1.0};
+                const E e = thermo_state(gas, mix, rho, Temp {t}).state.e;
+                const auto without = thermo_state(gas, mix, rho, e);
+                const auto with = thermo_state(gas, mix, rho, e, Guess {Temp {1.01 * t}});
+                expect(with.status == Status::Valid);
+                expect(relative(with.state.temp.value(),
+                                without.state.temp.value(),
+                                2.0 * solve_tolerance));
+                // Through the front end, from a composition view and rho e.
+                const auto front = thermo_state(gas,
+                                                fractions(y),
+                                                RhoE {gaslib::energy_density(rho, e)},
+                                                rho,
+                                                Guess {Temp {0.99 * t}});
+                expect(relative(front.state.temp.value(), t, 2.0 * solve_tolerance));
+                // A guess outside the temperature limits is clamped to them.
+                expect(
+                  relative(thermo_state(gas, mix, rho, e, Guess {Temp {1.0e9}}).state.temp.value(),
+                           t,
+                           2.0 * solve_tolerance));
+            }
+        }
+    };
+
+    "species properties are consistent with each other and the closure"_test = [&] {
+        for (const double t : {250.0, 1000.0, 5000.0, 30000.0}) {
+            const auto sp = gaslib::species_properties(gas, Temp {t});
+            expect(sp.n == 5_i);
+            double e_mix = 0;
+            double cv_mix = 0;
+            double e_scale = 0;
+            for (std::size_t i = 0; i < 5; ++i) {
+                const double r = gas.gas_constant[i].value();
+                const double h = sp.enthalpy[i].value();
+                const double s = sp.entropy[i].value();
+                const double g = sp.gibbs_energy[i].value();
+                expect(std::abs(g - (h - (t * s))) <= 4.0 * eps * (std::abs(h) + std::abs(t * s)));
+                expect(std::abs(sp.energy[i].value() - (h - (r * t))) <=
+                       4.0 * eps * (std::abs(h) + (r * t)));
+                e_mix += dissociated[i] * sp.energy[i].value();
+                cv_mix += dissociated[i] * sp.cv[i].value();
+                e_scale += dissociated[i] * (std::abs(h) + (r * t));
+            }
+            const auto mix = mixture(gas, fractions(dissociated));
+            const auto c = thermo_state(gas, mix, Rho {1.0}, Temp {t});
+            expect(std::abs(c.state.e.value() - e_mix) <= 16.0 * eps * e_scale)
+              << t << c.state.e.value() << e_mix;
+            expect(relative(gaslib::properties(gas, mix, c.state).cv.value(), cv_mix, 1.0e-14));
+        }
+    };
+
+    "float states close with double parameters"_test = [&] {
+        const std::array<float, 5> y {0.767F, 0.233F, 0.0F, 0.0F, 0.0F};
+        const auto mix = mixture(gas, fractions(y));
+        const auto c = thermo_state(gas,
+                                    mix,
+                                    gaslib::Density<float, si> {1.0F},
+                                    gaslib::Temperature<float, si> {2000.0F});
+        const auto back = thermo_state(gas, mix, gaslib::Density<float, si> {1.0F}, c.state.e);
+        expect(back.status == Status::Valid);
+        expect(std::abs(back.state.temp.value() - 2000.0F) <= 1.0e-5F * 2000.0F);
+    };
+}

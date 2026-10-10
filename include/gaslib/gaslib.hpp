@@ -5,7 +5,10 @@
 
 #include <gaslib/build.hpp>                       // IWYU pragma: export
 #include <gaslib/config.hpp>                      // IWYU pragma: export
+#include <gaslib/data/air5.hpp>                   // IWYU pragma: export
 #include <gaslib/models/calorically_perfect.hpp>  // IWYU pragma: export
+#include <gaslib/models/thermally_perfect.hpp>    // IWYU pragma: export
+#include <gaslib/nasa9.hpp>                       // IWYU pragma: export
 #include <gaslib/quantity.hpp>                    // IWYU pragma: export
 #include <gaslib/scalar.hpp>                      // IWYU pragma: export
 #include <gaslib/species.hpp>                     // IWYU pragma: export

@@ -46,6 +46,13 @@ template <Scalar T, UnitSystem U> struct Properties {
     SpecificGasConstant<T, U> gas_constant;
 };
 
+// Initial temperature for a closure that solves for the temperature
+// iteratively. Passed to thermo_state after the state variables; models
+// that accept it say so through AcceptsInput. Only its value part is used.
+template <Scalar T, UnitSystem U> struct TemperatureGuess {
+    Temperature<T, U> temp;
+};
+
 // Result of a closure: the state of the model and the status of the
 // calculation. The state must not be used when the status is Invalid.
 template <ThermoStateType S> struct ClosureOf {
