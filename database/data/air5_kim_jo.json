@@ -1,0 +1,291 @@
+{
+   "format": "gaslib-reactions-1",
+   "units": {
+      "quantity": "mol",
+      "length": "m",
+      "time": "s",
+      "temperature": "K"
+   },
+   "temperature_limits": {
+      "lower": 300.0,
+      "upper": 30000.0
+   },
+   "reactions": [
+      {
+         "equation": "N2 + N2 <=> N + N + N2",
+         "reactants": {
+            "N2": 2.0
+         },
+         "products": {
+            "N": 2.0,
+            "N2": 1.0
+         },
+         "forward": {
+            "model": "arrhenius",
+            "A": 121600000000000.0,
+            "n": -1.214,
+            "activation_temperature": 113200.0
+         },
+         "backward": {
+            "model": "equilibrium"
+         },
+         "label": "N2diss"
+      },
+      {
+         "equation": "N2 + O2 <=> N + N + O2",
+         "reactants": {
+            "N2": 1.0,
+            "O2": 1.0
+         },
+         "products": {
+            "N": 2.0,
+            "O2": 1.0
+         },
+         "forward": {
+            "model": "arrhenius",
+            "A": 7000000000000000.0,
+            "n": -1.6,
+            "activation_temperature": 113200.0
+         },
+         "backward": {
+            "model": "equilibrium"
+         },
+         "label": "N2diss"
+      },
+      {
+         "equation": "N2 + NO <=> N + N + NO",
+         "reactants": {
+            "N2": 1.0,
+            "NO": 1.0
+         },
+         "products": {
+            "N": 2.0,
+            "NO": 1.0
+         },
+         "forward": {
+            "model": "arrhenius",
+            "A": 7000000000000000.0,
+            "n": -1.6,
+            "activation_temperature": 113200.0
+         },
+         "backward": {
+            "model": "equilibrium"
+         },
+         "label": "N2diss"
+      },
+      {
+         "equation": "N2 + N <=> N + N + N",
+         "reactants": {
+            "N2": 1.0,
+            "N": 1.0
+         },
+         "products": {
+            "N": 3.0
+         },
+         "forward": {
+            "model": "arrhenius",
+            "A": 359100000000000.0,
+            "n": -1.226,
+            "activation_temperature": 113200.0
+         },
+         "backward": {
+            "model": "equilibrium"
+         },
+         "label": "N2diss"
+      },
+      {
+         "equation": "N2 + O <=> N + N + O",
+         "reactants": {
+            "N2": 1.0,
+            "O": 1.0
+         },
+         "products": {
+            "N": 2.0,
+            "O": 1.0
+         },
+         "forward": {
+            "model": "arrhenius",
+            "A": 3e+16,
+            "n": -1.6,
+            "activation_temperature": 113200.0
+         },
+         "backward": {
+            "model": "equilibrium"
+         },
+         "label": "N2diss"
+      },
+      {
+         "equation": "O2 + N2 <=> O + O + N2",
+         "reactants": {
+            "O2": 1.0,
+            "N2": 1.0
+         },
+         "products": {
+            "O": 2.0,
+            "N2": 1.0
+         },
+         "forward": {
+            "model": "arrhenius",
+            "A": 3354000000.0,
+            "n": -0.2726,
+            "activation_temperature": 59500.0
+         },
+         "backward": {
+            "model": "equilibrium"
+         },
+         "label": "O2diss"
+      },
+      {
+         "equation": "O2 + O2 <=> O + O + O2",
+         "reactants": {
+            "O2": 2.0
+         },
+         "products": {
+            "O": 2.0,
+            "O2": 1.0
+         },
+         "forward": {
+            "model": "arrhenius",
+            "A": 1.117e+19,
+            "n": -2.585,
+            "activation_temperature": 59500.0
+         },
+         "backward": {
+            "model": "equilibrium"
+         },
+         "label": "O2diss"
+      },
+      {
+         "equation": "O2 + NO <=> O + O + NO",
+         "reactants": {
+            "O2": 1.0,
+            "NO": 1.0
+         },
+         "products": {
+            "O": 2.0,
+            "NO": 1.0
+         },
+         "forward": {
+            "model": "arrhenius",
+            "A": 3354000000.0,
+            "n": -0.2726,
+            "activation_temperature": 59500.0
+         },
+         "backward": {
+            "model": "equilibrium"
+         },
+         "label": "O2diss"
+      },
+      {
+         "equation": "O2 + N <=> O + O + N",
+         "reactants": {
+            "O2": 1.0,
+            "N": 1.0
+         },
+         "products": {
+            "O": 2.0,
+            "N": 1.0
+         },
+         "forward": {
+            "model": "arrhenius",
+            "A": 1e+16,
+            "n": -1.5,
+            "activation_temperature": 59500.0
+         },
+         "backward": {
+            "model": "equilibrium"
+         },
+         "label": "O2diss"
+      },
+      {
+         "equation": "O2 + O <=> O + O + O",
+         "reactants": {
+            "O2": 1.0,
+            "O": 1.0
+         },
+         "products": {
+            "O": 3.0
+         },
+         "forward": {
+            "model": "arrhenius",
+            "A": 3000000000000000.0,
+            "n": -1.5,
+            "activation_temperature": 59500.0
+         },
+         "backward": {
+            "model": "equilibrium"
+         },
+         "label": "O2diss"
+      },
+      {
+         "equation": "NO + M <=> N + O + M",
+         "reactants": {
+            "NO": 1.0
+         },
+         "products": {
+            "N": 1.0,
+            "O": 1.0
+         },
+         "forward": {
+            "model": "arrhenius",
+            "A": 1450000000.0,
+            "n": 0.0,
+            "activation_temperature": 75200.0
+         },
+         "backward": {
+            "model": "equilibrium"
+         },
+         "third_body": {
+            "efficiencies": {
+               "N2": 1.0,
+               "O2": 1.0,
+               "NO": 0.664827586,
+               "N": 0.664827586,
+               "O": 0.664827586
+            }
+         },
+         "label": "NOdiss"
+      },
+      {
+         "equation": "NO + O <=> O2 + N",
+         "reactants": {
+            "NO": 1.0,
+            "O": 1.0
+         },
+         "products": {
+            "O2": 1.0,
+            "N": 1.0
+         },
+         "forward": {
+            "model": "arrhenius",
+            "A": 8400000.0,
+            "n": 0.0,
+            "activation_temperature": 19450.0
+         },
+         "backward": {
+            "model": "equilibrium"
+         }
+      },
+      {
+         "equation": "N2 + O <=> NO + N",
+         "reactants": {
+            "N2": 1.0,
+            "O": 1.0
+         },
+         "products": {
+            "NO": 1.0,
+            "N": 1.0
+         },
+         "forward": {
+            "model": "arrhenius",
+            "A": 640000000000.0,
+            "n": -1.0,
+            "activation_temperature": 38400.0
+         },
+         "backward": {
+            "model": "equilibrium"
+         }
+      }
+   ],
+   "reference": "Kim and Jo, Int. J. Heat Mass Transf. 169 (2021) (dissociation) and Park (1993) (NO exchange), as given in GDTk examples/lmr/2D/shock-tunnel-nozzles/five-species-air/rr-kim-air5-1T.inp (gdtk-uq/gdtk commit bf559c3f), converted to SI"
+}

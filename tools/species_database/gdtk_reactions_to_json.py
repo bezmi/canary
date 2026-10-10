@@ -1,0 +1,136 @@
+"""Converts a GDTk reaction-mechanism input file (Reaction{...} entries,
+pre-exponential factors in CGS units) to a gaslib reactions file
+(format gaslib-reactions-1, SI units).
+
+Each Reaction{...} entry gives an equation such as 'N2 + N2 <=> N + N + N2'
+or 'NO + M <=> N + O + M', a forward rate fr={'Arrhenius', A=, n=, C=}
+(k = A T^n exp(-C / T), A in (cm^3/mol)^(order - 1) / s, C in K), optionally
+a backward rate br={...} of the same form (otherwise the backward rate comes
+from the equilibrium constant), optionally collider efficiencies
+efficiencies={['N2']=1.0, ...} for reactions with M, and a label. The
+reaction order counts every reactant, including M. Temperature limits come
+from Config{tempLimits={lower=, upper=}}.
+
+Usage: gdtk_reactions_to_json.py mechanism.inp --source TEXT -o out.json
+"""
+
+import argparse
+import json
+import re
+from decimal import Decimal
+
+FORMAT = "gaslib-reactions-1"
+UNITS = {"quantity": "mol", "length": "m", "time": "s", "temperature": "K"}
+
+
+def entries(text, keyword):
+    """Bodies of keyword{...} blocks with balanced braces."""
+    out, pos = [], 0
+    while True:
+        match = re.compile(rf"\b{keyword}\s*\{{").search(text, pos)
+        if not match:
+            return out
+        depth, start = 1, match.end()
+        for i in range(start, len(text)):
+            depth += {"{": 1, "}": -1}.get(text[i], 0)
+            if depth == 0:
+                out.append(text[start:i])
+                pos = i + 1
+                break
+
+
+def strip_comments(text):
+    return "\n".join(line.split("--", 1)[0] for line in text.splitlines())
+
+
+def side(expression):
+    """'N + N + N2' -> ({'N': 2, 'N2': 1}, has_M)."""
+    counts, third_body = {}, False
+    for term in expression.split("+"):
+        term = term.strip()
+        match = re.fullmatch(r"(\d*)\s*([A-Za-z][A-Za-z0-9_+-]*?)", term)
+        if not match:
+            raise SystemExit(f"cannot read term '{term}'")
+        coefficient, name = int(match.group(1) or 1), match.group(2)
+        if name == "M":
+            third_body = True
+        else:
+            counts[name] = counts.get(name, 0) + coefficient
+    return counts, third_body
+
+
+def arrhenius(body, order):
+    match = re.search(r"\{\s*['\"]Arrhenius['\"]\s*,([^}]*)\}", body)
+    if not match:
+        raise SystemExit(f"unsupported rate form in: {body.strip()[:60]}")
+    fields = dict(re.findall(r"(\w+)\s*=\s*([0-9.eE+-]+)", match.group(1)))
+    a_cgs = Decimal(fields["A"])
+    # (cm^3/mol)^(order - 1) / s -> (m^3/mol)^(order - 1) / s
+    a_si = a_cgs * (Decimal("1e-6") ** (order - 1))
+    return {
+        "model": "arrhenius",
+        "A": float(a_si),
+        "n": float(fields.get("n", "0")),
+        "activation_temperature": float(fields.get("C", "0")),
+    }
+
+
+def convert_reaction(body):
+    equation = re.search(r"['\"]([^'\"]*<=>[^'\"]*|[^'\"]*=>[^'\"]*)['\"]", body).group(1)
+    if "<=>" not in equation:
+        raise SystemExit(f"only reversible reactions (<=>) are converted: {equation}")
+    left, right = (s.strip() for s in equation.split("<=>"))
+    reactants, m_left = side(left)
+    products, m_right = side(right)
+    if m_left != m_right:
+        raise SystemExit(f"M on one side only: {equation}")
+    order = sum(reactants.values()) + (1 if m_left else 0)
+    forward_body = re.search(r"\bfr\s*=\s*(\{[^}]*\})", body).group(1)
+    reaction = {
+        "equation": equation,
+        "reactants": {k: float(v) for k, v in reactants.items()},
+        "products": {k: float(v) for k, v in products.items()},
+        "forward": arrhenius(forward_body, order),
+    }
+    backward = re.search(r"\bbr\s*=\s*(\{[^}]*\})", body)
+    if backward:
+        backward_order = sum(products.values()) + (1 if m_right else 0)
+        reaction["backward"] = arrhenius(backward.group(1), backward_order)
+    else:
+        reaction["backward"] = {"model": "equilibrium"}
+    if m_left:
+        efficiencies = re.search(r"\befficiencies\s*=\s*\{([^}]*)\}", body)
+        pairs = re.findall(r"\[\s*['\"]([^'\"]+)['\"]\s*\]\s*=\s*([0-9.eE+-]+)", efficiencies.group(1)) if efficiencies else []
+        reaction["third_body"] = {"efficiencies": {k: float(v) for k, v in pairs}}
+    label = re.search(r"\blabel\s*=\s*['\"]([^'\"]*)['\"]", body)
+    if label:
+        reaction["label"] = label.group(1)
+    return reaction
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("mechanism")
+    parser.add_argument("--source", required=True)
+    parser.add_argument("-o", "--output", required=True)
+    args = parser.parse_args()
+    text = strip_comments(open(args.mechanism, encoding="utf-8").read())
+    limits = {"lower": 300.0, "upper": 50000.0}
+    for config in entries(text, "Config"):
+        match = re.search(r"tempLimits\s*=\s*\{([^}]*)\}", config)
+        if match:
+            limits.update({k: float(v) for k, v in re.findall(r"(lower|upper)\s*=\s*([0-9.eE+-]+)", match.group(1))})
+    out = {
+        "format": FORMAT,
+        "units": UNITS,
+        "temperature_limits": limits,
+        "reactions": [convert_reaction(body) for body in entries(text, "Reaction")],
+        "reference": args.source,
+    }
+    with open(args.output, "w", encoding="utf-8") as stream:
+        json.dump(out, stream, indent=3)
+        stream.write("\n")
+
+
+if __name__ == "__main__":
+    main()

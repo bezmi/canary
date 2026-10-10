@@ -1,0 +1,22 @@
+-- Test input in the layout of GDTk reaction-mechanism files, written for
+-- gaslib's converter test. Rates: Kim and Jo, Int. J. Heat Mass Transf. 169
+-- (2021), and Park (1993), in CGS units.
+Config{
+   tempLimits = {lower=300.0, upper=30000.0},
+}
+
+Reaction{'N2 + N2 <=> N + N + N2',
+   fr={'Arrhenius', A=1.216e+20, n=-1.214, C=113200},
+   label="N2diss"
+}
+
+Reaction{'NO + M <=> N + O + M',
+   fr={'Arrhenius', A=1.450e+15, n=0.0, C=75200.0},
+   efficiencies={['N2']=1.0, ['O2']=1.0, ['NO']=0.664827586, ['N']=0.664827586, ['O']=0.664827586},
+   label="NOdiss",
+}
+
+Reaction{'N2 + O <=> NO + N',
+   fr={'Arrhenius', A=6.4e17, n=-1.0, C=38400.0},
+   br={'Arrhenius', A=1.6e13, n=0.1, C=0.0},
+}

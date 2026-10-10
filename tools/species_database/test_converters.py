@@ -45,4 +45,31 @@ with tempfile.TemporaryDirectory() as tmp:
                     print(f"{label} {name}: thermo {key} differs")
             print(f"{label} {name}: checked")
 
+# Reaction mechanism converter: CGS to SI by (1e-6)^(order - 1), third-body
+# efficiencies, and the default backward rate from the equilibrium constant.
+with tempfile.TemporaryDirectory() as tmp:
+    out = Path(tmp) / "reactions.json"
+    subprocess.run([sys.executable, str(tools / "gdtk_reactions_to_json.py"), str(data / "gdtk_mechanism_sample.inp"),
+                    "--source", "test", "-o", str(out)], check=True)
+    mechanism = json.loads(out.read_text())
+    checks = [
+        (mechanism["format"], "gaslib-reactions-1"),
+        (mechanism["temperature_limits"], {"lower": 300.0, "upper": 30000.0}),
+        (len(mechanism["reactions"]), 3),
+        (mechanism["reactions"][0]["reactants"], {"N2": 2.0}),
+        (mechanism["reactions"][0]["products"], {"N": 2.0, "N2": 1.0}),
+        (mechanism["reactions"][0]["forward"], {"model": "arrhenius", "A": 1.216e14, "n": -1.214,
+                                                "activation_temperature": 113200.0}),
+        (mechanism["reactions"][0]["backward"], {"model": "equilibrium"}),
+        (mechanism["reactions"][1]["forward"]["A"], 1.45e9),
+        (mechanism["reactions"][1]["third_body"]["efficiencies"]["NO"], 0.664827586),
+        (mechanism["reactions"][2]["backward"], {"model": "arrhenius", "A": 1.6e7, "n": 0.1,
+                                                 "activation_temperature": 0.0}),
+    ]
+    for got, expected in checks:
+        if got != expected:
+            failures += 1
+            print(f"reaction converter: {got} != {expected}")
+    print("reaction converter: checked")
+
 sys.exit(1 if failures else 0)
