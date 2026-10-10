@@ -20,4 +20,5 @@ int main()
     test_calorically_perfect();
     test_calorically_perfect_mixture();
     test_cerberus_parity();
+    test_transport();
 }
