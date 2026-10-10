@@ -222,6 +222,13 @@ void test_quantity()
         expect(std::abs((cp.value() / cv.value()) - 1.4) <= 2.0 * 0x1p-52 * 1.4);
     };
 
+    "heat capacity ratio from cp and cv"_test = [] {
+        const KindOf<kind::heat_capacity_ratio> auto gamma =
+          gaslib::heat_capacity_ratio(SpecificHeat<double, si> {1004.5},
+                                      SpecificHeat<double, si> {717.5});
+        expect(gamma.value() == 1004.5 / 717.5);
+    };
+
     "conductivity from viscosity, heat capacity and Prandtl number"_test = [] {
         const KindOf<kind::thermal_conductivity> auto k =
           gaslib::conductivity(gaslib::DynamicViscosity<double, si> {1.8e-5},

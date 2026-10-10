@@ -129,6 +129,17 @@ concept SpeciesWeights =
 namespace detail
 {
 
+// Value of weight i clamped to [0, total]. The weights are mass fractions
+// or partial densities; only their ratios to the sum of the clamped weights
+// are used, so their value parts enter the mixing rules directly.
+template <SpeciesRange V, Scalar T>
+    requires std::same_as<typename range_quantity_t<V>::value_type, T> && HasMin<T> && HasMax<T>
+GASLIB_HOST_DEVICE constexpr T clamped_weight(const V& weights, std::size_t i, T total)
+{
+    using Value = ScalarTraits<T>::value_type;
+    return math::min(math::max(weights[i].value(), T(Value(0))), total);
+}
+
 // Sums over the species of the clamped weights w, of w / m and of
 // (w / m) q, where w is each weight clamped to [0, total].
 template <Scalar W, Scalar N, Scalar C> struct WeightSums {
@@ -144,15 +155,10 @@ GASLIB_HOST_DEVICE constexpr auto
     // NOLINTNEXTLINE(misc-static-assert): run-time species count and extent
     GASLIB_ASSERT(species.n >= 1 && static_cast<std::size_t>(species.n) ==
                                       static_cast<std::size_t>(weights.extent(0)));
-    using Value = ScalarTraits<T>::value_type;
-    const T zero(Value(0));
-    const auto clamped = [&](std::size_t i) {
-        return math::min(math::max(weights[i].value(), zero), total);
-    };
     // Number weight w / m and charge weight (w / m) q of one species.
     using Number = decltype(std::declval<T>() / std::declval<P>());
     using ChargeWeight = decltype(std::declval<Number>() * std::declval<P>());
-    const T w0 = clamped(0);
+    const T w0 = clamped_weight(weights, 0, total);
     const Number n0 = w0 / species.mass[0].value();
     WeightSums<T, Number, ChargeWeight> sums {
       .weight = w0,
@@ -160,7 +166,7 @@ GASLIB_HOST_DEVICE constexpr auto
       .charge = n0 * species.charge[0].value(),
     };
     for (std::size_t i = 1; i < static_cast<std::size_t>(species.n); ++i) {
-        const T w = clamped(i);
+        const T w = clamped_weight(weights, i, total);
         const Number n = w / species.mass[i].value();
         sums.weight = sums.weight + w;
         sums.number = sums.number + n;

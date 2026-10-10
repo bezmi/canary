@@ -17,4 +17,10 @@
     #define GASLIB_ASSERT(cond) assert(cond)
 #endif
 
+// Species capacity of generic mixture models (the default Capacity template
+// argument). Named models use their exact species count.
+#ifndef GASLIB_MAX_SPECIES
+    #define GASLIB_MAX_SPECIES 16
+#endif
+
 #endif  // GASLIB_CONFIG_HPP
