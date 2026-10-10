@@ -5,7 +5,7 @@ function(gaslib_test_options target)
   target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endfunction()
 
-add_executable(gaslib_tests test_main.cpp test_config_default.cpp test_config_consumer.cpp test_scalar.cpp)
+add_executable(gaslib_tests test_main.cpp test_config_default.cpp test_config_consumer.cpp test_scalar.cpp test_quantity.cpp)
 target_link_libraries(gaslib_tests PRIVATE gaslib::gaslib Boost::ut)
 gaslib_test_options(gaslib_tests)
 add_test(NAME gaslib.unit COMMAND gaslib_tests)
@@ -32,6 +32,10 @@ gaslib_compile_fail_test(self_test "compile-fail self test")
 gaslib_compile_fail_test(scalar_pointer "satisf(y|action of) [^ ]*Scalar")
 gaslib_compile_fail_test(scalar_without_traits "satisf(y|action of) [^ ]*Scalar")
 gaslib_compile_fail_test(math_function_missing "satisf(y|action of) [^ ]*HasExp")
+gaslib_compile_fail_test(quantity_add_other_kind "(no match for [^ ]*operator\\+|invalid operands to binary expression).*Pressure.*Temperature")
+gaslib_compile_fail_test(quantity_add_other_units "(no match for [^ ]*operator\\+|invalid operands to binary expression).*Density<double, gaslib::si>.*Density<double, gaslib::scaled>")
+gaslib_compile_fail_test(quantity_product_without_relation "(no match for [^ ]*operator\\*|invalid operands to binary expression).*Density.*Temperature")
+gaslib_compile_fail_test(quantity_molar_scaled "KindUnits<(K, U|gaslib::kind::molar_mass, gaslib::scaled)>")
 
 # Each public header is compiled alone, as strict C++20, with only the
 # include directories of gaslib::gaslib (include/ and mdspan). This checks

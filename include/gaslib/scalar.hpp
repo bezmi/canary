@@ -22,10 +22,14 @@ template <std::floating_point T> struct ScalarTraits<T> {
 
 // Type of the per-cell values that gaslib functions compute with: double,
 // float, or a dual number that carries derivatives. Comparisons use the
-// value part.
+// value part. The ScalarTraits requirement is checked first, so a type
+// without it is rejected before any operator lookup.
 template <typename T>
-concept Scalar = std::copyable<T> && requires(const T a, const T b) {
-    requires std::floating_point<typename ScalarTraits<T>::value_type>;
+concept HasScalarTraits = requires { typename ScalarTraits<T>::value_type; } &&
+                          std::floating_point<typename ScalarTraits<T>::value_type>;
+
+template <typename T>
+concept Scalar = HasScalarTraits<T> && std::copyable<T> && requires(const T a, const T b) {
     { ScalarTraits<T>::value(a) } -> std::same_as<typename ScalarTraits<T>::value_type>;
     { -a } -> std::convertible_to<T>;
     { a + b } -> std::convertible_to<T>;
@@ -50,6 +54,22 @@ concept ScalarWith = Scalar<T> && std::floating_point<P> && requires(const T t, 
     { p * t } -> std::convertible_to<T>;
     { t / p } -> std::convertible_to<T>;
     { p / t } -> std::convertible_to<T>;
+};
+
+// Two scalar types that combine in either operand position, each result
+// being a scalar type. Used where both operands may be state values or
+// parameters, for example a gas constant that is a model parameter for one
+// species and a per-cell value for a mixture.
+template <typename A, typename B>
+concept ScalarPair = Scalar<A> && Scalar<B> && requires(const A a, const B b) {
+    { a + b } -> Scalar;
+    { b + a } -> Scalar;
+    { a - b } -> Scalar;
+    { b - a } -> Scalar;
+    { a * b } -> Scalar;
+    { b * a } -> Scalar;
+    { a / b } -> Scalar;
+    { b / a } -> Scalar;
 };
 
 namespace detail::scalar_lookup
