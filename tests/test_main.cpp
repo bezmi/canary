@@ -13,4 +13,5 @@ int main()
     test_scalar();
     test_quantity();
     test_units();
+    test_status();
 }
