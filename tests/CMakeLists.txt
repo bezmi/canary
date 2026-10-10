@@ -6,7 +6,7 @@ function(gaslib_test_options target)
 endfunction()
 
 add_executable(gaslib_tests test_main.cpp test_config_default.cpp test_config_consumer.cpp test_scalar.cpp test_quantity.cpp test_units.cpp test_status.cpp test_species.cpp test_state.cpp test_thermo.cpp test_calorically_perfect.cpp test_calorically_perfect_mixture.cpp
-                            test_cerberus_parity.cpp test_transport.cpp)
+                            test_cerberus_parity.cpp test_transport.cpp test_solve.cpp)
 target_link_libraries(gaslib_tests PRIVATE gaslib::gaslib Boost::ut)
 gaslib_test_options(gaslib_tests)
 add_test(NAME gaslib.unit COMMAND gaslib_tests)

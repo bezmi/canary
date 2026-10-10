@@ -17,5 +17,6 @@ void test_calorically_perfect();
 void test_calorically_perfect_mixture();
 void test_cerberus_parity();
 void test_transport();
+void test_solve();
 
 #endif  // GASLIB_TESTS_TEST_SUITES_HPP
