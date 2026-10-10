@@ -16,4 +16,5 @@ int main()
     test_status();
     test_species();
     test_state();
+    test_thermo();
 }
