@@ -259,6 +259,22 @@ template <Scalar A, Scalar B, UnitSystem U>
 GASLIB_HOST_DEVICE constexpr auto specific_energy(EnergyDensity<A, U> rho_e, Density<B, U> rho)
 { return detail::make_quantity<kind::specific_energy, U>(rho_e.value() / rho.value()); }
 
+// rho = p / (R * T)
+template <Scalar A, Scalar B, Scalar C, UnitSystem U>
+    requires ScalarPair<B, C> && ScalarPair<A, detail::product_t<B, C>>
+GASLIB_HOST_DEVICE constexpr auto
+  density(Pressure<A, U> p, SpecificGasConstant<B, U> gas_constant, Temperature<C, U> temp)
+{
+    return detail::make_quantity<kind::density, U>(p.value() /
+                                                   (gas_constant.value() * temp.value()));
+}
+
+// e = cv * T
+template <Scalar A, Scalar B, UnitSystem U>
+    requires ScalarPair<A, B>
+GASLIB_HOST_DEVICE constexpr auto specific_energy(SpecificHeat<A, U> cv, Temperature<B, U> temp)
+{ return detail::make_quantity<kind::specific_energy, U>(cv.value() * temp.value()); }
+
 // k = (mu * cp) / Pr
 template <Scalar A, Scalar B, Scalar C, UnitSystem U>
     requires ScalarPair<A, B> && ScalarPair<detail::product_t<A, B>, C>

@@ -159,6 +159,22 @@ void test_quantity()
         expect(e.value() == 1.5_d);
     };
 
+    "density from pressure, gas constant and temperature"_test = [] {
+        const KindOf<kind::density> auto rho =
+          gaslib::density(Pressure<double, si> {101325.0},
+                          SpecificGasConstant<double, si> {287.0},
+                          Temperature<double, si> {300.0});
+        expect(rho.value() == 101325.0 / (287.0 * 300.0));
+    };
+
+    "specific energy from heat capacity and temperature inverts temperature(e, cv)"_test = [] {
+        const SpecificHeat<double, si> cv {717.5};
+        const KindOf<kind::specific_energy> auto e =
+          gaslib::specific_energy(cv, Temperature<double, si> {300.0});
+        expect(e.value() == 717.5 * 300.0);
+        expect(gaslib::temperature(e, cv).value() == 300.0_d);
+    };
+
     "conductivity from viscosity, heat capacity and Prandtl number"_test = [] {
         const KindOf<kind::thermal_conductivity> auto k =
           gaslib::conductivity(gaslib::DynamicViscosity<double, si> {1.8e-5},
