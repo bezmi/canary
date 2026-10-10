@@ -17,4 +17,5 @@ int main()
     test_species();
     test_state();
     test_thermo();
+    test_calorically_perfect();
 }
