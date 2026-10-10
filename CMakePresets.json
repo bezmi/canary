@@ -1,0 +1,186 @@
+{
+    "version": 8,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 29,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "default",
+            "hidden": true,
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/${presetName}"
+        },
+        {
+            "name": "clang",
+            "hidden": true,
+            "cacheVariables": {
+                "CMAKE_CXX_COMPILER": "clang++"
+            }
+        },
+        {
+            "name": "debug",
+            "inherits": "default",
+            "description": "Debug build",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "debug-clang",
+            "inherits": [
+                "clang",
+                "default",
+                "debug"
+            ],
+            "description": "Debug build (clang)"
+        },
+        {
+            "name": "release",
+            "inherits": "default",
+            "description": "Release build",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "release-clang",
+            "inherits": [
+                "clang",
+                "default",
+                "release"
+            ],
+            "description": "Release build (clang)"
+        },
+        {
+            "name": "reldeb",
+            "inherits": "default",
+            "description": "RelWithDeb build",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+            }
+        },
+        {
+            "name": "reldeb-clang",
+            "inherits": [
+                "clang",
+                "default",
+                "reldeb"
+            ],
+            "description": "RelWithDeb build (clang)"
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "build-debug",
+            "configurePreset": "debug",
+            "description": "Build Debug (gcc)"
+        },
+        {
+            "name": "build-release",
+            "configurePreset": "release",
+            "description": "Build Release (gcc)"
+        },
+        {
+            "name": "build-reldeb",
+            "configurePreset": "reldeb",
+            "description": "Build RelWithDebInfo (gcc)"
+        },
+        {
+            "name": "build-debug-clang",
+            "configurePreset": "debug-clang",
+            "description": "Build Debug (clang)"
+        },
+        {
+            "name": "build-release-clang",
+            "configurePreset": "release-clang",
+            "description": "Build Release (clang)"
+        },
+        {
+            "name": "build-reldeb-clang",
+            "configurePreset": "reldeb-clang",
+            "description": "Build RelWithDebInfo (clang)"
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "debug",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "debug"
+                },
+                {
+                    "type": "build",
+                    "name": "build-debug"
+                }
+            ]
+        },
+        {
+            "name": "release",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "release"
+                },
+                {
+                    "type": "build",
+                    "name": "build-release"
+                }
+            ]
+        },
+        {
+            "name": "reldeb",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "reldeb"
+                },
+                {
+                    "type": "build",
+                    "name": "build-reldeb"
+                }
+            ]
+        },
+        {
+            "name": "debug-clang",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "debug-clang"
+                },
+                {
+                    "type": "build",
+                    "name": "build-debug-clang"
+                }
+            ]
+        },
+        {
+            "name": "release-clang",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "release-clang"
+                },
+                {
+                    "type": "build",
+                    "name": "build-release-clang"
+                }
+            ]
+        },
+        {
+            "name": "reldeb-clang",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "reldeb-clang"
+                },
+                {
+                    "type": "build",
+                    "name": "build-reldeb-clang"
+                }
+            ]
+        }
+    ]
+}
