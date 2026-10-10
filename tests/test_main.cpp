@@ -19,4 +19,5 @@ int main()
     test_thermo();
     test_calorically_perfect();
     test_calorically_perfect_mixture();
+    test_cerberus_parity();
 }
