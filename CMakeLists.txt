@@ -6,6 +6,7 @@ project(
   LANGUAGES CXX)
 
 option(GASLIB_BUILD_TESTS "Build the gaslib tests" ${PROJECT_IS_TOP_LEVEL})
+option(GASLIB_BUILD_BENCHMARKS "Build the gaslib benchmarks" ${PROJECT_IS_TOP_LEVEL})
 option(GASLIB_FIND_MDSPAN "Use an installed mdspan found with find_package instead of fetching it" OFF)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/cmake)
@@ -35,4 +36,8 @@ if(GASLIB_BUILD_TESTS)
   enable_testing()
   include(GaslibSetupBoostUT)
   add_subdirectory(tests)
+endif()
+
+if(GASLIB_BUILD_BENCHMARKS)
+  add_subdirectory(benchmarks)
 endif()
