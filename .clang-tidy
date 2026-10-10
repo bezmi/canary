@@ -62,7 +62,7 @@ HeaderFileExtensions:
   - hxx
 
 CheckOptions:
-  # The mdspan umbrella header <mdspan/mdspan.hpp> is the public entry point;
-  # its internal headers are not included directly.
+  # The umbrella headers <mdspan/mdspan.hpp> and <glaze/glaze.hpp> are the
+  # public entry points; their internal headers are not included directly.
   - key: misc-include-cleaner.IgnoreHeaders
-    value: 'mdspan/.*;experimental/.*'
+    value: 'mdspan/.*;experimental/.*;glaze/.*'

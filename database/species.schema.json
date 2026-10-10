@@ -1,0 +1,135 @@
+{
+   "type": "object",
+   "properties": {
+      "format": {
+         "type": "string"
+      },
+      "notes": {
+         "type": [
+            "string",
+            "null"
+         ]
+      },
+      "reference": {
+         "type": [
+            "string",
+            "null"
+         ]
+      },
+      "species": {
+         "type": "object",
+         "additionalProperties": {
+            "type": "object",
+            "properties": {
+               "charge": {
+                  "$ref": "#/$defs/double"
+               },
+               "molar_mass": {
+                  "$ref": "#/$defs/double"
+               },
+               "notes": {
+                  "type": [
+                     "string",
+                     "null"
+                  ]
+               },
+               "reference": {
+                  "type": [
+                     "string",
+                     "null"
+                  ]
+               },
+               "thermo": {
+                  "type": "object",
+                  "properties": {
+                     "blend_widths": {
+                        "$ref": "#/$defs/std::vector<double>"
+                     },
+                     "coefficients": {
+                        "type": "array",
+                        "items": {
+                           "type": "array",
+                           "items": {
+                              "$ref": "#/$defs/double"
+                           },
+                           "maxItems": 9
+                        }
+                     },
+                     "model": {
+                        "type": "string"
+                     },
+                     "notes": {
+                        "type": [
+                           "string",
+                           "null"
+                        ]
+                     },
+                     "reference": {
+                        "type": [
+                           "string",
+                           "null"
+                        ]
+                     },
+                     "temperature_ranges": {
+                        "$ref": "#/$defs/std::vector<double>"
+                     }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                     "model",
+                     "temperature_ranges",
+                     "blend_widths",
+                     "coefficients"
+                  ]
+               }
+            },
+            "additionalProperties": false,
+            "required": [
+               "molar_mass",
+               "charge",
+               "thermo"
+            ]
+         }
+      },
+      "units": {
+         "type": "object",
+         "properties": {
+            "energy": {
+               "type": "string"
+            },
+            "molar_mass": {
+               "type": "string"
+            },
+            "temperature": {
+               "type": "string"
+            }
+         },
+         "additionalProperties": false,
+         "required": [
+            "molar_mass",
+            "energy",
+            "temperature"
+         ]
+      }
+   },
+   "additionalProperties": false,
+   "$defs": {
+      "double": {
+         "type": "number",
+         "minimum": -1.7976931348623157E308,
+         "maximum": 1.7976931348623157E308
+      },
+      "std::vector<double>": {
+         "type": "array",
+         "items": {
+            "$ref": "#/$defs/double"
+         }
+      }
+   },
+   "required": [
+      "format",
+      "units",
+      "species"
+   ],
+   "title": "gaslib::database::SpeciesFile"
+}

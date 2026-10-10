@@ -63,3 +63,30 @@ endforeach()
 add_library(gaslib_header_check OBJECT ${header_check_sources})
 target_link_libraries(gaslib_header_check PRIVATE gaslib::gaslib)
 gaslib_test_options(gaslib_header_check)
+
+# Species database library: C++ tests (the public header is C++20) and the
+# Python converter and schema checks, when the interpreter and its yaml and
+# jsonschema modules are available.
+if(TARGET gaslib_database)
+  add_executable(gaslib_database_tests test_database.cpp)
+  target_link_libraries(gaslib_database_tests PRIVATE gaslib::database Boost::ut)
+  target_compile_definitions(gaslib_database_tests PRIVATE GASLIB_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+  gaslib_test_options(gaslib_database_tests)
+  add_test(NAME gaslib.database COMMAND gaslib_database_tests)
+
+  find_package(Python3 COMPONENTS Interpreter)
+  if(Python3_FOUND)
+    execute_process(COMMAND ${Python3_EXECUTABLE} -c "import yaml, jsonschema" RESULT_VARIABLE python_modules_missing
+                    OUTPUT_QUIET ERROR_QUIET)
+    if(NOT python_modules_missing)
+      set(species_tools ${PROJECT_SOURCE_DIR}/tools/species_database)
+      add_test(NAME gaslib.database.converters
+               COMMAND ${Python3_EXECUTABLE} ${species_tools}/test_converters.py ${PROJECT_SOURCE_DIR})
+      add_test(NAME gaslib.database.schema
+               COMMAND ${Python3_EXECUTABLE} ${species_tools}/check_species_files.py
+                       ${PROJECT_SOURCE_DIR}/database/species.schema.json ${PROJECT_SOURCE_DIR}/database/data/air5.json)
+    else()
+      message(STATUS "gaslib: Python modules yaml or jsonschema missing; species converter tests skipped")
+    endif()
+  endif()
+endif()

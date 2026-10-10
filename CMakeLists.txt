@@ -7,6 +7,7 @@ project(
 
 option(GASLIB_BUILD_TESTS "Build the gaslib tests" ${PROJECT_IS_TOP_LEVEL})
 option(GASLIB_BUILD_BENCHMARKS "Build the gaslib benchmarks" ${PROJECT_IS_TOP_LEVEL})
+option(GASLIB_BUILD_DATABASE "Build the species database library (C++23, glaze)" ${PROJECT_IS_TOP_LEVEL})
 option(GASLIB_FIND_MDSPAN "Use an installed mdspan found with find_package instead of fetching it" OFF)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/cmake)
@@ -31,6 +32,11 @@ add_library(gaslib::gaslib ALIAS gaslib)
 target_include_directories(gaslib INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/include>)
 target_compile_features(gaslib INTERFACE cxx_std_20)
 target_link_libraries(gaslib INTERFACE mdspan::mdspan)
+
+if(GASLIB_BUILD_DATABASE)
+  include(GaslibSetupGlaze)
+  add_subdirectory(database)
+endif()
 
 if(GASLIB_BUILD_TESTS)
   enable_testing()
