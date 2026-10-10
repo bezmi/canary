@@ -1,4 +1,5 @@
-#pragma once
+#ifndef GASLIB_CONFIG_HPP
+#define GASLIB_CONFIG_HPP
 
 // Build settings a consumer may define before including any gaslib header.
 
@@ -15,3 +16,5 @@
     #include <cassert>
     #define GASLIB_ASSERT(cond) assert(cond)
 #endif
+
+#endif  // GASLIB_CONFIG_HPP

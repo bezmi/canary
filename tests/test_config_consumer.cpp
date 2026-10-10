@@ -7,8 +7,10 @@ int failed_assertions = 0;
 #define GASLIB_HOST_DEVICE  inline
 #define GASLIB_ASSERT(cond) ((cond) ? void() : void(++failed_assertions))
 
+#include "test_suites.hpp"
+
 #include <boost/ut.hpp>
-#include <gaslib/config.hpp>
+#include <gaslib/config.hpp>  // IWYU pragma: keep
 #include <string_view>
 
 #define GASLIB_TEST_STRING(x)        #x

@@ -1,7 +1,6 @@
-#include <boost/ut.hpp>
+#include "test_suites.hpp"
 
-void test_config_default();
-void test_config_consumer();
+#include <boost/ut.hpp>
 
 int main()
 {

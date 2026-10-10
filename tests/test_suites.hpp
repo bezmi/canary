@@ -1,0 +1,10 @@
+#ifndef GASLIB_TESTS_TEST_SUITES_HPP
+#define GASLIB_TESTS_TEST_SUITES_HPP
+
+// Each test source defines one function that registers its Boost.UT tests;
+// test_main.cpp calls them in order.
+
+void test_config_default();
+void test_config_consumer();
+
+#endif  // GASLIB_TESTS_TEST_SUITES_HPP

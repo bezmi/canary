@@ -1,3 +1,5 @@
+#include "test_suites.hpp"
+
 #include <boost/ut.hpp>
 #include <gaslib/config.hpp>
 #include <string_view>
@@ -20,7 +22,7 @@ void test_config_default()
     };
 
     "GASLIB_ASSERT accepts a true condition by default"_test = [] {
-        GASLIB_ASSERT(annotated() == 1);
+        GASLIB_ASSERT(annotated() == 1);  // NOLINT(misc-static-assert): checks the run-time macro
         expect(true);
     };
 }
