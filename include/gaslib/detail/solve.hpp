@@ -49,8 +49,10 @@ template <Scalar T> struct SolveResult {
 // side where f changes sign. It stops when the step is at most
 // relative_tolerance * |x|, or after max_iterations (status NotConverged).
 //
-// One final Newton step is then taken in the scalar type T with f_full,
-// starting from the converged value as a constant: x = x0 - f(x0) / f'(x0).
+// When T is not the value type (a dual number), one final Newton step is
+// then taken in T with f_full, starting from the converged value as a
+// constant: x = x0 - f(x0) / f'(x0). For a floating-point T the converged
+// value is returned and f_full is not called.
 // With dual-number inputs captured in f_full, the derivative of the root is
 // -(df/dinput) / (df/dx), the implicit-function-theorem derivative, and the
 // value changes by at most one more Newton step.
@@ -100,9 +102,13 @@ GASLIB_HOST_DEVICE SolveResult<T> solve(const FValue& f_value,
         }
     }
 
-    const T x0(x);
-    const Residual<T> r = f_full(x0);
-    return {.root = x0 - (r.value / r.derivative), .status = status};
+    if constexpr (std::same_as<T, V>) {
+        return {.root = x, .status = status};
+    } else {
+        const T x0(x);
+        const Residual<T> r = f_full(x0);
+        return {.root = x0 - (r.value / r.derivative), .status = status};
+    }
 }
 
 }  // namespace gaslib::detail
