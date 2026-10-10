@@ -18,4 +18,5 @@ int main()
     test_state();
     test_thermo();
     test_calorically_perfect();
+    test_calorically_perfect_mixture();
 }

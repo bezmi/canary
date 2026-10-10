@@ -14,5 +14,6 @@ void test_species();
 void test_state();
 void test_thermo();
 void test_calorically_perfect();
+void test_calorically_perfect_mixture();
 
 #endif  // GASLIB_TESTS_TEST_SUITES_HPP

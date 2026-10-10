@@ -186,6 +186,78 @@ template <GasModelType G, ClosureArgument... Args>
 GASLIB_HOST_DEVICE auto thermo_state(const G& gas, const Args&... args)
 { return detail::close_sorted(gas, std::index_sequence_for<Args...> {}, args...); }
 
+// mixture(gas, fractions) can be called with the mass-fraction view V.
+template <typename G, typename V>
+concept MixesFromFractions =
+  GasModelType<G> && SpeciesRangeOf<V, kind::mass_fraction> &&
+  requires(const G& gas, const V& fractions) { mixture(gas, fractions); };
+
+// mixture(gas, partial_densities, rho) can be called with the
+// partial-density view V and the density Rho.
+template <typename G, typename V, typename Rho>
+concept MixesFromDensities =
+  GasModelType<G> && SpeciesRangeOf<V, kind::density> && KindOf<Rho, kind::density> &&
+  requires(const G& gas, const V& partial_densities, const Rho& rho) {
+      mixture(gas, partial_densities, rho);
+  };
+
+namespace detail
+{
+
+template <typename K, ClosureArgument... Args> constexpr std::size_t count_of_kind()
+{ return ((KindOf<Args, K> ? std::size_t {1} : std::size_t {0}) + ... + std::size_t {0}); }
+
+// Index of the first argument of kind K; sizeof...(Args) if there is none.
+template <typename K, ClosureArgument... Args> constexpr std::size_t index_of_kind()
+{
+    constexpr std::array<bool, sizeof...(Args)> is_kind {KindOf<Args, K>...};
+    for (std::size_t i = 0; i < sizeof...(Args); ++i) {
+        if (is_kind[i]) { return i; }
+    }
+    return sizeof...(Args);
+}
+
+template <GasModelType G, SpeciesRange V>
+    requires MixesFromFractions<G, V>
+using mixture_from_fractions_t =
+  decltype(mixture(std::declval<const G&>(), std::declval<const V&>()));
+
+template <GasModelType G, SpeciesRange V, typename Rho>
+    requires MixesFromDensities<G, V, Rho>
+using mixture_from_densities_t =
+  decltype(mixture(std::declval<const G&>(), std::declval<const V&>(), std::declval<const Rho&>()));
+
+}  // namespace detail
+
+// thermo_state of a mixture model from mass fractions: the mixture value is
+// computed first, then thermo_state(gas, mixture, args...).
+template <GasModelType G, SpeciesRange V, ClosureArgument... Args>
+    requires MixesFromFractions<G, V> &&
+             ClosesInAnyOrder<G, detail::mixture_from_fractions_t<G, V>, Args...>
+GASLIB_HOST_DEVICE auto thermo_state(const G& gas, const V& fractions, const Args&... args)
+{ return thermo_state(gas, mixture(gas, fractions), args...); }
+
+// thermo_state of a mixture model from partial densities. The density must
+// be one of the state variables.
+template <GasModelType G, SpeciesRange V, ClosureArgument... Args>
+    requires(detail::count_of_kind<kind::density, Args...>() == 1) &&
+            MixesFromDensities<
+              G,
+              V,
+              detail::nth_t<detail::index_of_kind<kind::density, Args...>(), Args...>> &&
+            ClosesInAnyOrder<
+              G,
+              detail::mixture_from_densities_t<
+                G,
+                V,
+                detail::nth_t<detail::index_of_kind<kind::density, Args...>(), Args...>>,
+              Args...>
+GASLIB_HOST_DEVICE auto thermo_state(const G& gas, const V& partial_densities, const Args&... args)
+{
+    const auto& rho = detail::nth<detail::index_of_kind<kind::density, Args...>()>(args...);
+    return thermo_state(gas, mixture(gas, partial_densities, rho), args...);
+}
+
 namespace detail
 {
 template <typename G, typename T, typename A, typename B>
