@@ -34,6 +34,11 @@ static_assert(!gaslib::ThermoStateOf<NoTemperature, double, si>);
 static_assert(std::is_trivially_copyable_v<gaslib::ThermoState<double, si>>);
 static_assert(std::is_trivially_copyable_v<gaslib::Closure<double, si>>);
 static_assert(std::is_trivially_copyable_v<gaslib::Properties<float, scaled>>);
+static_assert(gaslib::ThermoStateOf<gaslib::MultiTemperatureState<double, si, 1>, double, si>);
+static_assert(gaslib::ThermoStateOf<gaslib::MultiTemperatureState<D, scaled, 2>, D, scaled>);
+static_assert(!gaslib::ThermoStateOf<gaslib::MultiTemperatureState<double, si, 1>, double, scaled>);
+static_assert(std::is_trivially_copyable_v<gaslib::MultiTemperatureState<double, si, 1>>);
+static_assert(sizeof(gaslib::MultiTemperatureState<double, si, 2>) == 8 * sizeof(double));
 static_assert(sizeof(gaslib::ThermoState<double, si>) == 4 * sizeof(double));
 static_assert(
   std::same_as<gaslib::Closure<double, si>, gaslib::ClosureOf<gaslib::ThermoState<double, si>>>);

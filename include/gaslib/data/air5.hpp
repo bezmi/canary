@@ -11,6 +11,7 @@
 #include <concepts>
 #include <gaslib/build.hpp>
 #include <gaslib/models/thermally_perfect.hpp>
+#include <gaslib/models/two_temperature.hpp>
 #include <gaslib/quantity.hpp>
 #include <gaslib/species.hpp>
 #include <gaslib/units.hpp>
@@ -364,6 +365,22 @@ template <std::floating_point P, UnitSystem U> using Air5 = ThermallyPerfectMixt
 template <std::floating_point P, UnitSystem U>
 Built<Air5<P, U>, SpeciesData<P, U, 5>> make_air5(const UnitScales<P, U>& scales)
 { return make_thermally_perfect_mixture(air5_species, scales); }
+
+// Rotational degrees of freedom of air5_species: 2 for the linear molecules
+// N2, O2 and NO, 0 for the atoms N and O.
+inline constexpr std::array<int, 5> air5_rotational_degrees {2, 2, 0, 0, 2};
+
+// Two-temperature five-species air.
+template <std::floating_point P, UnitSystem U>
+using Air5TwoTemperature = TwoTemperatureMixture<P, U, 5, 4>;
+
+// Air5TwoTemperature model of air5_species and air5_rotational_degrees in
+// the unit system of the scales, with its species data. See
+// make_two_temperature_mixture.
+template <std::floating_point P, UnitSystem U>
+Built<Air5TwoTemperature<P, U>, SpeciesData<P, U, 5>>
+  make_air5_two_temperature(const UnitScales<P, U>& scales)
+{ return make_two_temperature_mixture(air5_species, air5_rotational_degrees, scales); }
 
 }  // namespace gaslib
 

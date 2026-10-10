@@ -39,6 +39,7 @@ bool identical(const gaslib::Closure<double, si>& a, const gaslib::Closure<doubl
 }
 
 using ModeView = gaslib::ModeEnergyDensityView<double, si>;
+using ModeTempView = gaslib::ModeTemperatureView<double, si>;
 
 }  // namespace
 
@@ -46,6 +47,19 @@ static_assert(gaslib::StateVariable<Rho> && gaslib::StateVariable<P> &&
               gaslib::StateVariable<Temp>);
 static_assert(gaslib::StateVariable<E> && gaslib::StateVariable<RhoE> &&
               gaslib::StateVariable<ModeView>);
+static_assert(gaslib::StateVariable<ModeTempView>);
+static_assert(gaslib::detail::state_rank<ModeTempView>() == 4);
+static_assert(gaslib::detail::state_rank<ModeTempView>() == gaslib::detail::state_rank<ModeView>());
+// A mode temperature view goes after both state variables.
+static_assert(gaslib::detail::argument_order<ModeTempView, Temp, Rho>() ==
+              std::array<std::size_t, 3> {2, 1, 0});
+static_assert(gaslib::detail::argument_order<P, ModeTempView, Temp>() ==
+              std::array<std::size_t, 3> {0, 2, 1});
+static_assert(gaslib::ModeRangeOf<ModeTempView, gaslib::kind::mode_temperature, double, si>);
+static_assert(!gaslib::ModeRangeOf<ModeTempView, gaslib::kind::mode_temperature, float, si>);
+static_assert(
+  !gaslib::ModeRangeOf<ModeTempView, gaslib::kind::mode_temperature, double, gaslib::scaled>);
+static_assert(!gaslib::ModeRangeOf<ModeView, gaslib::kind::mode_temperature, double, si>);
 static_assert(!gaslib::StateVariable<gaslib::MassFraction<double>>);
 static_assert(!gaslib::StateVariable<gaslib::test::TemperatureGuess>);
 

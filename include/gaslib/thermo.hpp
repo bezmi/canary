@@ -72,7 +72,8 @@ template <typename A> constexpr int state_rank()
         } else {
             return -1;
         }
-    } else if constexpr (SpeciesRangeOf<A, kind::mode_energy_density>) {
+    } else if constexpr (SpeciesRangeOf<A, kind::mode_energy_density> ||
+                         SpeciesRangeOf<A, kind::mode_temperature>) {
         return 4;
     } else {
         return -1;
@@ -321,6 +322,20 @@ concept MixtureGasModel =
 template <Scalar T, UnitSystem U>
 using ModeEnergyDensityView = decltype(as_kind<kind::mode_energy_density, U>(
   std::declval<Kokkos::mdspan<const T, Kokkos::dextents<std::size_t, 1>>>()));
+
+// View of mode temperatures with value type T, as passed to thermo_state.
+template <Scalar T, UnitSystem U>
+using ModeTemperatureView = decltype(as_kind<kind::mode_temperature, U>(
+  std::declval<Kokkos::mdspan<const T, Kokkos::dextents<std::size_t, 1>>>()));
+
+// A rank-1 range of quantities of kind K with value type T in unit system U,
+// of any layout and accessor; for example a ModeEnergyDensityView or a
+// ModeTemperatureView. Models with internal energy modes take their mode
+// inputs as such ranges.
+template <typename V, typename K, typename T, typename U>
+concept ModeRangeOf = SpeciesRangeOf<V, K> && Scalar<T> && UnitSystem<U> &&
+                      std::same_as<typename range_quantity_t<V>::value_type, T> &&
+                      std::same_as<typename range_quantity_t<V>::units, U>;
 
 namespace detail
 {

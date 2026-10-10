@@ -1,7 +1,9 @@
 #ifndef GASLIB_STATE_HPP
 #define GASLIB_STATE_HPP
 
+#include <array>
 #include <concepts>
+#include <cstddef>
 #include <gaslib/quantity.hpp>
 #include <gaslib/scalar.hpp>
 #include <gaslib/status.hpp>
@@ -35,6 +37,24 @@ template <Scalar T, UnitSystem U> struct ThermoState {
     SpecificEnergy<T, U> e;
     Pressure<T, U> p;
     Temperature<T, U> temp;
+};
+
+// State of a model with M internal energy modes. temp is the temperature of
+// the translational and rotational energy; mode_e[k] is the energy per unit
+// mass of mode k, which follows the temperature mode_temp[k]. e is the total
+// internal energy per unit mass, the mode energies included.
+template <Scalar T, UnitSystem U, std::size_t M>
+    requires(M > 0)
+struct MultiTemperatureState {
+    using value_type = T;
+    using units = U;
+
+    Density<T, U> rho;
+    SpecificEnergy<T, U> e;
+    Pressure<T, U> p;
+    Temperature<T, U> temp;
+    std::array<SpecificEnergy<T, U>, M> mode_e;
+    std::array<ModeTemperature<T, U>, M> mode_temp;
 };
 
 // Derived properties at a state.

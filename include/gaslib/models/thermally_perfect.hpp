@@ -258,13 +258,51 @@ GASLIB_HOST_DEVICE V default_temperature_guess(const ThermallyPerfectMixture<P, 
     return static_cast<V>(gas.reference_temperature.value()) + ((e - e_ref) / cv_ref);
 }
 
-// Temperature from (rho, e) by detail::solve on e(T) - e = 0, with the
-// derivative cv(T). The guess (value part) is clamped to [temperature_min,
-// temperature_max]; a guess that is not a number becomes temperature_min.
-// The first bracket is [lower, lower + bracket_width] with lower =
-// max(guess - bracket_width / 2, temperature_min); when it has no sign
-// change, the solve is repeated on [temperature_min, temperature_max].
-// Then p = rho R T, and e is kept.
+// Temperature root of a residual in temperature (model units) by
+// detail::solve, with the model's limits and solve settings. The guess
+// (value part) is clamped to [temperature_min, temperature_max]; a guess
+// that is not a number becomes temperature_min. The first bracket is
+// [lower, lower + bracket_width] with lower = max(guess - bracket_width / 2,
+// temperature_min); when it has no sign change, the solve is repeated on
+// [temperature_min, temperature_max].
+template <Scalar T,
+          std::floating_point P,
+          UnitSystem U,
+          std::size_t N,
+          std::size_t S,
+          typename FValue,
+          typename FFull>
+    requires ResidualFunction<FValue, typename ScalarTraits<T>::value_type> &&
+             ResidualFunction<FFull, T>
+GASLIB_HOST_DEVICE SolveResult<T> solve_temperature(const ThermallyPerfectMixture<P, U, N, S>& gas,
+                                                    const FValue& f_value,
+                                                    const FFull& f_full,
+                                                    typename ScalarTraits<T>::value_type guess)
+{
+    using V = ScalarTraits<T>::value_type;
+    const auto t_min = static_cast<V>(gas.temperature_min.value());
+    const auto t_max = static_cast<V>(gas.temperature_max.value());
+    const auto width = static_cast<V>(gas.bracket_width.value());
+    V start = guess > t_max ? t_max : guess;
+    if (!(start >= t_min)) { start = t_min; }
+    const V lower = start - (width / V(2)) > t_min ? start - (width / V(2)) : t_min;
+    const SolveSettings<V> settings {
+      .relative_tolerance = static_cast<V>(gas.relative_tolerance),
+      .max_iterations = gas.max_iterations,
+    };
+    SolveResult<T> r = solve<T>(f_value,
+                                f_full,
+                                Bracket<V> {.lower = lower, .upper = lower + width},
+                                start,
+                                settings);
+    if (r.status == Status::Invalid) {
+        r = solve<T>(f_value, f_full, Bracket<V> {.lower = t_min, .upper = t_max}, start, settings);
+    }
+    return r;
+}
+
+// Temperature from (rho, e) by solve_temperature on e(T) - e = 0, with the
+// derivative cv(T). Then p = rho R T, and e is kept.
 template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
     requires ScalarWith<T, P> && HasLog<T>
 GASLIB_HOST_DEVICE Closure<T, U>
@@ -285,24 +323,7 @@ GASLIB_HOST_DEVICE Closure<T, U>
         const EnergyAndCv<T> r = mixture_energy(gas, mix.fractions, t);
         return Residual<T> {.value = r.e - e.value(), .derivative = r.cv};
     };
-    const auto t_min = static_cast<V>(gas.temperature_min.value());
-    const auto t_max = static_cast<V>(gas.temperature_max.value());
-    const auto width = static_cast<V>(gas.bracket_width.value());
-    V start = guess > t_max ? t_max : guess;
-    if (!(start >= t_min)) { start = t_min; }
-    const V lower = start - (width / V(2)) > t_min ? start - (width / V(2)) : t_min;
-    const SolveSettings<V> settings {
-      .relative_tolerance = static_cast<V>(gas.relative_tolerance),
-      .max_iterations = gas.max_iterations,
-    };
-    SolveResult<T> r = solve<T>(f_value,
-                                f_full,
-                                Bracket<V> {.lower = lower, .upper = lower + width},
-                                start,
-                                settings);
-    if (r.status == Status::Invalid) {
-        r = solve<T>(f_value, f_full, Bracket<V> {.lower = t_min, .upper = t_max}, start, settings);
-    }
+    const SolveResult<T> r = solve_temperature<T>(gas, f_value, f_full, guess);
     const Temperature<T, U> temp {r.root};
     return {
       .state =

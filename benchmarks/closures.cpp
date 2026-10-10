@@ -3,7 +3,8 @@
 // with the exact capacity and with capacity 16, and the thermally perfect
 // model for N2 alone and for air (N2 and O2 in the five-species model),
 // without and with a temperature guess equal to the previous cell's
-// temperature. Each case runs several times; the fastest run is reported in
+// temperature, and the two-temperature model for air from (rho, rho_e,
+// rho_e_ve). Each case runs several times; the fastest run is reported in
 // nanoseconds per cell.
 
 #include <array>
@@ -138,6 +139,58 @@ double thermally_perfect_case(
     });
 }
 
+// Two-temperature model G with the same mass fractions y in every cell, from
+// (rho, rho_e, rho_e_ve). The inputs of each cell are those of the state with
+// its density, T_ve = 0.8 T, and T the temperature of the single-temperature
+// model of the same species at the cell's (rho, rho_e).
+template <typename G, std::size_t N>
+double two_temperature_case(const char* name,
+                            const Cells& c,
+                            const G& gas,
+                            const std::array<double, N>& y)
+{
+    const auto fractions = gaslib::as_kind<gaslib::kind::mass_fraction>(
+      Kokkos::mdspan<const double, Kokkos::dextents<std::size_t, 1>>(y.data(), N));
+    const auto mix = gaslib::mixture(gas, fractions);
+    std::vector<double> rho_e(cells);
+    std::vector<double> rho_e_ve(cells);
+    for (std::size_t i = 0; i < cells; ++i) {
+        const gaslib::Density<double, si> rho {c.rho[i]};
+        const auto temp = gaslib::thermo_state(gas.thermally_perfect,
+                                               mix,
+                                               rho,
+                                               gaslib::EnergyDensity<double, si> {c.rho_e[i]})
+                            .state.temp;
+        const std::array<double, 1> t_ve {0.8 * temp.value()};
+        const auto state =
+          gaslib::thermo_state(
+            gas,
+            mix,
+            rho,
+            temp,
+            gaslib::as_kind<gaslib::kind::mode_temperature, si>(
+              Kokkos::mdspan<const double, Kokkos::dextents<std::size_t, 1>>(t_ve.data(), 1)))
+            .state;
+        rho_e[i] = c.rho[i] * state.e.value();
+        rho_e_ve[i] = c.rho[i] * state.mode_e[0].value();
+    }
+    return time_per_cell(name, [&] {
+        double sum = 0;
+        for (std::size_t i = 0; i < cells; ++i) {
+            const auto modes = gaslib::as_kind<gaslib::kind::mode_energy_density, si>(
+              Kokkos::mdspan<const double, Kokkos::dextents<std::size_t, 1>>(&rho_e_ve[i], 1));
+            const auto closure = gaslib::thermo_state(gas,
+                                                      fractions,
+                                                      gaslib::Density<double, si> {c.rho[i]},
+                                                      gaslib::EnergyDensity<double, si> {rho_e[i]},
+                                                      modes);
+            sum += closure.state.p.value() + closure.state.temp.value() +
+                   closure.state.mode_temp[0].value();
+        }
+        return sum;
+    });
+}
+
 }  // namespace
 
 int main()
@@ -184,4 +237,6 @@ int main()
     const std::array<double, 5> air_y {0.767, 0.233, 0.0, 0.0, 0.0};
     thermally_perfect_case("thermally perfect air (5 species)", c, air5, air_y, false);
     thermally_perfect_case("thermally perfect air (5 species), guess", c, air5, air_y, true);
+    const auto air5_two_temperature = gaslib::make_air5_two_temperature<double>(si_scales).model;
+    two_temperature_case("two-temperature air (5 species)", c, air5_two_temperature, air_y);
 }
