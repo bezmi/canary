@@ -25,4 +25,5 @@ int main()
     test_nasa9();
     test_thermally_perfect();
     test_two_temperature();
+    test_reactions();
 }

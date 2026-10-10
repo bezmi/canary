@@ -4,7 +4,9 @@
 // model for N2 alone and for air (N2 and O2 in the five-species model),
 // without and with a temperature guess equal to the previous cell's
 // temperature, and the two-temperature model for air from (rho, rho_e,
-// rho_e_ve). Each case runs several times; the fastest run is reported in
+// rho_e_ve). The last case is the mass production rates of the Kim-Jo
+// five-species air mechanism from (rho, T) and mass fractions that vary from
+// cell to cell. Each case runs several times; the fastest run is reported in
 // nanoseconds per cell.
 
 #include <array>
@@ -191,6 +193,36 @@ double two_temperature_case(const char* name,
     });
 }
 
+// Mass production rates of mechanism mech with thermo model gas, per cell
+// from the cell's density, a temperature between 3000 K and 15000 K and the
+// mass fractions of make_fractions.
+template <typename M, typename G>
+double production_case(const char* name, const Cells& c, const M& mech, const G& gas)
+{
+    constexpr std::size_t n = 5;
+    const std::vector<double> y = make_fractions(n);
+    std::vector<double> temp(cells);
+    for (std::size_t i = 0; i < cells; ++i) {
+        temp[i] = 3000.0 + (12000.0 * static_cast<double>(i % 101) / 101.0);
+    }
+    return time_per_cell(name, [&] {
+        double sum = 0;
+        for (std::size_t i = 0; i < cells; ++i) {
+            const auto fractions = gaslib::as_kind<gaslib::kind::mass_fraction>(
+              Kokkos::mdspan<const double, Kokkos::dextents<std::size_t, 1>>(y.data() + (i * n),
+                                                                             n));
+            const auto omega =
+              gaslib::production_rates(mech,
+                                       gas,
+                                       gaslib::mixture(gas, fractions),
+                                       gaslib::Density<double, si> {1.0e-3 * c.rho[i]},
+                                       gaslib::Temperature<double, si> {temp[i]});
+            sum += omega[2].value() + omega[3].value();
+        }
+        return sum;
+    });
+}
+
 }  // namespace
 
 int main()
@@ -239,4 +271,7 @@ int main()
     thermally_perfect_case("thermally perfect air (5 species), guess", c, air5, air_y, true);
     const auto air5_two_temperature = gaslib::make_air5_two_temperature<double>(si_scales).model;
     two_temperature_case("two-temperature air (5 species)", c, air5_two_temperature, air_y);
+    const auto air5_built = gaslib::make_air5<double>(si_scales);
+    const auto kim_jo = gaslib::make_air5_kim_jo(air5_built.species, si_scales);
+    production_case("Kim-Jo air (13 reactions) production", c, kim_jo, air5);
 }

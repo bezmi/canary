@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include <concepts>
+#include <gaslib/build.hpp>
 #include <gaslib/quantity.hpp>
 #include <gaslib/scalar.hpp>
 #include <type_traits>
@@ -73,13 +74,15 @@ constexpr void apply_power(P& numerator, P& denominator, P base, int exponent)
 }
 }  // namespace detail
 
-// SI value of one unit of kind K in the system of the scales: the product
-// of the base scales raised to the dimension exponents of K.
-template <KindTag K, std::floating_point P>
-    requires(K::dimension.amount == 0)
-P scale_factor(const UnitScales<P, scaled>& s)
+// SI value of one unit of dimension d in the system of the scales: the
+// product of the base scales raised to the exponents of d. Throws
+// ParameterError when d has an amount of substance, which has no scaled
+// unit.
+template <std::floating_point P> P scale_factor(const Dimension& d, const UnitScales<P, scaled>& s)
 {
-    constexpr Dimension d = K::dimension;
+    if (d.amount != 0) {
+        throw ParameterError("a dimension with an amount of substance has no scaled unit");
+    }
     const P count = count_scale(s);
     P numerator = P(1);
     P denominator = P(1);
@@ -91,6 +94,16 @@ P scale_factor(const UnitScales<P, scaled>& s)
     detail::apply_power(numerator, denominator, count, d.count);
     return numerator / denominator;
 }
+
+template <std::floating_point P>
+constexpr P scale_factor(const Dimension& /*d*/, const UnitScales<P, si>& /*scales*/)
+{ return P(1); }
+
+// SI value of one unit of kind K in the system of the scales.
+template <KindTag K, std::floating_point P>
+    requires(K::dimension.amount == 0)
+P scale_factor(const UnitScales<P, scaled>& s)
+{ return scale_factor(K::dimension, s); }
 
 template <KindTag K, std::floating_point P>
 constexpr P scale_factor(const UnitScales<P, si>& /*scales*/)

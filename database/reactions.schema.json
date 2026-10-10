@@ -1,0 +1,191 @@
+{
+   "type": "object",
+   "properties": {
+      "format": {
+         "type": "string"
+      },
+      "notes": {
+         "type": [
+            "string",
+            "null"
+         ]
+      },
+      "reactions": {
+         "type": "array",
+         "items": {
+            "type": "object",
+            "properties": {
+               "backward": {
+                  "$ref": "#/$defs/gaslib::database::RateRecord"
+               },
+               "equation": {
+                  "type": "string"
+               },
+               "forward": {
+                  "$ref": "#/$defs/gaslib::database::RateRecord"
+               },
+               "label": {
+                  "type": [
+                     "string",
+                     "null"
+                  ]
+               },
+               "notes": {
+                  "type": [
+                     "string",
+                     "null"
+                  ]
+               },
+               "products": {
+                  "$ref": "#/$defs/std::map<std::string,double>"
+               },
+               "reactants": {
+                  "$ref": "#/$defs/std::map<std::string,double>"
+               },
+               "reference": {
+                  "type": [
+                     "string",
+                     "null"
+                  ]
+               },
+               "third_body": {
+                  "anyOf": [
+                     {
+                        "type": "object",
+                        "properties": {
+                           "efficiencies": {
+                              "$ref": "#/$defs/std::map<std::string,double>"
+                           }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                           "efficiencies"
+                        ]
+                     },
+                     {
+                        "type": "null"
+                     }
+                  ]
+               }
+            },
+            "additionalProperties": false,
+            "required": [
+               "equation",
+               "reactants",
+               "products",
+               "forward",
+               "backward"
+            ]
+         }
+      },
+      "reference": {
+         "type": [
+            "string",
+            "null"
+         ]
+      },
+      "temperature_limits": {
+         "type": "object",
+         "properties": {
+            "lower": {
+               "$ref": "#/$defs/double"
+            },
+            "upper": {
+               "$ref": "#/$defs/double"
+            }
+         },
+         "additionalProperties": false,
+         "required": [
+            "lower",
+            "upper"
+         ]
+      },
+      "units": {
+         "type": "object",
+         "properties": {
+            "length": {
+               "type": "string"
+            },
+            "quantity": {
+               "type": "string"
+            },
+            "temperature": {
+               "type": "string"
+            },
+            "time": {
+               "type": "string"
+            }
+         },
+         "additionalProperties": false,
+         "required": [
+            "quantity",
+            "length",
+            "time",
+            "temperature"
+         ]
+      }
+   },
+   "additionalProperties": false,
+   "$defs": {
+      "double": {
+         "type": "number",
+         "minimum": -1.7976931348623157E308,
+         "maximum": 1.7976931348623157E308
+      },
+      "gaslib::database::RateRecord": {
+         "type": "object",
+         "properties": {
+            "A": {
+               "anyOf": [
+                  {
+                     "$ref": "#/$defs/double"
+                  },
+                  {
+                     "type": "null"
+                  }
+               ]
+            },
+            "activation_temperature": {
+               "anyOf": [
+                  {
+                     "$ref": "#/$defs/double"
+                  },
+                  {
+                     "type": "null"
+                  }
+               ]
+            },
+            "model": {
+               "type": "string"
+            },
+            "n": {
+               "anyOf": [
+                  {
+                     "$ref": "#/$defs/double"
+                  },
+                  {
+                     "type": "null"
+                  }
+               ]
+            }
+         },
+         "additionalProperties": false,
+         "required": [
+            "model"
+         ]
+      },
+      "std::map<std::string,double>": {
+         "type": "object",
+         "additionalProperties": {
+            "$ref": "#/$defs/double"
+         }
+      }
+   },
+   "required": [
+      "format",
+      "units",
+      "temperature_limits",
+      "reactions"
+   ],
+   "title": "gaslib::database::ReactionsFile"
+}

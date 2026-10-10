@@ -1,12 +1,13 @@
 #ifndef GASLIB_DATABASE_HPP
 #define GASLIB_DATABASE_HPP
 
-// Species database files: JSON files of species data in SI units, read and
-// written by the compiled library gaslib_database (link gaslib::database).
-// This header is C++20 and does not depend on the JSON library; the
-// conversions to model inputs below are header-only.
+// Species database files: JSON files of species data and of reaction
+// mechanisms in SI units, read and written by the compiled library
+// gaslib_database (link gaslib::database). This header is C++20 and does
+// not depend on the JSON library; the conversions to model inputs below are
+// header-only.
 //
-// File layout (strict JSON):
+// Species file layout (strict JSON):
 //   {
 //     "format": "gaslib-species-1",
 //     "units": {"molar_mass": "kg/mol", "energy": "J/mol", "temperature": "K"},
@@ -29,6 +30,32 @@
 // "reference" and "notes" are optional everywhere; every other key is
 // required, and unknown keys are errors. Numbers are written in the
 // shortest form that reads back to the same double.
+//
+// Reactions files hold a mechanism of reversible reactions (see
+// reactions.hpp), in SI units per mole:
+//   {
+//     "format": "gaslib-reactions-1",
+//     "units": {"quantity": "mol", "length": "m", "time": "s", "temperature": "K"},
+//     "temperature_limits": {"lower": 300.0, "upper": 30000.0},
+//     "reactions": [
+//       {
+//         "equation": "NO + M <=> N + O + M",
+//         "reactants": {"NO": 1.0},
+//         "products": {"N": 1.0, "O": 1.0},
+//         "forward": {"model": "arrhenius", "A": 1450000000.0, "n": 0.0,
+//                     "activation_temperature": 75200.0},
+//         "backward": {"model": "equilibrium"},
+//         "third_body": {"efficiencies": {"NO": 0.664827586}},
+//         "label": "...", "reference": "...", "notes": "..."
+//       }
+//     ],
+//     "reference": "...", "notes": "..."
+//   }
+// "third_body", "label", "reference" and "notes" are optional, and so are
+// the keys A, n and activation_temperature of a rate; every other key is
+// required, and unknown keys are errors. A rate is either "arrhenius" with
+// A, n and activation_temperature, or (backward only) "equilibrium" with
+// none of them; mechanism_input checks this.
 
 #include <array>
 #include <cstddef>
@@ -37,6 +64,7 @@
 #include <gaslib/build.hpp>
 #include <gaslib/models/thermally_perfect.hpp>
 #include <gaslib/nasa9.hpp>
+#include <gaslib/reactions.hpp>
 #include <map>
 #include <optional>
 #include <stdexcept>
@@ -96,6 +124,74 @@ struct SpeciesFile {
     friend bool operator==(const SpeciesFile&, const SpeciesFile&) = default;
 };
 
+// Value of the "format" key of a reactions file.
+inline constexpr std::string_view reactions_format = "gaslib-reactions-1";
+
+// Units of the values in a reactions file: amounts of substance in mol,
+// lengths in m, times in s and temperatures in K. Only these are accepted.
+struct ReactionUnits {
+    std::string quantity = "mol";
+    std::string length = "m";
+    std::string time = "s";
+    std::string temperature = "K";
+
+    friend bool operator==(const ReactionUnits&, const ReactionUnits&) = default;
+};
+
+// Temperature limits of rate evaluation in K.
+struct TemperatureLimits {
+    double lower {};
+    double upper {};
+
+    friend bool operator==(const TemperatureLimits&, const TemperatureLimits&) = default;
+};
+
+// A rate constant: model "arrhenius" with A, n and activation_temperature
+// (see ArrheniusInput), or model "equilibrium" with none of them.
+struct RateRecord {
+    std::string model;
+    std::optional<double> A;
+    std::optional<double> n;
+    std::optional<double> activation_temperature;
+
+    friend bool operator==(const RateRecord&, const RateRecord&) = default;
+};
+
+// Third-body efficiencies by species name; species not listed have 1.
+struct ThirdBodyRecord {
+    std::map<std::string, double> efficiencies;
+
+    friend bool operator==(const ThirdBodyRecord&, const ThirdBodyRecord&) = default;
+};
+
+// One reversible reaction. reactants and products map species names to
+// stoichiometric coefficients; equation is informational.
+struct ReactionRecord {
+    std::string equation;
+    std::map<std::string, double> reactants;
+    std::map<std::string, double> products;
+    RateRecord forward;
+    RateRecord backward;
+    std::optional<ThirdBodyRecord> third_body;
+    std::optional<std::string> label;
+    std::optional<std::string> reference;
+    std::optional<std::string> notes;
+
+    friend bool operator==(const ReactionRecord&, const ReactionRecord&) = default;
+};
+
+// A reactions file. Reactions keep their order.
+struct ReactionsFile {
+    std::string format {reactions_format};
+    ReactionUnits units;
+    TemperatureLimits temperature_limits;
+    std::vector<ReactionRecord> reactions;
+    std::optional<std::string> reference;
+    std::optional<std::string> notes;
+
+    friend bool operator==(const ReactionsFile&, const ReactionsFile&) = default;
+};
+
 // Thrown when a file cannot be read, is not valid JSON, has an unknown or a
 // missing key, has another format or other units, or lacks a requested
 // species. The message says which.
@@ -120,6 +216,22 @@ void write_species_file(const std::filesystem::path& path, const SpeciesFile& fi
 
 // JSON Schema of species files.
 std::string species_schema();
+
+// The reactions file in json. Throws DatabaseError.
+ReactionsFile parse_reactions(std::string_view json);
+
+// The reactions file at path. Throws DatabaseError.
+ReactionsFile read_reactions_file(const std::filesystem::path& path);
+
+// file as indented JSON.
+std::string write_reactions(const ReactionsFile& file);
+
+// Writes file as indented JSON to path. Throws DatabaseError when the file
+// cannot be written.
+void write_reactions_file(const std::filesystem::path& path, const ReactionsFile& file);
+
+// JSON Schema of reactions files.
+std::string reactions_schema();
 
 // The NASA-9 fit of a thermo record with at most S segments. Throws
 // ParameterError when the model is not "nasa9", the record has more than S
@@ -178,6 +290,97 @@ std::array<Nasa9Species<S>, N> nasa9_species(const SpeciesFile& file,
             };
         } catch (const ParameterError& error) {
             throw ParameterError(std::format("species {}: {}", entry->first, error.what()));
+        }
+    }
+    return out;
+}
+
+namespace detail
+{
+
+// Up to K species coefficients from a map; each name points to the map's
+// key. Throws ParameterError when the map has more than K entries.
+template <std::size_t K>
+SpeciesCoefficients<K> species_coefficients(const std::map<std::string, double>& values,
+                                            std::string_view role)
+{
+    if (values.size() > K) {
+        throw ParameterError(
+          std::format("{} list {} species, more than {}", role, values.size(), K));
+    }
+    SpeciesCoefficients<K> out {};
+    out.count = static_cast<int>(values.size());
+    std::size_t e = 0;
+    for (const auto& [name, value] : values) {
+        out.entries[e++] = SpeciesCoefficient {.name = name.c_str(), .value = value};
+    }
+    return out;
+}
+
+// The Arrhenius parameters of a rate record. Throws ParameterError when the
+// model is not "arrhenius" or a parameter is missing.
+inline ArrheniusInput arrhenius_input(const RateRecord& rate, std::string_view role)
+{
+    if (rate.model != "arrhenius") {
+        throw ParameterError(
+          std::format(R"({} rate model must be "arrhenius", got "{}")", role, rate.model));
+    }
+    if (!rate.A || !rate.n || !rate.activation_temperature) {
+        throw ParameterError(std::format("{} rate needs A, n and activation_temperature", role));
+    }
+    return {.A = *rate.A, .n = *rate.n, .activation_temperature = *rate.activation_temperature};
+}
+
+}  // namespace detail
+
+// Model inputs of the R reactions of file, in file order, with at most K
+// species in each list of species coefficients, for
+// make_reaction_mechanism. Names and equations point into file, so the
+// result is valid while file exists. Throws ParameterError when file does
+// not have R reactions, and (with the reaction index and equation) when a
+// list has more than K species, the forward rate is not an Arrhenius rate
+// with A, n and activation_temperature, or the backward rate is neither
+// such a rate nor "equilibrium" without parameters. The values themselves
+// are checked by make_reaction_mechanism.
+template <std::size_t R, std::size_t K>
+    requires(R > 0 && K > 0)
+MechanismInput<R, K> mechanism_input(const ReactionsFile& file)
+{
+    if (file.reactions.size() != R) {
+        throw ParameterError(
+          std::format("expected {} reactions, the file has {}", R, file.reactions.size()));
+    }
+    MechanismInput<R, K> out {};
+    out.temperature_lower = file.temperature_limits.lower;
+    out.temperature_upper = file.temperature_limits.upper;
+    for (std::size_t k = 0; k < R; ++k) {
+        const ReactionRecord& record = file.reactions[k];
+        try {
+            ReactionInput<K>& reaction = out.reactions[k];
+            reaction.equation = record.equation.c_str();
+            reaction.reactants = detail::species_coefficients<K>(record.reactants, "reactants");
+            reaction.products = detail::species_coefficients<K>(record.products, "products");
+            reaction.forward = detail::arrhenius_input(record.forward, "forward");
+            if (record.backward.model == "equilibrium") {
+                if (record.backward.A || record.backward.n ||
+                    record.backward.activation_temperature) {
+                    throw ParameterError(
+                      "an equilibrium backward rate has no A, n or activation_temperature");
+                }
+                reaction.backward_model = BackwardRateModel::equilibrium;
+            } else {
+                reaction.backward_model = BackwardRateModel::arrhenius;
+                reaction.backward = detail::arrhenius_input(record.backward, "backward");
+            }
+            reaction.third_body = record.third_body.has_value();
+            if (record.third_body) {
+                reaction.efficiencies =
+                  detail::species_coefficients<K>(record.third_body->efficiencies,
+                                                  "third-body efficiencies");
+            }
+        } catch (const ParameterError& error) {
+            throw ParameterError(
+              std::format("reaction {} ({}): {}", k, record.equation, error.what()));
         }
     }
     return out;

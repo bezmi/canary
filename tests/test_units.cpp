@@ -4,6 +4,7 @@
 #include <boost/ut.hpp>
 #include <cmath>
 #include <concepts>
+#include <gaslib/build.hpp>
 #include <gaslib/quantity.hpp>
 #include <gaslib/units.hpp>
 #include <limits>
@@ -119,6 +120,28 @@ void test_units()
         expect(round_trips<kind::thermal_conductivity>());
         expect(round_trips<kind::mode_energy_density>());
         expect(round_trips<kind::mode_temperature>());
+        expect(round_trips<kind::number_rate_density>());
+        expect(round_trips<kind::mass_production_rate>());
+    };
+
+    "the scale factor of a dimension equals that of a kind of the same dimension"_test = [u_ref,
+                                                                                          n0] {
+        expect(scale_factor(kind::pressure::dimension, scales) ==
+               scale_factor<kind::pressure>(scales));
+        expect(scale_factor(kind::number_rate_density::dimension, scales) ==
+               scale_factor<kind::number_rate_density>(scales));
+        // Rate constant of a third-order reaction, (length^3 / count)^2 / time.
+        const gaslib::Dimension third_order {.length = 6, .time = -1, .count = -2};
+        const double x = scales.length;
+        const double t_ref = x / u_ref;
+        expect(within_ulp(scale_factor(third_order, scales),
+                          (x * x * x * x * x * x) / (n0 * n0 * t_ref),
+                          8.0));
+        expect(scale_factor(third_order, gaslib::UnitScales<double, si> {}) == 1.0_d);
+        expect(scale_factor(kind::molar_mass::dimension, gaslib::UnitScales<double, si> {}) ==
+               1.0_d);
+        expect(throws<gaslib::ParameterError>(
+          [] { (void)scale_factor(kind::molar_mass::dimension, scales); }));
     };
 
     "SI and unitless quantities convert to themselves"_test = [] {
