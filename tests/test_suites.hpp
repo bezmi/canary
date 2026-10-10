@@ -8,5 +8,6 @@ void test_config_default();
 void test_config_consumer();
 void test_scalar();
 void test_quantity();
+void test_units();
 
 #endif  // GASLIB_TESTS_TEST_SUITES_HPP
