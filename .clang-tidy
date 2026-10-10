@@ -60,3 +60,9 @@ HeaderFileExtensions:
   - hh
   - hpp
   - hxx
+
+CheckOptions:
+  # The mdspan umbrella header <mdspan/mdspan.hpp> is the public entry point;
+  # its internal headers are not included directly.
+  - key: misc-include-cleaner.IgnoreHeaders
+    value: 'mdspan/.*;experimental/.*'
