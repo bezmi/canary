@@ -1,7 +1,31 @@
-# Tests are built as strict C++20 so that a header needing a later standard or
-# a compiler extension fails here.
+# Test targets are built as strict C++20 so that a header needing a later
+# standard or a compiler extension fails here.
+function(gaslib_test_options target)
+  set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+  target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endfunction()
+
 add_executable(gaslib_tests test_main.cpp)
 target_link_libraries(gaslib_tests PRIVATE gaslib::gaslib Boost::ut)
-set_target_properties(gaslib_tests PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
-target_compile_options(gaslib_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+gaslib_test_options(gaslib_tests)
 add_test(NAME gaslib.unit COMMAND gaslib_tests)
+
+# Code that must not compile. compile_fail/<name>.cpp is compiled twice: as
+# written, as part of the normal build, where it must compile; and with
+# GASLIB_COMPILE_FAIL defined, by the test, which passes only if the build
+# output matches <regex>.
+function(gaslib_compile_fail_test name regex)
+  add_library(compile_ok_${name} OBJECT compile_fail/${name}.cpp)
+  add_library(compile_fail_${name} OBJECT EXCLUDE_FROM_ALL compile_fail/${name}.cpp)
+  foreach(target compile_ok_${name} compile_fail_${name})
+    target_link_libraries(${target} PRIVATE gaslib::gaslib)
+    target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_LIST_DIR})
+    gaslib_test_options(${target})
+  endforeach()
+  target_compile_definitions(compile_fail_${name} PRIVATE GASLIB_COMPILE_FAIL)
+  add_test(NAME gaslib.compile_fail.${name}
+           COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target compile_fail_${name})
+  set_tests_properties(gaslib.compile_fail.${name} PROPERTIES PASS_REGULAR_EXPRESSION "${regex}")
+endfunction()
+
+gaslib_compile_fail_test(self_test "compile-fail self test")
