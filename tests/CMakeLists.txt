@@ -29,3 +29,19 @@ function(gaslib_compile_fail_test name regex)
 endfunction()
 
 gaslib_compile_fail_test(self_test "compile-fail self test")
+
+# Each public header is compiled alone, as strict C++20, with only the
+# include directories of gaslib::gaslib (include/ and mdspan). This checks
+# that every header includes what it uses and needs nothing newer than C++20.
+file(GLOB_RECURSE gaslib_headers CONFIGURE_DEPENDS RELATIVE ${PROJECT_SOURCE_DIR}/include
+     ${PROJECT_SOURCE_DIR}/include/gaslib/*.hpp)
+set(header_check_sources)
+foreach(header IN LISTS gaslib_headers)
+  string(MAKE_C_IDENTIFIER ${header} source_name)
+  set(source ${CMAKE_CURRENT_BINARY_DIR}/header_check/${source_name}.cpp)
+  file(CONFIGURE OUTPUT ${source} CONTENT "#include <${header}>\n")
+  list(APPEND header_check_sources ${source})
+endforeach()
+add_library(gaslib_header_check OBJECT ${header_check_sources})
+target_link_libraries(gaslib_header_check PRIVATE gaslib::gaslib)
+gaslib_test_options(gaslib_header_check)
