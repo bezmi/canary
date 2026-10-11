@@ -1,0 +1,186 @@
+{
+   "type": "object",
+   "properties": {
+      "chemistry_vibration": {
+         "type": "array",
+         "items": {
+            "type": "object",
+            "properties": {
+               "dissociation_energy": {
+                  "$ref": "#/$defs/double"
+               },
+               "model": {
+                  "type": "string"
+               },
+               "notes": {
+                  "type": [
+                     "string",
+                     "null"
+                  ]
+               },
+               "reaction": {
+                  "$ref": "#/$defs/int32_t"
+               },
+               "reference": {
+                  "type": [
+                     "string",
+                     "null"
+                  ]
+               },
+               "species": {
+                  "type": "string"
+               },
+               "vibrational_temperature": {
+                  "$ref": "#/$defs/double"
+               }
+            },
+            "additionalProperties": false,
+            "required": [
+               "reaction",
+               "species",
+               "model",
+               "dissociation_energy",
+               "vibrational_temperature"
+            ]
+         }
+      },
+      "format": {
+         "type": "string"
+      },
+      "notes": {
+         "type": [
+            "string",
+            "null"
+         ]
+      },
+      "reference": {
+         "type": [
+            "string",
+            "null"
+         ]
+      },
+      "units": {
+         "type": "object",
+         "properties": {
+            "area": {
+               "type": "string"
+            },
+            "energy": {
+               "type": "string"
+            },
+            "temperature": {
+               "type": "string"
+            }
+         },
+         "additionalProperties": false,
+         "required": [
+            "energy",
+            "temperature",
+            "area"
+         ]
+      },
+      "vibration_translation": {
+         "type": "array",
+         "items": {
+            "type": "object",
+            "properties": {
+               "model": {
+                  "type": "string"
+               },
+               "notes": {
+                  "type": [
+                     "string",
+                     "null"
+                  ]
+               },
+               "partner": {
+                  "type": "string"
+               },
+               "reference": {
+                  "type": [
+                     "string",
+                     "null"
+                  ]
+               },
+               "relaxation_time": {
+                  "type": "object",
+                  "properties": {
+                     "a": {
+                        "$ref": "#/$defs/double"
+                     },
+                     "b": {
+                        "$ref": "#/$defs/double"
+                     },
+                     "high_temperature_correction": {
+                        "anyOf": [
+                           {
+                              "type": "object",
+                              "properties": {
+                                 "cross_section": {
+                                    "$ref": "#/$defs/double"
+                                 },
+                                 "model": {
+                                    "type": "string"
+                                 },
+                                 "reference_temperature": {
+                                    "$ref": "#/$defs/double"
+                                 }
+                              },
+                              "additionalProperties": false,
+                              "required": [
+                                 "model",
+                                 "cross_section",
+                                 "reference_temperature"
+                              ]
+                           },
+                           {
+                              "type": "null"
+                           }
+                        ]
+                     },
+                     "model": {
+                        "type": "string"
+                     }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                     "model",
+                     "a",
+                     "b"
+                  ]
+               },
+               "species": {
+                  "type": "string"
+               }
+            },
+            "additionalProperties": false,
+            "required": [
+               "species",
+               "partner",
+               "model",
+               "relaxation_time"
+            ]
+         }
+      }
+   },
+   "additionalProperties": false,
+   "$defs": {
+      "double": {
+         "type": "number",
+         "minimum": -1.7976931348623157E308,
+         "maximum": 1.7976931348623157E308
+      },
+      "int32_t": {
+         "type": "integer",
+         "minimum": -2147483648,
+         "maximum": 2147483647
+      }
+   },
+   "required": [
+      "format",
+      "units",
+      "vibration_translation",
+      "chemistry_vibration"
+   ],
+   "title": "gaslib::database::EnergyExchangeFile"
+}

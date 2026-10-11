@@ -167,6 +167,16 @@
                      "type": "null"
                   }
                ]
+            },
+            "translational_exponent": {
+               "anyOf": [
+                  {
+                     "$ref": "#/$defs/double"
+                  },
+                  {
+                     "type": "null"
+                  }
+               ]
             }
          },
          "additionalProperties": false,

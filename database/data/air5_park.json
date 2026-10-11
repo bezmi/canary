@@ -1,0 +1,146 @@
+{
+   "format": "gaslib-reactions-1",
+   "units": {
+      "quantity": "mol",
+      "length": "m",
+      "time": "s",
+      "temperature": "K"
+   },
+   "temperature_limits": {
+      "lower": 300.0,
+      "upper": 50000.0
+   },
+   "reactions": [
+      {
+         "equation": "N2 + M <=> N + N + M",
+         "reactants": {
+            "N2": 1.0
+         },
+         "products": {
+            "N": 2.0
+         },
+         "forward": {
+            "model": "arrhenius",
+            "A": 7000000000000000.0,
+            "n": -1.6,
+            "activation_temperature": 113200.0,
+            "translational_exponent": 0.5
+         },
+         "backward": {
+            "model": "equilibrium"
+         },
+         "third_body": {
+            "efficiencies": {
+               "N2": 1.0,
+               "O2": 1.0,
+               "NO": 1.0,
+               "N": 4.2857,
+               "O": 4.2857
+            }
+         },
+         "label": "r1"
+      },
+      {
+         "equation": "O2 + M <=> O + O + M",
+         "reactants": {
+            "O2": 1.0
+         },
+         "products": {
+            "O": 2.0
+         },
+         "forward": {
+            "model": "arrhenius",
+            "A": 2000000000000000.0,
+            "n": -1.5,
+            "activation_temperature": 59500.0,
+            "translational_exponent": 0.5
+         },
+         "backward": {
+            "model": "equilibrium"
+         },
+         "third_body": {
+            "efficiencies": {
+               "N2": 1.0,
+               "O2": 1.0,
+               "NO": 1.0,
+               "N": 5.0,
+               "O": 5.0
+            }
+         },
+         "label": "r2"
+      },
+      {
+         "equation": "NO + M <=> N + O + M",
+         "reactants": {
+            "NO": 1.0
+         },
+         "products": {
+            "N": 1.0,
+            "O": 1.0
+         },
+         "forward": {
+            "model": "arrhenius",
+            "A": 5000000000.0,
+            "n": 0.0,
+            "activation_temperature": 75500.0,
+            "translational_exponent": 0.5
+         },
+         "backward": {
+            "model": "equilibrium"
+         },
+         "third_body": {
+            "efficiencies": {
+               "N2": 1.0,
+               "O2": 1.0,
+               "NO": 1.0,
+               "N": 20.0,
+               "O": 20.0
+            }
+         },
+         "label": "r3"
+      },
+      {
+         "equation": "NO + O <=> O2 + N",
+         "reactants": {
+            "NO": 1.0,
+            "O": 1.0
+         },
+         "products": {
+            "O2": 1.0,
+            "N": 1.0
+         },
+         "forward": {
+            "model": "arrhenius",
+            "A": 8400000.0,
+            "n": 0.0,
+            "activation_temperature": 19450.0
+         },
+         "backward": {
+            "model": "equilibrium"
+         },
+         "label": "r4"
+      },
+      {
+         "equation": "N2 + O <=> NO + N",
+         "reactants": {
+            "N2": 1.0,
+            "O": 1.0
+         },
+         "products": {
+            "NO": 1.0,
+            "N": 1.0
+         },
+         "forward": {
+            "model": "arrhenius",
+            "A": 640000000000.0,
+            "n": -1.0,
+            "activation_temperature": 38400.0
+         },
+         "backward": {
+            "model": "equilibrium"
+         },
+         "label": "r5"
+      }
+   ],
+   "reference": "C. Park, Review of chemical kinetic problems of future NASA missions, I: Earth entries, J. Thermophys. Heat Transf. 7(3), 1993, reduced to five species; from GDTk (gdtk-uq/gdtk bf559c3f) examples/lmr/3D/cylinder-larc/rm-park-5sp-2T.inp"
+}

@@ -199,6 +199,8 @@ void test_reactions()
         expect(mech.reactions[10].efficiencies[0] == 1.0_d);
         expect(mech.reactions[10].efficiencies[4] == 0.664827586_d);
         expect(mech.reactions[11].coefficient_change == 0_i);
+        // The translational exponent defaults to 1.
+        expect(mech.reactions[0].forward.translational_exponent == 1.0_d);
         expect(mech.temperature_lower.value() == 300.0_d);
         expect(mech.temperature_upper.value() == 30000.0_d);
         expect(mech.standard_pressure.value() == atmosphere);
@@ -560,6 +562,28 @@ void test_reactions()
         input.reactions[11].backward_model = gaslib::BackwardRateModel::arrhenius;
         expect(starts(error_message([&] { build(input); }),
                       "reaction 11 (NO + O <=> O2 + N): backward rate"));
+
+        for (const double s : {-0.1, 1.1, std::numeric_limits<double>::quiet_NaN()}) {
+            input = gaslib::air5_kim_jo;
+            input.reactions[2].forward.translational_exponent = s;
+            message = error_message([&] { build(input); });
+            expect(starts(message,
+                          "reaction 2 (N2 + NO <=> N + N + NO): forward rate: translational "
+                          "exponent must be finite and between 0 and 1"))
+              << message;
+            input = gaslib::air5_kim_jo;
+            input.reactions[11].backward_model = gaslib::BackwardRateModel::arrhenius;
+            input.reactions[11].backward = input.reactions[11].forward;
+            input.reactions[11].backward.translational_exponent = s;
+            message = error_message([&] { build(input); });
+            expect(starts(message,
+                          "reaction 11 (NO + O <=> O2 + N): backward rate: translational exponent"))
+              << message;
+        }
+        // An equilibrium backward rate ignores its Arrhenius input.
+        input = gaslib::air5_kim_jo;
+        input.reactions[11].backward.translational_exponent = 2.0;
+        build(input);
 
         input = gaslib::air5_kim_jo;
         input.temperature_lower = 40000.0;

@@ -1,7 +1,8 @@
-// Tests of the species database library: reading and writing species and
-// reactions files, errors, the generated schemas, conversion to model
-// inputs, cp/R of the shipped five-species air file against reference
-// values, and the compiled Kim-Jo mechanism against its file.
+// Tests of the species database library: reading and writing species,
+// reactions and energy-exchange files, errors, the generated schemas,
+// conversion to model inputs, cp/R of the shipped five-species air file
+// against reference values, and the compiled Kim-Jo mechanism, Park
+// mechanism and Park energy exchange against their files.
 
 #include <array>
 #include <boost/ut.hpp>
@@ -12,7 +13,10 @@
 #include <gaslib/build.hpp>
 #include <gaslib/data/air5.hpp>
 #include <gaslib/data/air5_kim_jo.hpp>
+#include <gaslib/data/air5_park.hpp>
+#include <gaslib/data/air5_park_exchange.hpp>
 #include <gaslib/database.hpp>
+#include <gaslib/energy_exchange.hpp>
 #include <gaslib/nasa9.hpp>
 #include <gaslib/quantity.hpp>
 #include <gaslib/reactions.hpp>
@@ -34,6 +38,11 @@ std::filesystem::path source_path(std::string_view relative)
 std::filesystem::path air5_path() { return source_path("database/data/air5.json"); }
 
 std::filesystem::path kim_jo_path() { return source_path("database/data/air5_kim_jo.json"); }
+
+std::filesystem::path park_path() { return source_path("database/data/air5_park.json"); }
+
+std::filesystem::path exchange_path()
+{ return source_path("database/data/air5_park_exchange.json"); }
 
 std::string read_text(const std::filesystem::path& path)
 {
@@ -77,7 +86,19 @@ bool same_coefficients(const gaslib::SpeciesCoefficients<K>& a,
 }
 
 bool same_rate(const gaslib::ArrheniusInput& a, const gaslib::ArrheniusInput& b)
-{ return a.A == b.A && a.n == b.n && a.activation_temperature == b.activation_temperature; }
+{
+    return a.A == b.A && a.n == b.n && a.activation_temperature == b.activation_temperature &&
+           a.translational_exponent == b.translational_exponent;
+}
+
+// air5_park_exchange.json with one textual replacement.
+std::string exchange_with(std::string_view from, std::string_view to)
+{
+    std::string text = read_text(exchange_path());
+    const auto at = text.find(from);
+    if (at != std::string::npos) { text.replace(at, from.size(), to); }
+    return text;
+}
 
 template <typename F> bool throws_database_error(const F& f)
 {
@@ -411,5 +432,168 @@ int main()
         expect(throws_parameter_error([&] {
             (void)gaslib::make_reaction_mechanism(negative, air5_names, built.species, scales);
         }));
+    };
+
+    "model inputs from the Park file equal the compiled data, with translational exponents"_test =
+      [] {
+          const db::ReactionsFile file = db::read_reactions_file(park_path());
+          expect(file.reactions[0].forward.translational_exponent == 0.5);
+          expect(!file.reactions[3].forward.translational_exponent.has_value());
+          const auto input = db::mechanism_input<5, 5>(file);
+          const auto& compiled = gaslib::air5_park;
+          expect(input.temperature_lower == compiled.temperature_lower);
+          expect(input.temperature_upper == compiled.temperature_upper);
+          for (std::size_t k = 0; k < 5; ++k) {
+              const auto& a = input.reactions[k];
+              const auto& b = compiled.reactions[k];
+              expect(std::string_view(a.equation) == b.equation) << k;
+              expect(same_coefficients(a.reactants, b.reactants)) << k;
+              expect(same_coefficients(a.products, b.products)) << k;
+              expect(same_rate(a.forward, b.forward)) << k;
+              expect(a.backward_model == b.backward_model) << k;
+              expect(a.third_body == b.third_body) << k;
+              expect(same_coefficients(a.efficiencies, b.efficiencies)) << k;
+          }
+          expect(input.reactions[0].forward.translational_exponent == 0.5);
+          expect(input.reactions[3].forward.translational_exponent == 1.0);
+          // The exponent survives writing and reading.
+          expect(db::parse_reactions(db::write_reactions(file)) == file);
+      };
+
+    "an equilibrium backward rate with a translational exponent is an error"_test = [] {
+        db::ReactionsFile file = db::read_reactions_file(park_path());
+        file.reactions[1].backward.translational_exponent = 0.5;
+        expect(throws_parameter_error([&] { (void)db::mechanism_input<5, 5>(file); }));
+    };
+
+    "the shipped energy-exchange file reads with its pairs and couplings"_test = [] {
+        const db::EnergyExchangeFile file = db::read_energy_exchange_file(exchange_path());
+        expect(file.format == db::energy_exchange_format);
+        expect(file.units == db::ExchangeUnits {});
+        expect(file.vibration_translation.size() == 15_u);
+        expect(file.chemistry_vibration.size() == 3_u);
+        const db::VibrationTranslationRecord& first = file.vibration_translation[0];
+        expect(first.species == "N2" && first.partner == "N" && first.model == "landau_teller");
+        expect(first.relaxation_time.model == "millikan_white");
+        expect(first.relaxation_time.a == 180.0_d && first.relaxation_time.b == 0.0262_d);
+        expect(first.relaxation_time.high_temperature_correction.has_value());
+        expect(first.relaxation_time.high_temperature_correction->cross_section == 1.0e-21);
+        const db::ChemistryVibrationRecord& coupling = file.chemistry_vibration[1];
+        expect(coupling.reaction == 1_i && coupling.species == "O2");
+        expect(coupling.model == "impartial_dissociation");
+        expect(coupling.vibrational_temperature == 2273.53_d);
+    };
+
+    "an energy-exchange file reads, writes and reads again to the same data and text"_test = [] {
+        const db::EnergyExchangeFile file = db::read_energy_exchange_file(exchange_path());
+        const std::string text = db::write_energy_exchange(file);
+        const db::EnergyExchangeFile again = db::parse_energy_exchange(text);
+        expect(again == file);
+        expect(db::write_energy_exchange(again) == text);
+        const auto path = std::filesystem::temp_directory_path() / "gaslib_test_exchange.json";
+        db::write_energy_exchange_file(path, file);
+        expect(db::read_energy_exchange_file(path) == file);
+        std::filesystem::remove(path);
+    };
+
+    "unknown and missing keys, another format or other units of an energy-exchange file are errors"_test =
+      [] {
+          expect(throws_database_error([] {
+              db::parse_energy_exchange(exchange_with("\"format\"", R"("extra": 1, "format")"));
+          }));
+          expect(throws_database_error(
+            [] { db::parse_energy_exchange(exchange_with("\"partner\"", "\"collider\"")); }));
+          expect(throws_database_error(
+            [] { db::parse_energy_exchange(exchange_with(R"("model": "landau_teller",)", "")); }));
+          expect(throws_database_error(
+            [] { db::parse_energy_exchange(exchange_with(R"("reaction": 0,)", "")); }));
+          expect(throws_database_error([] {
+              db::parse_energy_exchange(
+                exchange_with("gaslib-energy-exchange-1", "gaslib-energy-exchange-2"));
+          }));
+          expect(throws_database_error([] {
+              db::parse_energy_exchange(
+                exchange_with(R"("energy": "J/mol")", R"("energy": "J/kmol")"));
+          }));
+          expect(throws_database_error([] {
+              db::parse_energy_exchange(exchange_with(R"("area": "m^2")", R"("area": "cm^2")"));
+          }));
+          expect(throws_database_error(
+            [] { db::read_energy_exchange_file(source_path("no_such_file.json")); }));
+          expect(throws_database_error([] { db::parse_energy_exchange(read_text(park_path())); }));
+          // The correction is optional.
+          db::EnergyExchangeFile file = db::read_energy_exchange_file(exchange_path());
+          file.vibration_translation[2].relaxation_time.high_temperature_correction.reset();
+          expect(db::parse_energy_exchange(db::write_energy_exchange(file)) == file);
+      };
+
+    "the shipped energy-exchange schema is the schema of the current file structs"_test = [] {
+        expect(db::energy_exchange_schema() ==
+               read_text(source_path("database/energy_exchange.schema.json")));
+    };
+
+    "model inputs from the energy-exchange file equal the compiled data"_test = [] {
+        const db::EnergyExchangeFile file = db::read_energy_exchange_file(exchange_path());
+        const auto input = db::energy_exchange_input<15, 3>(file);
+        const auto& compiled = gaslib::air5_park_exchange;
+        for (std::size_t k = 0; k < 15; ++k) {
+            const auto& a = input.vibration_translation[k];
+            const auto& b = compiled.vibration_translation[k];
+            expect(std::string_view(a.species) == b.species &&
+                   std::string_view(a.partner) == b.partner)
+              << k;
+            expect(a.millikan_white.a == b.millikan_white.a &&
+                   a.millikan_white.b == b.millikan_white.b)
+              << k;
+            expect(a.park_correction == b.park_correction) << k;
+            expect(a.park.cross_section == b.park.cross_section &&
+                   a.park.reference_temperature == b.park.reference_temperature)
+              << k;
+        }
+        for (std::size_t k = 0; k < 3; ++k) {
+            const auto& a = input.chemistry_vibration[k];
+            const auto& b = compiled.chemistry_vibration[k];
+            expect(a.reaction == b.reaction && std::string_view(a.species) == b.species) << k;
+            expect(a.dissociation_energy == b.dissociation_energy &&
+                   a.vibrational_temperature == b.vibrational_temperature)
+              << k;
+        }
+        // The energy exchange built from the file builds like the compiled one.
+        const gaslib::UnitScales<double, gaslib::si> scales {};
+        const auto built = gaslib::make_air5<double>(scales);
+        const auto mechanism = gaslib::make_air5_park(built.species, scales);
+        (void)gaslib::make_energy_exchange(input, air5_names, built.species, mechanism, scales);
+        (void)gaslib::make_air5_park_exchange(built.species, mechanism, scales);
+    };
+
+    "energy-exchange conversion errors name the entry and the problem"_test = [] {
+        const db::EnergyExchangeFile file = db::read_energy_exchange_file(exchange_path());
+        expect(throws_parameter_error([&] { (void)db::energy_exchange_input<14, 3>(file); }));
+        expect(throws_parameter_error([&] { (void)db::energy_exchange_input<15, 2>(file); }));
+        const auto message = [](const db::EnergyExchangeFile& f) -> std::string {
+            try {
+                (void)db::energy_exchange_input<15, 3>(f);
+            } catch (const gaslib::ParameterError& error) {
+                return error.what();
+            }
+            return "no exception";
+        };
+        db::EnergyExchangeFile changed = file;
+        changed.vibration_translation[1].model = "ssh";
+        expect(message(changed).starts_with(
+          R"(vibration_translation 1 (N2-O): model must be "landau_teller")"))
+          << message(changed);
+        changed = file;
+        changed.vibration_translation[4].relaxation_time.model = "schwartz";
+        expect(message(changed).starts_with("vibration_translation 4 (N2-NO)")) << message(changed);
+        changed = file;
+        changed.vibration_translation[5].relaxation_time.high_temperature_correction->model =
+          "park_1985";
+        expect(message(changed).starts_with("vibration_translation 5 (O2-N)")) << message(changed);
+        changed = file;
+        changed.chemistry_vibration[2].model = "marrone_treanor";
+        expect(message(changed).starts_with(
+          R"(chemistry_vibration 2 (NO): model must be "impartial_dissociation")"))
+          << message(changed);
     };
 }

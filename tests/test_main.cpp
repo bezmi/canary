@@ -26,4 +26,5 @@ int main()
     test_thermally_perfect();
     test_two_temperature();
     test_reactions();
+    test_energy_exchange();
 }

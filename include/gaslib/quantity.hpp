@@ -87,6 +87,8 @@ struct mode_temperature       { static constexpr Dimension dimension {.temperatu
 struct number_rate_density    { static constexpr Dimension dimension {.length = -3, .time = -1, .count = 1}; };
 // Mass per unit volume and time produced by reactions.
 struct mass_production_rate   { static constexpr Dimension dimension {.mass = 1, .length = -3, .time = -1}; };
+// Energy per unit volume and time, for example an energy exchange source.
+struct power_density          { static constexpr Dimension dimension {.mass = 1, .length = -1, .time = -3}; };
 // clang-format on
 
 }  // namespace kind
@@ -176,6 +178,7 @@ template <Scalar T, UnitSystem U> using ModeEnergyDensity    = Quantity<kind::mo
 template <Scalar T, UnitSystem U> using ModeTemperature      = Quantity<kind::mode_temperature, T, U>;
 template <Scalar T, UnitSystem U> using NumberRateDensity    = Quantity<kind::number_rate_density, T, U>;
 template <Scalar T, UnitSystem U> using MassProductionRate   = Quantity<kind::mass_production_rate, T, U>;
+template <Scalar T, UnitSystem U> using PowerDensity         = Quantity<kind::power_density, T, U>;
 // clang-format on
 
 // Same-kind arithmetic and comparison. The operands may have different value

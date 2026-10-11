@@ -131,6 +131,26 @@ GASLIB_HOST_DEVICE TranslationalRotationalSums<W>
     return {.cp = cp, .formation_enthalpy = h};
 }
 
+// e_ve,i(t) and cv_ve,i(t) of species i at the vibrational-electronic
+// temperature t (model units), with ln_t = ln t, with plain values of type
+// W.
+template <Scalar W, std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
+    requires ScalarWith<W, P>
+GASLIB_HOST_DEVICE EnergyAndCv<W> species_vibrational_electronic_energy(
+  const TwoTemperatureMixture<P, U, N, S>& gas, std::size_t i, W t, W ln_t)
+{
+    const auto& single = gas.thermally_perfect;
+    const P t_ref = single.reference_temperature.value();
+    const Nasa9CpH<W> c = nasa9_cp_h(single.curve[i], t, ln_t);
+    const P r = single.gas_constant[i].value();
+    const P cp_tr = gas.translational_rotational_cp[i].value();
+    const P h_f = gas.formation_enthalpy[i].value();
+    return {
+      .e = W((r * c.h_over_r) - (cp_tr * (t - t_ref)) - h_f),
+      .cv = W((r * c.cp_over_r) - cp_tr),
+    };
+}
+
 // e_ve = sum(y_i e_ve,i(t)) and cv_ve = sum(y_i cv_ve,i(t)) at the
 // vibrational-electronic temperature t (model units), with plain values of
 // type W. The curves are empirical fits and are evaluated on plain values,
@@ -141,18 +161,13 @@ GASLIB_HOST_DEVICE EnergyAndCv<W> vibrational_electronic_energy(
   const TwoTemperatureMixture<P, U, N, S>& gas, const std::array<MassFraction<W>, N>& y, W t)
 {
     using V = ScalarTraits<W>::value_type;
-    const auto& single = gas.thermally_perfect;
-    const P t_ref = single.reference_temperature.value();
     const W ln_t = math::log(t);
     W e = W(V(0));
     W cv = W(V(0));
     for (std::size_t i = 0; i < N; ++i) {
-        const Nasa9CpH<W> c = nasa9_cp_h(single.curve[i], t, ln_t);
-        const P r = single.gas_constant[i].value();
-        const P cp_tr = gas.translational_rotational_cp[i].value();
-        const P h_f = gas.formation_enthalpy[i].value();
-        e = e + W(y[i].value() * ((r * c.h_over_r) - (cp_tr * (t - t_ref)) - h_f));
-        cv = cv + W(y[i].value() * ((r * c.cp_over_r) - cp_tr));
+        const EnergyAndCv<W> c = species_vibrational_electronic_energy(gas, i, t, ln_t);
+        e = e + W(y[i].value() * c.e);
+        cv = cv + W(y[i].value() * c.cv);
     }
     return {.e = e, .cv = cv};
 }
@@ -576,6 +591,32 @@ GASLIB_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, 1>>
       detail::mode_specific_energy(detail::single_mode(mode_energy_densities), rho));
     c.state.p = p;
     return c;
+}
+
+// Per-species properties of the single-temperature model at temperature
+// temp (thermal equilibrium, T_ve = T); see SpeciesProperties.
+template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
+    requires ScalarWith<T, P> && HasLog<T>
+GASLIB_HOST_DEVICE SpeciesProperties<T, U, N>
+  species_properties(const TwoTemperatureMixture<P, U, N, S>& gas, Temperature<T, U> temp)
+{ return species_properties(gas.thermally_perfect, temp); }
+
+// Vibrational-electronic energy per unit mass e_ve,i of every species at
+// temperature temp (model units), with one logarithm.
+template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
+    requires ScalarWith<T, P> && HasLog<T>
+GASLIB_HOST_DEVICE std::array<SpecificEnergy<T, U>, N>
+  species_vibrational_electronic_energy(const TwoTemperatureMixture<P, U, N, S>& gas,
+                                        Temperature<T, U> temp)
+{
+    const T t = temp.value();
+    const T ln_t = math::log(t);
+    std::array<SpecificEnergy<T, U>, N> out {};
+    for (std::size_t i = 0; i < N; ++i) {
+        out[i] =
+          SpecificEnergy<T, U> {detail::species_vibrational_electronic_energy(gas, i, t, ln_t).e};
+    }
+    return out;
 }
 
 // cv = sum(y_i (cv_tr,i + cv_ve,i(T_ve))), cp = cv + R, gamma = cp / cv,

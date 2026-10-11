@@ -5,23 +5,29 @@
 // with Arrhenius forward rates, backward rates from the equilibrium constant
 // or from their own Arrhenius fits, and optional third bodies; per cell, the
 // rates of progress of every reaction and the mass production rate of every
-// species.
+// species, at one temperature or at two (the translational temperature T and
+// the vibrational-electronic temperature T_ve of a two-temperature model).
 //
 // Concentrations are number densities n_i = rho y_i / m_i (particles per
 // unit volume), so that the same functions work in SI and in scaled units.
-// For a reaction with reactant coefficients nu'_i and product coefficients
-// nu''_i:
-//   k_f = A T^n exp(-theta / T),
+// T_l is T clamped to the mechanism's temperature limits; T_ve is not
+// clamped. An Arrhenius rate constant with translational exponent s is
+// evaluated at the rate-controlling temperature T_c = T_l^s T_ve^(1 - s):
+//   k(T_c) = A T_c^n exp(-theta / T_c).
+// With one temperature, T_ve = T_l, so T_c = T_l whatever s is. For a
+// reaction with reactant coefficients nu'_i and product coefficients nu''_i:
+//   k_f = k(T_c) with the forward A, n, theta and s,
 //   [M] = sum_i eps_i n_i with a third body, 1 without,
 //   q_f = k_f [M] prod_i n_i^nu'_i,   q_b = k_b [M] prod_i n_i^nu''_i,
 //   omega_i = m_i sum_r (nu''_ir - nu'_ir) (q_f,r - q_b,r).
-// The backward rate constant is an Arrhenius fit of its own, or
-// k_b = k_f / K_c with the equilibrium constant in concentration form
-//   K_c = exp(-sum_i dnu_i g_i m_i / (k_B T)) (p0 / (k_B T))^(sum_i dnu_i),
+// The backward rate constant is either an Arrhenius rate of its own, at its
+// own T_c, or k_b = k_f(T_l) / K_c(T_l), where k_f(T_l) is the forward
+// Arrhenius expression at T_c = T_l (so this k_b does not depend on T_ve)
+// and K_c is the equilibrium constant in concentration form
+//   K_c = exp(-sum_i dnu_i g_i m_i / (k_B T_l)) (p0 / (k_B T_l))^(sum_i dnu_i),
 // where dnu_i = nu''_i - nu'_i, g_i is the standard-state Gibbs energy per
-// unit mass of species i and p0 the standard pressure. Every rate constant
-// is evaluated at the translational temperature clamped to the mechanism's
-// temperature limits.
+// unit mass of species i at T_l from the species_properties of the thermo
+// model, and p0 the standard pressure.
 
 #include <array>
 #include <cmath>
@@ -43,14 +49,18 @@
 namespace gaslib
 {
 
-// Host input of an Arrhenius rate constant k = A T^n exp(-theta / T), in SI
-// per mole: A in (m^3/mol)^(order - 1) / s with T in K, where order is the
-// sum of the coefficients of the reaction side the rate multiplies, plus 1
-// with a third body; n dimensionless; activation_temperature theta in K.
+// Host input of an Arrhenius rate constant k = A T_c^n exp(-theta / T_c), in
+// SI per mole: A in (m^3/mol)^(order - 1) / s with T_c in K, where order is
+// the sum of the coefficients of the reaction side the rate multiplies, plus
+// 1 with a third body; n dimensionless; activation_temperature theta in K;
+// translational_exponent s in [0, 1], the exponent of the translational
+// temperature in the rate-controlling temperature T_c = T^s T_ve^(1 - s)
+// (1: the rate depends on T only).
 struct ArrheniusInput {
     double A;
     double n;
     double activation_temperature;
+    double translational_exponent = 1.0;
 };
 
 // Host input of a species name and a number: a stoichiometric coefficient
@@ -106,15 +116,17 @@ struct MechanismInput {
     std::array<ReactionInput<K>, R> reactions;
 };
 
-// Arrhenius rate constant k = A T^n exp(-theta / T) in model units: T and
-// theta in the temperature unit of U, and A per particle in
+// Arrhenius rate constant k = A T_c^n exp(-theta / T_c) in model units: T_c
+// and theta in the temperature unit of U, and A per particle in
 // (length^3 / count)^(order - 1) / time of U, times the temperature scale
 // raised to n. A and n are plain values, since the dimension of A depends
-// on the reaction order.
+// on the reaction order. translational_exponent is s of
+// T_c = T^s T_ve^(1 - s).
 template <std::floating_point P, UnitSystem U> struct ArrheniusRate {
     P A;
     P n;
     Temperature<P, U> activation_temperature;
+    P translational_exponent;
 };
 
 // One reaction of a mechanism over N species, indexed as the species of the
@@ -266,7 +278,8 @@ std::array<P, N> third_body_efficiencies(const SpeciesCoefficients<K>& list,
 }
 
 // Rate constant of the given order in model units. A must be finite and
-// positive, n finite and theta finite and non-negative. A per mole in SI
+// positive, n finite, theta finite and non-negative and s finite in [0, 1].
+// A per mole in SI
 // becomes A / N_A^(order - 1) per particle; with T_SI = tau T, the model A
 // is that times tau^n divided by the scale of (length^3 / count)^(order - 1)
 // / time. The conversion is done in double.
@@ -289,6 +302,13 @@ ArrheniusRate<P, U> arrhenius_rate(const ArrheniusInput& input,
                       role,
                       input.activation_temperature));
     }
+    const double s_t = input.translational_exponent;
+    if (!std::isfinite(s_t) || s_t < 0.0 || s_t > 1.0) {
+        throw ParameterError(
+          std::format("{} rate: translational exponent must be finite and between 0 and 1, got {}",
+                      role,
+                      s_t));
+    }
     const UnitScales<double, U> s = double_scales(scales);
     const Dimension dimension {
       .length = 3 * (order - 1),
@@ -309,6 +329,7 @@ ArrheniusRate<P, U> arrhenius_rate(const ArrheniusInput& input,
       .n = static_cast<P>(input.n),
       .activation_temperature =
         Temperature<P, U> {static_cast<P>(input.activation_temperature / tau)},
+      .translational_exponent = static_cast<P>(s_t),
     };
 }
 
@@ -362,7 +383,9 @@ Reaction<P, U, N> make_reaction(const ReactionInput<K>& input,
 // - a third-body efficiency names an unknown species or is negative or not
 //   finite, or efficiencies are given without a third body;
 // - an Arrhenius A is not finite and positive (also after conversion), n is
-//   not finite, or an activation temperature is negative or not finite.
+//   not finite, an activation temperature is negative or not finite, or a
+//   translational exponent is not finite or outside [0, 1] (the backward
+//   rate is checked only with BackwardRateModel::arrhenius).
 template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t R, std::size_t K>
     requires(N > 0 && R > 0 && K > 0)
 ReactionMechanism<P, U, N, R> make_reaction_mechanism(const MechanismInput<R, K>& input,
@@ -454,43 +477,60 @@ template <typename G, typename T, typename P, std::size_t N>
 concept ReactingModel = HasSpeciesProperties<G, T, N> && std::floating_point<P> &&
                         ScalarWith<T, P> && HasExp<T> && HasLog<T>;
 
-// Rates of progress of every reaction of mech in a cell of density rho and
-// translational temperature temp, with the normalised mass fractions of
-// mix. The rate constants and the Gibbs energies of the equilibrium
-// constants are evaluated at temp clamped to [temperature_lower,
-// temperature_upper] of mech (on its value part; a clamped temperature has
-// derivative zero). The Arrhenius expressions compute on the values of the
-// quantities, since A has no fixed kind. The gas model is called once,
-// through species_properties. The status of mix is not checked.
-template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::size_t R, typename G>
-    requires ReactingModel<G, T, P, N> && std::same_as<typename G::units, U>
-GASLIB_HOST_DEVICE RatesOfProgress<T, U, R>
-  rates_of_progress(const ReactionMechanism<P, U, N, R>& mech,
-                    const G& gas,
-                    const NormalisedComposition<T, U, N>& mix,
-                    Density<T, U> rho,
-                    Temperature<T, U> temp)
+namespace detail
+{
+
+// temp clamped to [temperature_lower, temperature_upper] of mech, on its
+// value part; a clamped temperature has derivative zero.
+template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::size_t R>
+GASLIB_HOST_DEVICE T clamped_temperature(const ReactionMechanism<P, U, N, R>& mech,
+                                         Temperature<T, U> temp)
 {
     using V = ScalarTraits<T>::value_type;
     const V t_value = ScalarTraits<T>::value(temp.value());
     const auto lower = static_cast<V>(mech.temperature_lower.value());
     const auto upper = static_cast<V>(mech.temperature_upper.value());
-    T t = temp.value();
-    if (t_value < lower) {
-        t = T(lower);
-    } else if (upper < t_value) {
-        t = T(upper);
-    }
+    if (t_value < lower) { return T(lower); }
+    if (upper < t_value) { return T(upper); }
+    return temp.value();
+}
 
+// ln(k / A) of an Arrhenius rate at T_c = T_l^s T_ve^(1 - s), from ln T_l,
+// 1 / T_l and ln_ratio = ln(T_ve / T_l): with w = (1 - s) ln_ratio,
+// ln T_c = ln T_l + w and 1 / T_c = exp(-w) / T_l. w = 0 (s = 1 or
+// T_ve = T_l) gives exactly n ln T_l - theta / T_l.
+template <Scalar T, std::floating_point P, UnitSystem U>
+    requires ScalarWith<T, P> && HasExp<T>
+GASLIB_HOST_DEVICE T
+  arrhenius_exponent(const ArrheniusRate<P, U>& rate, T ln_t, T inv_t, T ln_ratio)
+{
+    const T w = T((P(1) - rate.translational_exponent) * ln_ratio);
+    return T(rate.n * T(ln_t + w)) -
+           T(rate.activation_temperature.value() * T(inv_t * math::exp(T(-w))));
+}
+
+// Rates of progress at the clamped translational temperature t (T_l), with
+// ln_ratio = ln(T_ve / T_l). The gas model is called once, at t.
+template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::size_t R, typename G>
+    requires ReactingModel<G, T, P, N> && std::same_as<typename G::units, U>
+GASLIB_HOST_DEVICE RatesOfProgress<T, U, R>
+  rates_of_progress_at(const ReactionMechanism<P, U, N, R>& mech,
+                       const G& gas,
+                       const NormalisedComposition<T, U, N>& mix,
+                       Density<T, U> rho,
+                       T t,
+                       T ln_ratio)
+{
+    using V = ScalarTraits<T>::value_type;
     const SpeciesProperties<T, U, N> props = species_properties(gas, Temperature<T, U> {t});
     const T ln_t = math::log(t);
     const T inv_t = T(V(1)) / t;
     const T inv_kt = T(V(1)) / T(mech.boltzmann.value() * t);
-    // Logarithm of the standard-state number density p0 / (k_B T).
+    // Logarithm of the standard-state number density p0 / (k_B T_l).
     const T ln_n0 = math::log(T(mech.standard_pressure.value() * inv_kt));
 
     // Number densities n_i and standard Gibbs energies per particle over
-    // k_B T.
+    // k_B T_l.
     std::array<T, N> n {};
     std::array<T, N> g {};
     for (std::size_t i = 0; i < N; ++i) {
@@ -502,14 +542,14 @@ GASLIB_HOST_DEVICE RatesOfProgress<T, U, R>
     RatesOfProgress<T, U, R> out {};
     for (std::size_t k = 0; k < R; ++k) {
         const Reaction<P, U, N>& r = mech.reactions[k];
-        // ln(k_f / A) = n ln T - theta / T.
-        const T forward_exponent =
-          T(r.forward.n * ln_t) - T(r.forward.activation_temperature.value() * inv_t);
-        const T k_f = T(r.forward.A * math::exp(forward_exponent));
+        const T k_f =
+          T(r.forward.A * math::exp(arrhenius_exponent(r.forward, ln_t, inv_t, ln_ratio)));
         T k_b = k_f;
         if (r.backward_model == BackwardRateModel::equilibrium) {
-            // k_b = k_f / K_c = A exp(ln(k_f / A) + sum dnu_i g_i m_i / (k_B T)
-            //                         - sum(dnu) ln(p0 / (k_B T))).
+            // k_b = k_f(T_l) / K_c = A exp(ln(k_f(T_l) / A) + sum dnu_i g_i m_i / (k_B T_l)
+            //                              - sum(dnu) ln(p0 / (k_B T_l))).
+            const T forward_exponent =
+              T(r.forward.n * ln_t) - T(r.forward.activation_temperature.value() * inv_t);
             T exponent = forward_exponent - T(V(r.coefficient_change) * ln_n0);
             for (std::size_t i = 0; i < N; ++i) {
                 const int dnu = r.products[i] - r.reactants[i];
@@ -517,8 +557,8 @@ GASLIB_HOST_DEVICE RatesOfProgress<T, U, R>
             }
             k_b = T(r.forward.A * math::exp(exponent));
         } else {
-            k_b = T(r.backward.A * math::exp(T(r.backward.n * ln_t) -
-                                             T(r.backward.activation_temperature.value() * inv_t)));
+            k_b =
+              T(r.backward.A * math::exp(arrhenius_exponent(r.backward, ln_t, inv_t, ln_ratio)));
         }
         T q_f = k_f;
         T q_b = k_b;
@@ -538,20 +578,15 @@ GASLIB_HOST_DEVICE RatesOfProgress<T, U, R>
     return out;
 }
 
-// Mass production rate of every species, omega_i = m_i sum_r (nu''_ir -
-// nu'_ir) (q_f,r - q_b,r), from the rates of progress of rates_of_progress
-// with the same arguments.
-template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::size_t R, typename G>
-    requires ReactingModel<G, T, P, N> && std::same_as<typename G::units, U>
+// omega_i = m_i sum_r (nu''_ir - nu'_ir) (q_f,r - q_b,r) from the rates of
+// progress q of mech.
+template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::size_t R>
+    requires ScalarWith<T, P>
 GASLIB_HOST_DEVICE std::array<MassProductionRate<T, U>, N>
-  production_rates(const ReactionMechanism<P, U, N, R>& mech,
-                   const G& gas,
-                   const NormalisedComposition<T, U, N>& mix,
-                   Density<T, U> rho,
-                   Temperature<T, U> temp)
+  mass_production_rates(const ReactionMechanism<P, U, N, R>& mech,
+                        const RatesOfProgress<T, U, R>& q)
 {
     using V = ScalarTraits<T>::value_type;
-    const RatesOfProgress<T, U, R> q = rates_of_progress(mech, gas, mix, rho, temp);
     std::array<T, N> net {};
     net.fill(T(V(0)));
     for (std::size_t k = 0; k < R; ++k) {
@@ -568,6 +603,77 @@ GASLIB_HOST_DEVICE std::array<MassProductionRate<T, U>, N>
     }
     return out;
 }
+
+}  // namespace detail
+
+// Rates of progress of every reaction of mech in a cell of density rho,
+// translational temperature temp and vibrational-electronic temperature
+// temp_ve, with the normalised mass fractions of mix. Every rate constant
+// and the Gibbs energies of the equilibrium constants use T_l, temp clamped
+// to [temperature_lower, temperature_upper] of mech (on its value part; a
+// clamped temperature has derivative zero); temp_ve is not clamped and
+// enters only through the rate-controlling temperatures of the Arrhenius
+// rates (see the top of this file). The Arrhenius expressions compute on
+// the values of the quantities, since A has no fixed kind. The gas model is
+// called once, through species_properties at T_l. The status of mix is not
+// checked.
+template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::size_t R, typename G>
+    requires ReactingModel<G, T, P, N> && std::same_as<typename G::units, U>
+GASLIB_HOST_DEVICE RatesOfProgress<T, U, R>
+  rates_of_progress(const ReactionMechanism<P, U, N, R>& mech,
+                    const G& gas,
+                    const NormalisedComposition<T, U, N>& mix,
+                    Density<T, U> rho,
+                    Temperature<T, U> temp,
+                    Temperature<T, U> temp_ve)
+{
+    const T t = detail::clamped_temperature(mech, temp);
+    return detail::rates_of_progress_at(mech, gas, mix, rho, t, math::log(T(temp_ve.value() / t)));
+}
+
+// Rates of progress at one temperature: as above with T_ve = T_l, so that
+// every rate-controlling temperature is T_l.
+template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::size_t R, typename G>
+    requires ReactingModel<G, T, P, N> && std::same_as<typename G::units, U>
+GASLIB_HOST_DEVICE RatesOfProgress<T, U, R>
+  rates_of_progress(const ReactionMechanism<P, U, N, R>& mech,
+                    const G& gas,
+                    const NormalisedComposition<T, U, N>& mix,
+                    Density<T, U> rho,
+                    Temperature<T, U> temp)
+{
+    using V = ScalarTraits<T>::value_type;
+    const T t = detail::clamped_temperature(mech, temp);
+    return detail::rates_of_progress_at(mech, gas, mix, rho, t, T(V(0)));
+}
+
+// Mass production rate of every species, omega_i = m_i sum_r (nu''_ir -
+// nu'_ir) (q_f,r - q_b,r), from the rates of progress of rates_of_progress
+// with the same arguments.
+template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::size_t R, typename G>
+    requires ReactingModel<G, T, P, N> && std::same_as<typename G::units, U>
+GASLIB_HOST_DEVICE std::array<MassProductionRate<T, U>, N>
+  production_rates(const ReactionMechanism<P, U, N, R>& mech,
+                   const G& gas,
+                   const NormalisedComposition<T, U, N>& mix,
+                   Density<T, U> rho,
+                   Temperature<T, U> temp,
+                   Temperature<T, U> temp_ve)
+{
+    return detail::mass_production_rates(mech,
+                                         rates_of_progress(mech, gas, mix, rho, temp, temp_ve));
+}
+
+// As above at one temperature.
+template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::size_t R, typename G>
+    requires ReactingModel<G, T, P, N> && std::same_as<typename G::units, U>
+GASLIB_HOST_DEVICE std::array<MassProductionRate<T, U>, N>
+  production_rates(const ReactionMechanism<P, U, N, R>& mech,
+                   const G& gas,
+                   const NormalisedComposition<T, U, N>& mix,
+                   Density<T, U> rho,
+                   Temperature<T, U> temp)
+{ return detail::mass_production_rates(mech, rates_of_progress(mech, gas, mix, rho, temp)); }
 
 }  // namespace gaslib
 

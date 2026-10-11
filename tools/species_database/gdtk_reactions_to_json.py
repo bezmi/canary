@@ -4,7 +4,10 @@ pre-exponential factors in CGS units) to a gaslib reactions file
 
 Each Reaction{...} entry gives an equation such as 'N2 + N2 <=> N + N + N2'
 or 'NO + M <=> N + O + M', a forward rate fr={'Arrhenius', A=, n=, C=}
-(k = A T^n exp(-C / T), A in (cm^3/mol)^(order - 1) / s, C in K), optionally
+(k = A T^n exp(-C / T), A in (cm^3/mol)^(order - 1) / s, C in K) or
+fr={'Park', A=, n=, C=, s=} (the same at the rate-controlling temperature
+T^s T_ve^(1 - s); written as an Arrhenius rate with translational_exponent
+s), optionally
 a backward rate br={...} of the same form (otherwise the backward rate comes
 from the equilibrium constant), optionally collider efficiencies
 efficiencies={['N2']=1.0, ...} for reactions with M, and a label. The
@@ -60,19 +63,22 @@ def side(expression):
 
 
 def arrhenius(body, order):
-    match = re.search(r"\{\s*['\"]Arrhenius['\"]\s*,([^}]*)\}", body)
+    match = re.search(r"\{\s*['\"](Arrhenius|Park)['\"]\s*,([^}]*)\}", body)
     if not match:
         raise SystemExit(f"unsupported rate form in: {body.strip()[:60]}")
-    fields = dict(re.findall(r"(\w+)\s*=\s*([0-9.eE+-]+)", match.group(1)))
+    fields = dict(re.findall(r"(\w+)\s*=\s*([0-9.eE+-]+)", match.group(2)))
     a_cgs = Decimal(fields["A"])
     # (cm^3/mol)^(order - 1) / s -> (m^3/mol)^(order - 1) / s
     a_si = a_cgs * (Decimal("1e-6") ** (order - 1))
-    return {
+    rate = {
         "model": "arrhenius",
         "A": float(a_si),
         "n": float(fields.get("n", "0")),
         "activation_temperature": float(fields.get("C", "0")),
     }
+    if match.group(1) == "Park":
+        rate["translational_exponent"] = float(fields["s"])
+    return rate
 
 
 def convert_reaction(body):

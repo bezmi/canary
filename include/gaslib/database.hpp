@@ -1,8 +1,8 @@
 #ifndef GASLIB_DATABASE_HPP
 #define GASLIB_DATABASE_HPP
 
-// Species database files: JSON files of species data and of reaction
-// mechanisms in SI units, read and written by the compiled library
+// Species database files: JSON files of species data, of reaction
+// mechanisms and of energy exchange in SI units, read and written by the compiled library
 // gaslib_database (link gaslib::database). This header is C++20 and does
 // not depend on the JSON library; the conversions to model inputs below are
 // header-only.
@@ -43,7 +43,8 @@
 //         "reactants": {"NO": 1.0},
 //         "products": {"N": 1.0, "O": 1.0},
 //         "forward": {"model": "arrhenius", "A": 1450000000.0, "n": 0.0,
-//                     "activation_temperature": 75200.0},
+//                     "activation_temperature": 75200.0,
+//                     "translational_exponent": 0.5},
 //         "backward": {"model": "equilibrium"},
 //         "third_body": {"efficiencies": {"NO": 0.664827586}},
 //         "label": "...", "reference": "...", "notes": "..."
@@ -52,16 +53,48 @@
 //     "reference": "...", "notes": "..."
 //   }
 // "third_body", "label", "reference" and "notes" are optional, and so are
-// the keys A, n and activation_temperature of a rate; every other key is
-// required, and unknown keys are errors. A rate is either "arrhenius" with
-// A, n and activation_temperature, or (backward only) "equilibrium" with
+// the keys A, n, activation_temperature and translational_exponent of a
+// rate; every other key is required, and unknown keys are errors. A rate is
+// either "arrhenius" with A, n and activation_temperature and optionally
+// translational_exponent (default 1), or (backward only) "equilibrium" with
 // none of them; mechanism_input checks this.
+//
+// Energy-exchange files hold the vibration-translation exchange and the
+// chemistry-vibration coupling of a two-temperature model (see
+// energy_exchange.hpp), in SI units per mole:
+//   {
+//     "format": "gaslib-energy-exchange-1",
+//     "units": {"energy": "J/mol", "temperature": "K", "area": "m^2"},
+//     "vibration_translation": [
+//       {
+//         "species": "N2", "partner": "O", "model": "landau_teller",
+//         "relaxation_time": {
+//           "model": "millikan_white", "a": 72.4, "b": 0.015,
+//           "high_temperature_correction": {"model": "park_1993",
+//             "cross_section": 1e-21, "reference_temperature": 50000.0}
+//         },
+//         "reference": "...", "notes": "..."
+//       }
+//     ],
+//     "chemistry_vibration": [
+//       {
+//         "reaction": 0, "species": "N2", "model": "impartial_dissociation",
+//         "dissociation_energy": 945360.0, "vibrational_temperature": 3393.44,
+//         "reference": "...", "notes": "..."
+//       }
+//     ],
+//     "reference": "...", "notes": "..."
+//   }
+// "high_temperature_correction", "reference" and "notes" are optional;
+// every other key is required, and unknown keys are errors. "reaction" is
+// the 0-based index of the reaction in the mechanism used with the file.
 
 #include <array>
 #include <cstddef>
 #include <filesystem>
 #include <format>
 #include <gaslib/build.hpp>
+#include <gaslib/energy_exchange.hpp>
 #include <gaslib/models/thermally_perfect.hpp>
 #include <gaslib/nasa9.hpp>
 #include <gaslib/reactions.hpp>
@@ -147,12 +180,14 @@ struct TemperatureLimits {
 };
 
 // A rate constant: model "arrhenius" with A, n and activation_temperature
-// (see ArrheniusInput), or model "equilibrium" with none of them.
+// and optionally translational_exponent (see ArrheniusInput), or model
+// "equilibrium" with none of them.
 struct RateRecord {
     std::string model;
     std::optional<double> A;
     std::optional<double> n;
     std::optional<double> activation_temperature;
+    std::optional<double> translational_exponent;
 
     friend bool operator==(const RateRecord&, const RateRecord&) = default;
 };
@@ -190,6 +225,87 @@ struct ReactionsFile {
     std::optional<std::string> notes;
 
     friend bool operator==(const ReactionsFile&, const ReactionsFile&) = default;
+};
+
+// Value of the "format" key of an energy-exchange file.
+inline constexpr std::string_view energy_exchange_format = "gaslib-energy-exchange-1";
+
+// Units of the values in an energy-exchange file: energies per mole in
+// J/mol, temperatures in K and cross-sections in m^2. Only these are
+// accepted.
+struct ExchangeUnits {
+    std::string energy = "J/mol";
+    std::string temperature = "K";
+    std::string area = "m^2";
+
+    friend bool operator==(const ExchangeUnits&, const ExchangeUnits&) = default;
+};
+
+// High-temperature correction of a relaxation time: model "park_1993" with
+// the collision cross-section in m^2 at the reference temperature in K (see
+// ParkCorrectionInput).
+struct HighTemperatureCorrectionRecord {
+    std::string model;
+    double cross_section {};
+    double reference_temperature {};
+
+    friend bool operator==(const HighTemperatureCorrectionRecord&,
+                           const HighTemperatureCorrectionRecord&) = default;
+};
+
+// Relaxation time of a vibration-translation pair: model "millikan_white"
+// with a in K^(1/3) and b in K^(-1/3) (see MillikanWhiteInput), optionally
+// with a high-temperature correction.
+struct RelaxationTimeRecord {
+    std::string model;
+    double a {};
+    double b {};
+    std::optional<HighTemperatureCorrectionRecord> high_temperature_correction;
+
+    friend bool operator==(const RelaxationTimeRecord&, const RelaxationTimeRecord&) = default;
+};
+
+// Vibration-translation exchange of species with collision partner: model
+// "landau_teller".
+struct VibrationTranslationRecord {
+    std::string species;
+    std::string partner;
+    std::string model;
+    RelaxationTimeRecord relaxation_time;
+    std::optional<std::string> reference;
+    std::optional<std::string> notes;
+
+    friend bool operator==(const VibrationTranslationRecord&,
+                           const VibrationTranslationRecord&) = default;
+};
+
+// Chemistry-vibration coupling of species in the reaction with 0-based
+// index reaction: model "impartial_dissociation" with the dissociation
+// energy in J/mol and the vibrational temperature in K (see
+// ChemistryVibrationInput).
+struct ChemistryVibrationRecord {
+    int reaction {};
+    std::string species;
+    std::string model;
+    double dissociation_energy {};
+    double vibrational_temperature {};
+    std::optional<std::string> reference;
+    std::optional<std::string> notes;
+
+    friend bool operator==(const ChemistryVibrationRecord&,
+                           const ChemistryVibrationRecord&) = default;
+};
+
+// An energy-exchange file. Entries keep their order.
+struct EnergyExchangeFile {
+    std::string format {energy_exchange_format};
+    ExchangeUnits units;
+    std::vector<VibrationTranslationRecord> vibration_translation;
+    std::vector<ChemistryVibrationRecord> chemistry_vibration;
+    std::optional<std::string> reference;
+    std::optional<std::string> notes;
+
+    friend bool operator==(const EnergyExchangeFile&, const EnergyExchangeFile&) = default;
 };
 
 // Thrown when a file cannot be read, is not valid JSON, has an unknown or a
@@ -232,6 +348,22 @@ void write_reactions_file(const std::filesystem::path& path, const ReactionsFile
 
 // JSON Schema of reactions files.
 std::string reactions_schema();
+
+// The energy-exchange file in json. Throws DatabaseError.
+EnergyExchangeFile parse_energy_exchange(std::string_view json);
+
+// The energy-exchange file at path. Throws DatabaseError.
+EnergyExchangeFile read_energy_exchange_file(const std::filesystem::path& path);
+
+// file as indented JSON.
+std::string write_energy_exchange(const EnergyExchangeFile& file);
+
+// Writes file as indented JSON to path. Throws DatabaseError when the file
+// cannot be written.
+void write_energy_exchange_file(const std::filesystem::path& path, const EnergyExchangeFile& file);
+
+// JSON Schema of energy-exchange files.
+std::string energy_exchange_schema();
 
 // The NASA-9 fit of a thermo record with at most S segments. Throws
 // ParameterError when the model is not "nasa9", the record has more than S
@@ -328,7 +460,12 @@ inline ArrheniusInput arrhenius_input(const RateRecord& rate, std::string_view r
     if (!rate.A || !rate.n || !rate.activation_temperature) {
         throw ParameterError(std::format("{} rate needs A, n and activation_temperature", role));
     }
-    return {.A = *rate.A, .n = *rate.n, .activation_temperature = *rate.activation_temperature};
+    return {
+      .A = *rate.A,
+      .n = *rate.n,
+      .activation_temperature = *rate.activation_temperature,
+      .translational_exponent = rate.translational_exponent.value_or(1.0),
+    };
 }
 
 }  // namespace detail
@@ -363,9 +500,10 @@ MechanismInput<R, K> mechanism_input(const ReactionsFile& file)
             reaction.forward = detail::arrhenius_input(record.forward, "forward");
             if (record.backward.model == "equilibrium") {
                 if (record.backward.A || record.backward.n ||
-                    record.backward.activation_temperature) {
-                    throw ParameterError(
-                      "an equilibrium backward rate has no A, n or activation_temperature");
+                    record.backward.activation_temperature ||
+                    record.backward.translational_exponent) {
+                    throw ParameterError("an equilibrium backward rate has no A, n, "
+                                         "activation_temperature or translational_exponent");
                 }
                 reaction.backward_model = BackwardRateModel::equilibrium;
             } else {
@@ -382,6 +520,68 @@ MechanismInput<R, K> mechanism_input(const ReactionsFile& file)
             throw ParameterError(
               std::format("reaction {} ({}): {}", k, record.equation, error.what()));
         }
+    }
+    return out;
+}
+
+// Model inputs of the V vibration-translation pairs and C chemistry-vibration
+// couplings of file, in file order, for make_energy_exchange. Names point
+// into file, so the result is valid while file exists. Throws ParameterError
+// when file does not have V pairs and C couplings, and (with the entry's
+// list, index and species) when a model is not "landau_teller",
+// "millikan_white", "park_1993" or "impartial_dissociation" where each is
+// expected. The values themselves are checked by make_energy_exchange.
+template <std::size_t V, std::size_t C>
+EnergyExchangeInput<V, C> energy_exchange_input(const EnergyExchangeFile& file)
+{
+    if (file.vibration_translation.size() != V || file.chemistry_vibration.size() != C) {
+        throw ParameterError(std::format(
+          "expected {} vibration-translation pairs and {} chemistry-vibration couplings, the "
+          "file has {} and {}",
+          V,
+          C,
+          file.vibration_translation.size(),
+          file.chemistry_vibration.size()));
+    }
+    const auto expect_model =
+      [](const std::string& got, std::string_view expected, std::string_view entry) {
+          if (got != expected) {
+              throw ParameterError(
+                std::format(R"({}: model must be "{}", got "{}")", entry, expected, got));
+          }
+      };
+    EnergyExchangeInput<V, C> out {};
+    for (std::size_t k = 0; k < V; ++k) {
+        const VibrationTranslationRecord& record = file.vibration_translation[k];
+        const std::string entry =
+          std::format("vibration_translation {} ({}-{})", k, record.species, record.partner);
+        expect_model(record.model, "landau_teller", entry);
+        expect_model(record.relaxation_time.model, "millikan_white", entry);
+        VibrationTranslationInput& pair = out.vibration_translation[k];
+        pair.species = record.species.c_str();
+        pair.partner = record.partner.c_str();
+        pair.millikan_white = {.a = record.relaxation_time.a, .b = record.relaxation_time.b};
+        const auto& correction = record.relaxation_time.high_temperature_correction;
+        pair.park_correction = correction.has_value();
+        if (correction) {
+            expect_model(correction->model, "park_1993", entry);
+            pair.park = {
+              .cross_section = correction->cross_section,
+              .reference_temperature = correction->reference_temperature,
+            };
+        }
+    }
+    for (std::size_t k = 0; k < C; ++k) {
+        const ChemistryVibrationRecord& record = file.chemistry_vibration[k];
+        expect_model(record.model,
+                     "impartial_dissociation",
+                     std::format("chemistry_vibration {} ({})", k, record.species));
+        out.chemistry_vibration[k] = ChemistryVibrationInput {
+          .reaction = record.reaction,
+          .species = record.species.c_str(),
+          .dissociation_energy = record.dissociation_energy,
+          .vibrational_temperature = record.vibrational_temperature,
+        };
     }
     return out;
 }

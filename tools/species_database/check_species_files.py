@@ -1,5 +1,5 @@
-"""Validates species and reactions files against the JSON Schemas of gaslib
-database files.
+"""Validates species, reactions and energy-exchange files against the JSON
+Schemas of gaslib database files.
 
 Usage: check_species_files.py <schema.json> <file>... [-- <schema.json> <file>...]...
 

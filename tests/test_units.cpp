@@ -96,6 +96,9 @@ void test_units()
         expect(within_ulp(scale_factor<kind::energy_density>(scales),
                           scales.density * u_ref * u_ref,
                           4.0));
+        expect(within_ulp(scale_factor<kind::power_density>(scales),
+                          scales.density * u_ref * u_ref * u_ref / scales.length,
+                          8.0));
         expect(within_ulp(scale_factor<kind::dynamic_viscosity>(scales),
                           scales.density * u_ref * scales.length,
                           4.0));
@@ -122,6 +125,7 @@ void test_units()
         expect(round_trips<kind::mode_temperature>());
         expect(round_trips<kind::number_rate_density>());
         expect(round_trips<kind::mass_production_rate>());
+        expect(round_trips<kind::power_density>());
     };
 
     "the scale factor of a dimension equals that of a kind of the same dimension"_test = [u_ref,

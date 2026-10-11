@@ -1,0 +1,259 @@
+{
+   "format": "gaslib-energy-exchange-1",
+   "units": {
+      "energy": "J/mol",
+      "temperature": "K",
+      "area": "m^2"
+   },
+   "vibration_translation": [
+      {
+         "species": "N2",
+         "partner": "N",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 180.0,
+            "b": 0.0262,
+            "high_temperature_correction": {
+               "model": "park_1993",
+               "cross_section": 1e-21,
+               "reference_temperature": 50000.0
+            }
+         }
+      },
+      {
+         "species": "N2",
+         "partner": "O",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 72.4,
+            "b": 0.015,
+            "high_temperature_correction": {
+               "model": "park_1993",
+               "cross_section": 1e-21,
+               "reference_temperature": 50000.0
+            }
+         }
+      },
+      {
+         "species": "N2",
+         "partner": "N2",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 221.0,
+            "b": 0.029,
+            "high_temperature_correction": {
+               "model": "park_1993",
+               "cross_section": 1e-21,
+               "reference_temperature": 50000.0
+            }
+         }
+      },
+      {
+         "species": "N2",
+         "partner": "O2",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 229.0,
+            "b": 0.0295,
+            "high_temperature_correction": {
+               "model": "park_1993",
+               "cross_section": 1e-21,
+               "reference_temperature": 50000.0
+            }
+         }
+      },
+      {
+         "species": "N2",
+         "partner": "NO",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 225.0,
+            "b": 0.0293,
+            "high_temperature_correction": {
+               "model": "park_1993",
+               "cross_section": 1e-21,
+               "reference_temperature": 50000.0
+            }
+         }
+      },
+      {
+         "species": "O2",
+         "partner": "N",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 72.4,
+            "b": 0.015,
+            "high_temperature_correction": {
+               "model": "park_1993",
+               "cross_section": 1e-21,
+               "reference_temperature": 50000.0
+            }
+         }
+      },
+      {
+         "species": "O2",
+         "partner": "O",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 47.7,
+            "b": 0.059,
+            "high_temperature_correction": {
+               "model": "park_1993",
+               "cross_section": 1e-21,
+               "reference_temperature": 50000.0
+            }
+         }
+      },
+      {
+         "species": "O2",
+         "partner": "N2",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 134.0,
+            "b": 0.0295,
+            "high_temperature_correction": {
+               "model": "park_1993",
+               "cross_section": 1e-21,
+               "reference_temperature": 50000.0
+            }
+         }
+      },
+      {
+         "species": "O2",
+         "partner": "O2",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 138.0,
+            "b": 0.03,
+            "high_temperature_correction": {
+               "model": "park_1993",
+               "cross_section": 1e-21,
+               "reference_temperature": 50000.0
+            }
+         }
+      },
+      {
+         "species": "O2",
+         "partner": "NO",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 136.0,
+            "b": 0.0298,
+            "high_temperature_correction": {
+               "model": "park_1993",
+               "cross_section": 1e-21,
+               "reference_temperature": 50000.0
+            }
+         }
+      },
+      {
+         "species": "NO",
+         "partner": "N2",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 49.5,
+            "b": 0.042,
+            "high_temperature_correction": {
+               "model": "park_1993",
+               "cross_section": 1e-21,
+               "reference_temperature": 50000.0
+            }
+         }
+      },
+      {
+         "species": "NO",
+         "partner": "O2",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 49.5,
+            "b": 0.042,
+            "high_temperature_correction": {
+               "model": "park_1993",
+               "cross_section": 1e-21,
+               "reference_temperature": 50000.0
+            }
+         }
+      },
+      {
+         "species": "NO",
+         "partner": "N",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 49.5,
+            "b": 0.042,
+            "high_temperature_correction": {
+               "model": "park_1993",
+               "cross_section": 1e-21,
+               "reference_temperature": 50000.0
+            }
+         }
+      },
+      {
+         "species": "NO",
+         "partner": "O",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 49.5,
+            "b": 0.042,
+            "high_temperature_correction": {
+               "model": "park_1993",
+               "cross_section": 1e-21,
+               "reference_temperature": 50000.0
+            }
+         }
+      },
+      {
+         "species": "NO",
+         "partner": "NO",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 49.5,
+            "b": 0.042,
+            "high_temperature_correction": {
+               "model": "park_1993",
+               "cross_section": 1e-21,
+               "reference_temperature": 50000.0
+            }
+         }
+      }
+   ],
+   "chemistry_vibration": [
+      {
+         "reaction": 0,
+         "species": "N2",
+         "model": "impartial_dissociation",
+         "dissociation_energy": 945360.0,
+         "vibrational_temperature": 3393.44
+      },
+      {
+         "reaction": 1,
+         "species": "O2",
+         "model": "impartial_dissociation",
+         "dissociation_energy": 498350.006,
+         "vibrational_temperature": 2273.53
+      },
+      {
+         "reaction": 2,
+         "species": "NO",
+         "model": "impartial_dissociation",
+         "dissociation_energy": 630583.693,
+         "vibrational_temperature": 2739.7
+      }
+   ],
+   "reference": "V-T: Landau-Teller with Millikan-White a, b from C. Park, J. Thermophys. Heat Transf. 7(3), 1993, Table 1, and Park's high-temperature correction (ibid. p. 387); C-V: impartial dissociation (Treanor and Marrone, Phys. Fluids 5, 1962; Knab, Fruhauf and Messerschmid, J. Thermophys. Heat Transf. 9(2), 1995). From GDTk (gdtk-uq/gdtk bf559c3f) examples/lmr/3D/cylinder-larc/eem-park-5sp-2T.inp via prep-kinetics with gm-air-5sp-2T and rm-park-5sp-2T."
+}

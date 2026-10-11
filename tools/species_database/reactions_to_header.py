@@ -56,8 +56,10 @@ def coefficients(values):
 def arrhenius(rate):
     if rate is None:
         return "{.A = 0.0, .n = 0.0, .activation_temperature = 0.0,}"
+    exponent = rate.get("translational_exponent")
     return (f"{{.A = {number(rate['A'])}, .n = {number(rate['n'])}, "
-            f".activation_temperature = {number(rate['activation_temperature'])},}}")
+            f".activation_temperature = {number(rate['activation_temperature'])},"
+            + (f" .translational_exponent = {number(exponent)}," if exponent is not None else "") + "}")
 
 
 def reaction(record):

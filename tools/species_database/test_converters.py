@@ -1,7 +1,8 @@
 """Converts the test excerpts of NASA's thermo.inp, Cantera's airNASA9.yaml
 and a GDTk-layout file, and checks that each gives the same molar masses,
 charges, temperature ranges, blend widths and coefficients as the shipped
-five-species air file.
+five-species air file. Converts the GDTk-layout reaction-mechanism and
+energy-exchange samples and checks the converted values.
 
 Usage: test_converters.py <gaslib source directory>
 """
@@ -46,7 +47,8 @@ with tempfile.TemporaryDirectory() as tmp:
             print(f"{label} {name}: checked")
 
 # Reaction mechanism converter: CGS to SI by (1e-6)^(order - 1), third-body
-# efficiencies, and the default backward rate from the equilibrium constant.
+# efficiencies, the default backward rate from the equilibrium constant, and
+# Park rates as Arrhenius rates with a translational exponent.
 with tempfile.TemporaryDirectory() as tmp:
     out = Path(tmp) / "reactions.json"
     subprocess.run([sys.executable, str(tools / "gdtk_reactions_to_json.py"), str(data / "gdtk_mechanism_sample.inp"),
@@ -55,7 +57,7 @@ with tempfile.TemporaryDirectory() as tmp:
     checks = [
         (mechanism["format"], "gaslib-reactions-1"),
         (mechanism["temperature_limits"], {"lower": 300.0, "upper": 30000.0}),
-        (len(mechanism["reactions"]), 3),
+        (len(mechanism["reactions"]), 4),
         (mechanism["reactions"][0]["reactants"], {"N2": 2.0}),
         (mechanism["reactions"][0]["products"], {"N": 2.0, "N2": 1.0}),
         (mechanism["reactions"][0]["forward"], {"model": "arrhenius", "A": 1.216e14, "n": -1.214,
@@ -65,11 +67,44 @@ with tempfile.TemporaryDirectory() as tmp:
         (mechanism["reactions"][1]["third_body"]["efficiencies"]["NO"], 0.664827586),
         (mechanism["reactions"][2]["backward"], {"model": "arrhenius", "A": 1.6e7, "n": 0.1,
                                                  "activation_temperature": 0.0}),
+        (mechanism["reactions"][3]["forward"], {"model": "arrhenius", "A": 2.0e15, "n": -1.5,
+                                                "activation_temperature": 59500.0,
+                                                "translational_exponent": 0.5}),
+        ("translational_exponent" in mechanism["reactions"][0]["forward"], False),
     ]
     for got, expected in checks:
         if got != expected:
             failures += 1
             print(f"reaction converter: {got} != {expected}")
     print("reaction converter: checked")
+
+# Energy-exchange converter: V-T entries with and without Park's
+# correction, and an impartial-dissociation C-V entry.
+with tempfile.TemporaryDirectory() as tmp:
+    out = Path(tmp) / "exchange.json"
+    subprocess.run([sys.executable, str(tools / "gdtk_exchange_to_json.py"), str(data / "gdtk_exchange_sample.lua"),
+                    "--source", "test", "-o", str(out)], check=True)
+    exchange = json.loads(out.read_text())
+    checks = [
+        (exchange["format"], "gaslib-energy-exchange-1"),
+        (exchange["units"], {"energy": "J/mol", "temperature": "K", "area": "m^2"}),
+        (exchange["vibration_translation"], [
+            {"species": "N2", "partner": "N", "model": "landau_teller",
+             "relaxation_time": {"model": "millikan_white", "a": 180.0, "b": 0.0262,
+                                 "high_temperature_correction": {"model": "park_1993", "cross_section": 1.0e-21,
+                                                                 "reference_temperature": 50000.0}}},
+            {"species": "O2", "partner": "O2", "model": "landau_teller",
+             "relaxation_time": {"model": "millikan_white", "a": 138.0, "b": 0.03}},
+        ]),
+        (exchange["chemistry_vibration"], [
+            {"reaction": 0, "species": "N2", "model": "impartial_dissociation",
+             "dissociation_energy": 945360.0, "vibrational_temperature": 3393.44},
+        ]),
+    ]
+    for got, expected in checks:
+        if got != expected:
+            failures += 1
+            print(f"exchange converter: {got} != {expected}")
+    print("exchange converter: checked")
 
 sys.exit(1 if failures else 0)
