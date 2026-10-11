@@ -4,10 +4,12 @@
 // model for N2 alone and for air (N2 and O2 in the five-species model),
 // without and with a temperature guess equal to the previous cell's
 // temperature, and the two-temperature model for air from (rho, rho_e,
-// rho_e_ve). The last case is the mass production rates of the Kim-Jo
-// five-species air mechanism from (rho, T) and mass fractions that vary from
-// cell to cell. Each case runs several times; the fastest run is reported in
-// nanoseconds per cell.
+// rho_e_ve). The last cases are the mass production rates of the Kim-Jo
+// five-species air mechanism from (rho, T), and the mass production rates
+// and vibrational-electronic energy source of the Park five-species air
+// mechanism and energy exchange on the two-temperature model from
+// (rho, T, T_ve), with mass fractions that vary from cell to cell. Each case
+// runs several times; the fastest run is reported in nanoseconds per cell.
 
 #include <array>
 #include <chrono>
@@ -223,6 +225,41 @@ double production_case(const char* name, const Cells& c, const M& mech, const G&
     });
 }
 
+// two_temperature_sources of mechanism mech and exchange with the
+// two-temperature model gas, per cell from the cell's density, the
+// temperatures T of production_case and T_ve = T / 2 + 150 K, and the mass
+// fractions of make_fractions.
+template <typename M, typename X, typename G>
+double
+  sources_case(const char* name, const Cells& c, const M& mech, const X& exchange, const G& gas)
+{
+    constexpr std::size_t n = 5;
+    const std::vector<double> y = make_fractions(n);
+    std::vector<double> temp(cells);
+    for (std::size_t i = 0; i < cells; ++i) {
+        temp[i] = 3000.0 + (12000.0 * static_cast<double>(i % 101) / 101.0);
+    }
+    return time_per_cell(name, [&] {
+        double sum = 0;
+        for (std::size_t i = 0; i < cells; ++i) {
+            const auto fractions = gaslib::as_kind<gaslib::kind::mass_fraction>(
+              Kokkos::mdspan<const double, Kokkos::dextents<std::size_t, 1>>(y.data() + (i * n),
+                                                                             n));
+            const auto sources = gaslib::two_temperature_sources(
+              mech,
+              exchange,
+              gas,
+              gaslib::mixture(gas, fractions),
+              gaslib::Density<double, si> {1.0e-3 * c.rho[i]},
+              gaslib::Temperature<double, si> {temp[i]},
+              gaslib::Temperature<double, si> {(0.5 * temp[i]) + 150.0});
+            sum += sources.species[2].value() + sources.species[3].value() +
+                   sources.vibrational_electronic.value();
+        }
+        return sum;
+    });
+}
+
 }  // namespace
 
 int main()
@@ -274,4 +311,13 @@ int main()
     const auto air5_built = gaslib::make_air5<double>(si_scales);
     const auto kim_jo = gaslib::make_air5_kim_jo(air5_built.species, si_scales);
     production_case("Kim-Jo air (13 reactions) production", c, kim_jo, air5);
+    const auto air5_two_temperature_built = gaslib::make_air5_two_temperature<double>(si_scales);
+    const auto park = gaslib::make_air5_park(air5_two_temperature_built.species, si_scales);
+    const auto park_exchange =
+      gaslib::make_air5_park_exchange(air5_two_temperature_built.species, park, si_scales);
+    sources_case("Park air (5 reactions) 2T sources",
+                 c,
+                 park,
+                 park_exchange,
+                 air5_two_temperature_built.model);
 }

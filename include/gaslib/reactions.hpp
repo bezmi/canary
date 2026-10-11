@@ -495,10 +495,17 @@ GASLIB_HOST_DEVICE T clamped_temperature(const ReactionMechanism<P, U, N, R>& me
     return temp.value();
 }
 
+// ln(k / A) of an Arrhenius rate at T_l, from ln T_l and 1 / T_l:
+// n ln T_l - theta / T_l.
+template <Scalar T, std::floating_point P, UnitSystem U>
+    requires ScalarWith<T, P>
+GASLIB_HOST_DEVICE T arrhenius_exponent(const ArrheniusRate<P, U>& rate, T ln_t, T inv_t)
+{ return T(rate.n * ln_t) - T(rate.activation_temperature.value() * inv_t); }
+
 // ln(k / A) of an Arrhenius rate at T_c = T_l^s T_ve^(1 - s), from ln T_l,
 // 1 / T_l and ln_ratio = ln(T_ve / T_l): with w = (1 - s) ln_ratio,
-// ln T_c = ln T_l + w and 1 / T_c = exp(-w) / T_l. w = 0 (s = 1 or
-// T_ve = T_l) gives exactly n ln T_l - theta / T_l.
+// ln T_c = ln T_l + w and 1 / T_c = exp(-w) / T_l. w = 0 gives the value of
+// the expression at T_l.
 template <Scalar T, std::floating_point P, UnitSystem U>
     requires ScalarWith<T, P> && HasExp<T>
 GASLIB_HOST_DEVICE T
@@ -509,9 +516,32 @@ GASLIB_HOST_DEVICE T
            T(rate.activation_temperature.value() * T(inv_t * math::exp(T(-w))));
 }
 
-// Rates of progress at the clamped translational temperature t (T_l), with
-// ln_ratio = ln(T_ve / T_l). The gas model is called once, at t.
-template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::size_t R, typename G>
+// ln(k / A) of an Arrhenius rate in rates_of_progress_at: at T_l with one
+// temperature; with two, at T_c for s != 1 and at T_l for s = 1, so that a
+// rate that depends on T only computes no exponential of w.
+template <bool TwoTemperature, Scalar T, std::floating_point P, UnitSystem U>
+    requires ScalarWith<T, P> && HasExp<T>
+GASLIB_HOST_DEVICE T rate_exponent(const ArrheniusRate<P, U>& rate, T ln_t, T inv_t, T ln_ratio)
+{
+    if constexpr (TwoTemperature) {
+        if (rate.translational_exponent != P(1)) {
+            return arrhenius_exponent(rate, ln_t, inv_t, ln_ratio);
+        }
+    }
+    return arrhenius_exponent(rate, ln_t, inv_t);
+}
+
+// Rates of progress at the clamped translational temperature t (T_l). With
+// TwoTemperature, ln_ratio = ln(T_ve / T_l) gives the rate-controlling
+// temperatures; without, every rate is evaluated at T_l and ln_ratio is not
+// used. The gas model is called once, at t.
+template <bool TwoTemperature,
+          Scalar T,
+          std::floating_point P,
+          UnitSystem U,
+          std::size_t N,
+          std::size_t R,
+          typename G>
     requires ReactingModel<G, T, P, N> && std::same_as<typename G::units, U>
 GASLIB_HOST_DEVICE RatesOfProgress<T, U, R>
   rates_of_progress_at(const ReactionMechanism<P, U, N, R>& mech,
@@ -542,14 +572,19 @@ GASLIB_HOST_DEVICE RatesOfProgress<T, U, R>
     RatesOfProgress<T, U, R> out {};
     for (std::size_t k = 0; k < R; ++k) {
         const Reaction<P, U, N>& r = mech.reactions[k];
-        const T k_f =
-          T(r.forward.A * math::exp(arrhenius_exponent(r.forward, ln_t, inv_t, ln_ratio)));
+        // ln(k_f / A) at T_l, and at the rate-controlling temperature.
+        const T forward_exponent = arrhenius_exponent(r.forward, ln_t, inv_t);
+        T controlled_exponent = forward_exponent;
+        if constexpr (TwoTemperature) {
+            if (r.forward.translational_exponent != P(1)) {
+                controlled_exponent = arrhenius_exponent(r.forward, ln_t, inv_t, ln_ratio);
+            }
+        }
+        const T k_f = T(r.forward.A * math::exp(controlled_exponent));
         T k_b = k_f;
         if (r.backward_model == BackwardRateModel::equilibrium) {
             // k_b = k_f(T_l) / K_c = A exp(ln(k_f(T_l) / A) + sum dnu_i g_i m_i / (k_B T_l)
             //                              - sum(dnu) ln(p0 / (k_B T_l))).
-            const T forward_exponent =
-              T(r.forward.n * ln_t) - T(r.forward.activation_temperature.value() * inv_t);
             T exponent = forward_exponent - T(V(r.coefficient_change) * ln_n0);
             for (std::size_t i = 0; i < N; ++i) {
                 const int dnu = r.products[i] - r.reactants[i];
@@ -557,8 +592,8 @@ GASLIB_HOST_DEVICE RatesOfProgress<T, U, R>
             }
             k_b = T(r.forward.A * math::exp(exponent));
         } else {
-            k_b =
-              T(r.backward.A * math::exp(arrhenius_exponent(r.backward, ln_t, inv_t, ln_ratio)));
+            k_b = T(r.backward.A *
+                    math::exp(rate_exponent<TwoTemperature>(r.backward, ln_t, inv_t, ln_ratio)));
         }
         T q_f = k_f;
         T q_b = k_b;
@@ -628,7 +663,12 @@ GASLIB_HOST_DEVICE RatesOfProgress<T, U, R>
                     Temperature<T, U> temp_ve)
 {
     const T t = detail::clamped_temperature(mech, temp);
-    return detail::rates_of_progress_at(mech, gas, mix, rho, t, math::log(T(temp_ve.value() / t)));
+    return detail::rates_of_progress_at<true>(mech,
+                                              gas,
+                                              mix,
+                                              rho,
+                                              t,
+                                              math::log(T(temp_ve.value() / t)));
 }
 
 // Rates of progress at one temperature: as above with T_ve = T_l, so that
@@ -644,7 +684,7 @@ GASLIB_HOST_DEVICE RatesOfProgress<T, U, R>
 {
     using V = ScalarTraits<T>::value_type;
     const T t = detail::clamped_temperature(mech, temp);
-    return detail::rates_of_progress_at(mech, gas, mix, rho, t, T(V(0)));
+    return detail::rates_of_progress_at<false>(mech, gas, mix, rho, t, T(V(0)));
 }
 
 // Mass production rate of every species, omega_i = m_i sum_r (nu''_ir -

@@ -161,13 +161,18 @@ GASLIB_HOST_DEVICE EnergyAndCv<W> vibrational_electronic_energy(
   const TwoTemperatureMixture<P, U, N, S>& gas, const std::array<MassFraction<W>, N>& y, W t)
 {
     using V = ScalarTraits<W>::value_type;
+    const auto& single = gas.thermally_perfect;
+    const P t_ref = single.reference_temperature.value();
     const W ln_t = math::log(t);
     W e = W(V(0));
     W cv = W(V(0));
     for (std::size_t i = 0; i < N; ++i) {
-        const EnergyAndCv<W> c = species_vibrational_electronic_energy(gas, i, t, ln_t);
-        e = e + W(y[i].value() * c.e);
-        cv = cv + W(y[i].value() * c.cv);
+        const Nasa9CpH<W> c = nasa9_cp_h(single.curve[i], t, ln_t);
+        const P r = single.gas_constant[i].value();
+        const P cp_tr = gas.translational_rotational_cp[i].value();
+        const P h_f = gas.formation_enthalpy[i].value();
+        e = e + W(y[i].value() * ((r * c.h_over_r) - (cp_tr * (t - t_ref)) - h_f));
+        cv = cv + W(y[i].value() * ((r * c.cp_over_r) - cp_tr));
     }
     return {.e = e, .cv = cv};
 }
