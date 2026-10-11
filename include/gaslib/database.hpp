@@ -2,15 +2,17 @@
 #define GASLIB_DATABASE_HPP
 
 // Species database files: JSON files of species data, of reaction
-// mechanisms and of energy exchange in SI units, read and written by the compiled library
-// gaslib_database (link gaslib::database). This header is C++20 and does
+// mechanisms, of energy exchange and of collision integrals in SI units,
+// read and written by the compiled library gaslib_database (link
+// gaslib::database). This header is C++20 and does
 // not depend on the JSON library; the conversions to model inputs below are
 // header-only.
 //
 // Species file layout (strict JSON):
 //   {
 //     "format": "gaslib-species-1",
-//     "units": {"molar_mass": "kg/mol", "energy": "J/mol", "temperature": "K"},
+//     "units": {"molar_mass": "kg/mol", "energy": "J/mol", "temperature": "K",
+//               "length": "m"},
 //     "species": {
 //       "N2": {
 //         "molar_mass": 0.0280134,
@@ -22,14 +24,40 @@
 //           "coefficients": [[9 numbers], [9 numbers], [9 numbers]],
 //           "reference": "..."
 //         },
+//         "transport": {
+//           "viscosity": {"model": "cea", "temperature_ranges": [200, 1000, 5000, 15000],
+//                         "coefficients": [[4 numbers], [4 numbers], [4 numbers]]},
+//           "thermal_conductivity": {"model": "cea", ...},
+//           "lennard_jones": {"sigma": 3.621e-10, "epsilon": 97.53},
+//           "reference": "...", "notes": "..."
+//         },
 //         "reference": "...", "notes": "..."
 //       }
 //     },
 //     "reference": "...", "notes": "..."
 //   }
-// "reference" and "notes" are optional everywhere; every other key is
-// required, and unknown keys are errors. Numbers are written in the
-// shortest form that reads back to the same double.
+// "reference" and "notes" are optional everywhere, and so are "transport"
+// and each of its three records; every other key is required, and unknown
+// keys are errors. Numbers are written in the shortest form that reads back
+// to the same double.
+//
+// Collision-integral files hold curve fits of the collision integrals
+// pi Omega(1,1) and pi Omega(2,2) of species pairs (Gupta et al. 1990 form)
+// in SI units:
+//   {
+//     "format": "gaslib-collision-integrals-1",
+//     "units": {"temperature": "K", "area": "m^2"},
+//     "pairs": [
+//       {"species": ["O2", "N2"],
+//        "pi_omega_11": {"A": 0.0, "B": -0.0465, "C": 0.5729, "D": -44.4332},
+//        "pi_omega_22": {"A": 0.0, "B": -0.0558, "C": 0.7590, "D": -45.1562},
+//        "reference": "...", "notes": "..."}
+//     ],
+//     "reference": "...", "notes": "..."
+//   }
+// with ln(pi Omega / m^2) = A (ln T)^3 + B (ln T)^2 + C ln T + D, T in K. A
+// pair applies in either order; "reference" and "notes" are optional, every
+// other key is required, and unknown keys are errors.
 //
 // Reactions files hold a mechanism of reversible reactions (see
 // reactions.hpp), in SI units per mole:
@@ -98,6 +126,7 @@
 #include <gaslib/models/thermally_perfect.hpp>
 #include <gaslib/nasa9.hpp>
 #include <gaslib/reactions.hpp>
+#include <gaslib/transport/mixture.hpp>
 #include <map>
 #include <optional>
 #include <stdexcept>
@@ -116,6 +145,7 @@ struct Units {
     std::string molar_mass = "kg/mol";
     std::string energy = "J/mol";
     std::string temperature = "K";
+    std::string length = "m";
 
     friend bool operator==(const Units&, const Units&) = default;
 };
@@ -135,11 +165,49 @@ struct ThermoRecord {
     friend bool operator==(const ThermoRecord&, const ThermoRecord&) = default;
 };
 
-// One species: molar mass in kg/mol, charge in elementary charges.
+// A transport property of one species as a function of temperature. For
+// model "cea" (the NASA CEA transport fits): temperature_ranges are the
+// segment boundaries in K and coefficients holds A, B, C, D of each segment,
+// with ln(property / SI unit) = A ln T + B / T + C / T^2 + D; the property is
+// a viscosity in Pa s or a thermal conductivity in W/(m K).
+struct TransportCurveRecord {
+    std::string model;
+    std::vector<double> temperature_ranges;
+    std::vector<std::array<double, 4>> coefficients;
+    std::optional<std::string> reference;
+    std::optional<std::string> notes;
+
+    friend bool operator==(const TransportCurveRecord&, const TransportCurveRecord&) = default;
+};
+
+// Lennard-Jones potential of one species: collision diameter sigma in m and
+// well depth epsilon / k_B in K.
+struct LennardJonesRecord {
+    double sigma {};
+    double epsilon {};
+    std::optional<std::string> reference;
+
+    friend bool operator==(const LennardJonesRecord&, const LennardJonesRecord&) = default;
+};
+
+// Transport data of one species; each record is optional.
+struct TransportRecord {
+    std::optional<TransportCurveRecord> viscosity;
+    std::optional<TransportCurveRecord> thermal_conductivity;
+    std::optional<LennardJonesRecord> lennard_jones;
+    std::optional<std::string> reference;
+    std::optional<std::string> notes;
+
+    friend bool operator==(const TransportRecord&, const TransportRecord&) = default;
+};
+
+// One species: molar mass in kg/mol, charge in elementary charges, thermo
+// data and optionally transport data.
 struct SpeciesRecord {
     double molar_mass {};
     double charge {};
     ThermoRecord thermo;
+    std::optional<TransportRecord> transport;
     std::optional<std::string> reference;
     std::optional<std::string> notes;
 
@@ -308,6 +376,51 @@ struct EnergyExchangeFile {
     friend bool operator==(const EnergyExchangeFile&, const EnergyExchangeFile&) = default;
 };
 
+// Value of the "format" key of a collision-integral file.
+inline constexpr std::string_view collision_integrals_format = "gaslib-collision-integrals-1";
+
+// Units of the values in a collision-integral file: temperatures in K and
+// collision integrals in m^2. Only these are accepted.
+struct CollisionUnits {
+    std::string temperature = "K";
+    std::string area = "m^2";
+
+    friend bool operator==(const CollisionUnits&, const CollisionUnits&) = default;
+};
+
+// Curve fit ln(pi Omega / m^2) = A (ln T)^3 + B (ln T)^2 + C ln T + D, T in K.
+struct CollisionFitRecord {
+    double A {};
+    double B {};
+    double C {};
+    double D {};
+
+    friend bool operator==(const CollisionFitRecord&, const CollisionFitRecord&) = default;
+};
+
+// The collision integrals pi Omega(1,1) and pi Omega(2,2) of a pair of
+// species, named in either order.
+struct CollisionPairRecord {
+    std::array<std::string, 2> species;
+    CollisionFitRecord pi_omega_11;
+    CollisionFitRecord pi_omega_22;
+    std::optional<std::string> reference;
+    std::optional<std::string> notes;
+
+    friend bool operator==(const CollisionPairRecord&, const CollisionPairRecord&) = default;
+};
+
+// A collision-integral file. Pairs keep their order.
+struct CollisionIntegralsFile {
+    std::string format {collision_integrals_format};
+    CollisionUnits units;
+    std::vector<CollisionPairRecord> pairs;
+    std::optional<std::string> reference;
+    std::optional<std::string> notes;
+
+    friend bool operator==(const CollisionIntegralsFile&, const CollisionIntegralsFile&) = default;
+};
+
 // Thrown when a file cannot be read, is not valid JSON, has an unknown or a
 // missing key, has another format or other units, or lacks a requested
 // species. The message says which.
@@ -364,6 +477,23 @@ void write_energy_exchange_file(const std::filesystem::path& path, const EnergyE
 
 // JSON Schema of energy-exchange files.
 std::string energy_exchange_schema();
+
+// The collision-integral file in json. Throws DatabaseError.
+CollisionIntegralsFile parse_collision_integrals(std::string_view json);
+
+// The collision-integral file at path. Throws DatabaseError.
+CollisionIntegralsFile read_collision_integrals_file(const std::filesystem::path& path);
+
+// file as indented JSON.
+std::string write_collision_integrals(const CollisionIntegralsFile& file);
+
+// Writes file as indented JSON to path. Throws DatabaseError when the file
+// cannot be written.
+void write_collision_integrals_file(const std::filesystem::path& path,
+                                    const CollisionIntegralsFile& file);
+
+// JSON Schema of collision-integral files.
+std::string collision_integrals_schema();
 
 // The NASA-9 fit of a thermo record with at most S segments. Throws
 // ParameterError when the model is not "nasa9", the record has more than S
@@ -581,6 +711,105 @@ EnergyExchangeInput<V, C> energy_exchange_input(const EnergyExchangeFile& file)
           .species = record.species.c_str(),
           .dissociation_energy = record.dissociation_energy,
           .vibrational_temperature = record.vibrational_temperature,
+        };
+    }
+    return out;
+}
+
+namespace detail
+{
+
+// A CEA transport curve of a species record with at most S segments.
+// Throws ParameterError when the model is not "cea", there are more than S
+// segments or none, or the numbers of ranges and coefficient sets do not
+// match. The values themselves are checked by the transport builders.
+template <std::size_t S>
+TransportCurveInput<S> transport_curve(const TransportCurveRecord& curve, std::string_view role)
+{
+    if (curve.model != "cea") {
+        throw ParameterError(std::format(R"({} model must be "cea", got "{}")", role, curve.model));
+    }
+    const std::size_t segments = curve.coefficients.size();
+    if (segments == 0 || segments > S || curve.temperature_ranges.size() != segments + 1) {
+        throw ParameterError(std::format(
+          "{} needs between 1 and {} segments with one more temperature range, got {} and {}",
+          role,
+          S,
+          segments,
+          curve.temperature_ranges.size()));
+    }
+    TransportCurveInput<S> out {};
+    out.segments = static_cast<int>(segments);
+    for (std::size_t k = 0; k <= segments; ++k) { out.breaks[k] = curve.temperature_ranges[k]; }
+    for (std::size_t k = 0; k < segments; ++k) { out.coefficients[k] = curve.coefficients[k]; }
+    return out;
+}
+
+}  // namespace detail
+
+// Transport inputs for the named species of file, in the given order, for
+// make_wilke_transport, with at most S segments per curve. Each name points
+// to the species' key in file, so the result is valid while file exists.
+// Throws DatabaseError for a name that file lacks, and ParameterError (with
+// the species name) when a species has no transport record, lacks its
+// viscosity, thermal conductivity or Lennard-Jones record, or has a curve
+// that detail::transport_curve rejects.
+template <std::size_t S, std::size_t N>
+std::array<SpeciesTransportInput<S>, N>
+  species_transport(const SpeciesFile& file, const std::array<std::string_view, N>& names)
+{
+    std::array<SpeciesTransportInput<S>, N> out {};
+    for (std::size_t i = 0; i < N; ++i) {
+        const auto entry = file.species.find(std::string(names[i]));
+        if (entry == file.species.end()) {
+            throw DatabaseError(std::format("species \"{}\" is not in the file", names[i]));
+        }
+        const std::optional<TransportRecord>& transport = entry->second.transport;
+        try {
+            if (!transport || !transport->viscosity || !transport->thermal_conductivity ||
+                !transport->lennard_jones) {
+                throw ParameterError("needs viscosity, thermal_conductivity and lennard_jones "
+                                     "transport records");
+            }
+            out[i] = SpeciesTransportInput<S> {
+              .name = entry->first.c_str(),
+              .viscosity = detail::transport_curve<S>(*transport->viscosity, "viscosity"),
+              .conductivity = detail::transport_curve<S>(*transport->thermal_conductivity,
+                                                         "thermal_conductivity"),
+              .lennard_jones =
+                {
+                  .sigma = transport->lennard_jones->sigma,
+                  .epsilon = transport->lennard_jones->epsilon,
+                },
+            };
+        } catch (const ParameterError& error) {
+            throw ParameterError(std::format("species {}: {}", entry->first, error.what()));
+        }
+    }
+    return out;
+}
+
+// Model inputs of the K pairs of file, in file order, for
+// make_gupta_yos_transport. Names point into file, so the result is valid
+// while file exists. Throws ParameterError when file does not have K pairs.
+template <std::size_t K>
+std::array<CollisionPairInput, K> collision_integral_pairs(const CollisionIntegralsFile& file)
+{
+    if (file.pairs.size() != K) {
+        throw ParameterError(
+          std::format("expected {} pairs, the file has {}", K, file.pairs.size()));
+    }
+    const auto fit = [](const CollisionFitRecord& r) {
+        return CollisionFitInput {.A = r.A, .B = r.B, .C = r.C, .D = r.D};
+    };
+    std::array<CollisionPairInput, K> out {};
+    for (std::size_t k = 0; k < K; ++k) {
+        const CollisionPairRecord& pair = file.pairs[k];
+        out[k] = CollisionPairInput {
+          .first = pair.species[0].c_str(),
+          .second = pair.species[1].c_str(),
+          .pi_omega_11 = fit(pair.pi_omega_11),
+          .pi_omega_22 = fit(pair.pi_omega_22),
         };
     }
     return out;

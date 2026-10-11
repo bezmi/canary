@@ -12,6 +12,7 @@
 #include <gaslib/status.hpp>
 #include <limits>
 #include <mdspan/mdspan.hpp>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -173,6 +174,16 @@ GASLIB_HOST_DEVICE constexpr auto
         sums.charge = sums.charge + n * species.charge[i].value();
     }
     return sums;
+}
+
+// Index of name in names; names.size() when it is not there. Host-side.
+template <std::size_t N>
+std::size_t species_index(const std::array<std::string_view, N>& names, std::string_view name)
+{
+    for (std::size_t i = 0; i < N; ++i) {
+        if (names[i] == name) { return i; }
+    }
+    return N;
 }
 
 template <SpeciesRange V, Scalar T>

@@ -3,7 +3,8 @@
    "units": {
       "molar_mass": "kg/mol",
       "energy": "J/mol",
-      "temperature": "K"
+      "temperature": "K",
+      "length": "m"
    },
    "species": {
       "N2": {
@@ -58,6 +59,72 @@
             ],
             "reference": "from CEA2::thermo.inp"
          },
+         "transport": {
+            "viscosity": {
+               "model": "cea",
+               "temperature_ranges": [
+                  200.0,
+                  1000.0,
+                  5000.0,
+                  15000.0
+               ],
+               "coefficients": [
+                  [
+                     0.62526577,
+                     -31.779652,
+                     -1640.7983,
+                     -14.372596450958321
+                  ],
+                  [
+                     0.87395209,
+                     561.52222,
+                     -173948.09,
+                     -16.51145523095832
+                  ],
+                  [
+                     0.88503551,
+                     909.02171,
+                     -731290.61,
+                     -16.65313403095832
+                  ]
+               ]
+            },
+            "thermal_conductivity": {
+               "model": "cea",
+               "temperature_ranges": [
+                  200.0,
+                  1000.0,
+                  5000.0,
+                  15000.0
+               ],
+               "coefficients": [
+                  [
+                     0.85439436,
+                     105.73224,
+                     -12347.848,
+                     -8.732409091976182
+                  ],
+                  [
+                     0.88407146,
+                     133.57293,
+                     -11429.64,
+                     -8.966170181976182
+                  ],
+                  [
+                     2.4176185,
+                     8047.7749,
+                     3105580.2,
+                     -23.72810137197618
+                  ]
+               ]
+            },
+            "lennard_jones": {
+               "sigma": 3.621e-10,
+               "epsilon": 97.53,
+               "reference": "GRI-Mech 3.0 transport file."
+            },
+            "notes": "CEA transport fits with D converted to SI (Pa s, W/(m K)) by adding ln(1e-7) and ln(1e-4)"
+         },
          "notes": "molar mass: from CEA2::thermo.inp"
       },
       "O2": {
@@ -110,6 +177,72 @@
                   -553.062161
                ]
             ]
+         },
+         "transport": {
+            "viscosity": {
+               "model": "cea",
+               "temperature_ranges": [
+                  200.0,
+                  1000.0,
+                  5000.0,
+                  15000.0
+               ],
+               "coefficients": [
+                  [
+                     0.6091618,
+                     -52.244847,
+                     -599.74009,
+                     -14.07701555095832
+                  ],
+                  [
+                     0.72216486,
+                     175.50839,
+                     -57974.816,
+                     -15.027991250958321
+                  ],
+                  [
+                     0.73981127,
+                     391.94906,
+                     -378331.68,
+                     -15.20877785095832
+                  ]
+               ]
+            },
+            "thermal_conductivity": {
+               "model": "cea",
+               "temperature_ranges": [
+                  200.0,
+                  1000.0,
+                  5000.0,
+                  15000.0
+               ],
+               "coefficients": [
+                  [
+                     0.77229167,
+                     6.846321,
+                     -5893.3377,
+                     -7.9893038719761815
+                  ],
+                  [
+                     0.90917351,
+                     291.24182,
+                     -79650.171,
+                     -9.145488740976182
+                  ],
+                  [
+                     -1.1218262,
+                     -19286.378,
+                     23295011.0,
+                     11.131702628023818
+                  ]
+               ]
+            },
+            "lennard_jones": {
+               "sigma": 3.458e-10,
+               "epsilon": 107.4,
+               "reference": "GRI-Mech 3.0 transport file."
+            },
+            "notes": "CEA transport fits with D converted to SI (Pa s, W/(m K)) by adding ln(1e-7) and ln(1e-4)"
          },
          "notes": "molar mass: from CEA2::thermo.inp"
       },
@@ -178,6 +311,58 @@
             ],
             "reference": "Johnston et al. AIAA Paper 2015-3110"
          },
+         "transport": {
+            "viscosity": {
+               "model": "cea",
+               "temperature_ranges": [
+                  1000.0,
+                  5000.0,
+                  15000.0
+               ],
+               "coefficients": [
+                  [
+                     0.83724737,
+                     439.9715,
+                     -174507.53,
+                     -16.01443876095832
+                  ],
+                  [
+                     0.89986588,
+                     1411.2801,
+                     -1820047.8,
+                     -16.67621281095832
+                  ]
+               ]
+            },
+            "thermal_conductivity": {
+               "model": "cea",
+               "temperature_ranges": [
+                  1000.0,
+                  5000.0,
+                  15000.0
+               ],
+               "coefficients": [
+                  [
+                     0.83771661,
+                     442.4327,
+                     -175784.46,
+                     -8.310911221976182
+                  ],
+                  [
+                     0.9000171,
+                     1414.1175,
+                     -1826240.3,
+                     -8.969855241976182
+                  ]
+               ]
+            },
+            "lennard_jones": {
+               "sigma": 3.298e-10,
+               "epsilon": 71.4,
+               "reference": "Svehla (1962)"
+            },
+            "notes": "CEA transport fits with D converted to SI (Pa s, W/(m K)) by adding ln(1e-7) and ln(1e-4)"
+         },
          "notes": "molar mass: CEA2::thermo.inp"
       },
       "O": {
@@ -245,6 +430,58 @@
             ],
             "reference": "Johnston et al. AIAA Paper 2015-3110"
          },
+         "transport": {
+            "viscosity": {
+               "model": "cea",
+               "temperature_ranges": [
+                  1000.0,
+                  5000.0,
+                  15000.0
+               ],
+               "coefficients": [
+                  [
+                     0.77269241,
+                     83.842977,
+                     -58502.098,
+                     -15.267087380958321
+                  ],
+                  [
+                     0.87669586,
+                     1015.842,
+                     -1088456.6,
+                     -16.29810642095832
+                  ]
+               ]
+            },
+            "thermal_conductivity": {
+               "model": "cea",
+               "temperature_ranges": [
+                  1000.0,
+                  5000.0,
+                  15000.0
+               ],
+               "coefficients": [
+                  [
+                     0.77271664,
+                     83.9891,
+                     -58580.966,
+                     -7.692350371976182
+                  ],
+                  [
+                     0.87676666,
+                     1017.0744,
+                     -1090669.0,
+                     -8.723898051976182
+                  ]
+               ]
+            },
+            "lennard_jones": {
+               "sigma": 2.75e-10,
+               "epsilon": 80.0,
+               "reference": "GRI-Mech 3.0 transport file."
+            },
+            "notes": "CEA transport fits with D converted to SI (Pa s, W/(m K)) by adding ln(1e-7) and ln(1e-4)"
+         },
          "notes": "molar mass: CEA2::thermo.inp"
       },
       "NO": {
@@ -298,8 +535,74 @@
                ]
             ]
          },
+         "transport": {
+            "viscosity": {
+               "model": "cea",
+               "temperature_ranges": [
+                  200.0,
+                  1000.0,
+                  5000.0,
+                  15000.0
+               ],
+               "coefficients": [
+                  [
+                     0.60262029,
+                     -62.017783,
+                     -139.54524,
+                     -14.09126245095832
+                  ],
+                  [
+                     0.7800905,
+                     304.86891,
+                     -94847.722,
+                     -15.58936184095832
+                  ],
+                  [
+                     0.80580582,
+                     624.27878,
+                     -578792.1,
+                     -15.85293115095832
+                  ]
+               ]
+            },
+            "thermal_conductivity": {
+               "model": "cea",
+               "temperature_ranges": [
+                  200.0,
+                  1000.0,
+                  5000.0,
+                  15000.0
+               ],
+               "coefficients": [
+                  [
+                     0.95028758,
+                     76.667058,
+                     -9989.4764,
+                     -9.216618043676181
+                  ],
+                  [
+                     0.86215238,
+                     445.68223,
+                     -238564.66,
+                     -8.748241611976182
+                  ],
+                  [
+                     -1.0377865,
+                     -34486.864,
+                     67451187.0,
+                     11.718408628023818
+                  ]
+               ]
+            },
+            "lennard_jones": {
+               "sigma": 3.621e-10,
+               "epsilon": 97.53,
+               "reference": "GRI-Mech 3.0 transport file."
+            },
+            "notes": "CEA transport fits with D converted to SI (Pa s, W/(m K)) by adding ln(1e-7) and ln(1e-4)"
+         },
          "notes": "molar mass: CEA2::thermo.inp"
       }
    },
-   "reference": "GDTk species database (gdtk-uq/gdtk commit bf559c3f, src/gas/species-database); fits: NASA CEA2 thermo.inp (McBride, Zehe and Gordon, NASA/TP-2002-211556) for N2, O2, NO and Johnston et al., AIAA Paper 2015-3110 for N and O"
+   "reference": "GDTk species database (gdtk-uq/gdtk commit bf559c3f, src/gas/species-database); fits: NASA CEA2 thermo.inp (McBride, Zehe and Gordon, NASA/TP-2002-211556) for N2, O2, NO and Johnston et al., AIAA Paper 2015-3110 for N and O; transport: NASA CEA trans.inp fits as in the GDTk database, Lennard-Jones parameters from GRI-Mech 3.0 (Svehla 1962 for N)"
 }

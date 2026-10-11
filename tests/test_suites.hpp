@@ -23,5 +23,6 @@ void test_thermally_perfect();
 void test_two_temperature();
 void test_reactions();
 void test_energy_exchange();
+void test_mixture_transport();
 
 #endif  // GASLIB_TESTS_TEST_SUITES_HPP

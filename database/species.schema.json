@@ -81,6 +81,80 @@
                      "blend_widths",
                      "coefficients"
                   ]
+               },
+               "transport": {
+                  "anyOf": [
+                     {
+                        "type": "object",
+                        "properties": {
+                           "lennard_jones": {
+                              "anyOf": [
+                                 {
+                                    "type": "object",
+                                    "properties": {
+                                       "epsilon": {
+                                          "$ref": "#/$defs/double"
+                                       },
+                                       "reference": {
+                                          "type": [
+                                             "string",
+                                             "null"
+                                          ]
+                                       },
+                                       "sigma": {
+                                          "$ref": "#/$defs/double"
+                                       }
+                                    },
+                                    "additionalProperties": false,
+                                    "required": [
+                                       "sigma",
+                                       "epsilon"
+                                    ]
+                                 },
+                                 {
+                                    "type": "null"
+                                 }
+                              ]
+                           },
+                           "notes": {
+                              "type": [
+                                 "string",
+                                 "null"
+                              ]
+                           },
+                           "reference": {
+                              "type": [
+                                 "string",
+                                 "null"
+                              ]
+                           },
+                           "thermal_conductivity": {
+                              "anyOf": [
+                                 {
+                                    "$ref": "#/$defs/gaslib::database::TransportCurveRecord"
+                                 },
+                                 {
+                                    "type": "null"
+                                 }
+                              ]
+                           },
+                           "viscosity": {
+                              "anyOf": [
+                                 {
+                                    "$ref": "#/$defs/gaslib::database::TransportCurveRecord"
+                                 },
+                                 {
+                                    "type": "null"
+                                 }
+                              ]
+                           }
+                        },
+                        "additionalProperties": false
+                     },
+                     {
+                        "type": "null"
+                     }
+                  ]
                }
             },
             "additionalProperties": false,
@@ -97,6 +171,9 @@
             "energy": {
                "type": "string"
             },
+            "length": {
+               "type": "string"
+            },
             "molar_mass": {
                "type": "string"
             },
@@ -108,7 +185,8 @@
          "required": [
             "molar_mass",
             "energy",
-            "temperature"
+            "temperature",
+            "length"
          ]
       }
    },
@@ -118,6 +196,45 @@
          "type": "number",
          "minimum": -1.7976931348623157E308,
          "maximum": 1.7976931348623157E308
+      },
+      "gaslib::database::TransportCurveRecord": {
+         "type": "object",
+         "properties": {
+            "coefficients": {
+               "type": "array",
+               "items": {
+                  "type": "array",
+                  "items": {
+                     "$ref": "#/$defs/double"
+                  },
+                  "maxItems": 4
+               }
+            },
+            "model": {
+               "type": "string"
+            },
+            "notes": {
+               "type": [
+                  "string",
+                  "null"
+               ]
+            },
+            "reference": {
+               "type": [
+                  "string",
+                  "null"
+               ]
+            },
+            "temperature_ranges": {
+               "$ref": "#/$defs/std::vector<double>"
+            }
+         },
+         "additionalProperties": false,
+         "required": [
+            "model",
+            "temperature_ranges",
+            "coefficients"
+         ]
       },
       "std::vector<double>": {
          "type": "array",

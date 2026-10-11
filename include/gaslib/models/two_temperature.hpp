@@ -606,6 +606,16 @@ GASLIB_HOST_DEVICE SpeciesProperties<T, U, N>
   species_properties(const TwoTemperatureMixture<P, U, N, S>& gas, Temperature<T, U> temp)
 { return species_properties(gas.thermally_perfect, temp); }
 
+// Isobaric specific heat cp_i of every species of the single-temperature
+// model at temperature temp (thermal equilibrium). At temp = T_ve it equals
+// cp_tr,i + cv_ve,i(T_ve).
+template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
+    requires ScalarWith<T, P> && HasLog<T>
+GASLIB_HOST_DEVICE std::array<SpecificHeat<T, U>, N>
+  species_isobaric_specific_heat(const TwoTemperatureMixture<P, U, N, S>& gas,
+                                 Temperature<T, U> temp)
+{ return species_isobaric_specific_heat(gas.thermally_perfect, temp); }
+
 // Vibrational-electronic energy per unit mass e_ve,i of every species at
 // temperature temp (model units), with one logarithm.
 template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>

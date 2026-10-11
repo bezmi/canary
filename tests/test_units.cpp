@@ -103,6 +103,9 @@ void test_units()
                           scales.density * u_ref * scales.length,
                           4.0));
         expect(within_ulp(scale_factor<kind::sound_speed>(scales), u_ref, 4.0));
+        expect(within_ulp(scale_factor<kind::diffusion_coefficient>(scales),
+                          scales.length * u_ref,
+                          4.0));
         expect(within_ulp(scale_factor<kind::charge>(scales), 1.602176634e-19, 4.0));
         expect(scale_factor<kind::mass_fraction>(scales) == 1.0_d);
     };
@@ -126,6 +129,7 @@ void test_units()
         expect(round_trips<kind::number_rate_density>());
         expect(round_trips<kind::mass_production_rate>());
         expect(round_trips<kind::power_density>());
+        expect(round_trips<kind::diffusion_coefficient>());
     };
 
     "the scale factor of a dimension equals that of a kind of the same dimension"_test = [u_ref,

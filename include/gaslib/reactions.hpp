@@ -169,32 +169,6 @@ struct ReactionMechanism {
 namespace detail
 {
 
-// The scales with double values, for converting rate constants whose scale
-// factors may lie outside the range of P.
-template <std::floating_point P> UnitScales<double, si> double_scales(const UnitScales<P, si>&)
-{ return {}; }
-
-template <std::floating_point P>
-UnitScales<double, scaled> double_scales(const UnitScales<P, scaled>& s)
-{
-    return {
-      .mass = static_cast<double>(s.mass),
-      .density = static_cast<double>(s.density),
-      .temperature = static_cast<double>(s.temperature),
-      .length = static_cast<double>(s.length),
-    };
-}
-
-// Index of name in names; names.size() when it is not there.
-template <std::size_t N>
-std::size_t species_index(const std::array<std::string_view, N>& names, std::string_view name)
-{
-    for (std::size_t i = 0; i < N; ++i) {
-        if (names[i] == name) { return i; }
-    }
-    return N;
-}
-
 // Checks the entry count of a list and the names of its first count
 // entries: each known and listed once. Returns the species indices.
 template <std::size_t N, std::size_t K>

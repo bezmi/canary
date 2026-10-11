@@ -10,7 +10,7 @@ import json
 from decimal import Decimal
 
 FORMAT = "gaslib-species-1"
-UNITS = {"molar_mass": "kg/mol", "energy": "J/mol", "temperature": "K"}
+UNITS = {"molar_mass": "kg/mol", "energy": "J/mol", "temperature": "K", "length": "m"}
 
 
 def kg_per_mol(grams_per_mol: str) -> float:

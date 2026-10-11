@@ -1,8 +1,9 @@
 """Converts the test excerpts of NASA's thermo.inp, Cantera's airNASA9.yaml
 and a GDTk-layout file, and checks that each gives the same molar masses,
 charges, temperature ranges, blend widths and coefficients as the shipped
-five-species air file. Converts the GDTk-layout reaction-mechanism and
-energy-exchange samples and checks the converted values.
+five-species air file (with its transport data for the GDTk layout).
+Converts the GDTk-layout reaction-mechanism, energy-exchange and
+collision-integral samples and checks the converted values.
 
 Usage: test_converters.py <gaslib source directory>
 """
@@ -24,7 +25,7 @@ runs = {
                    "--species", "N2", "O2", "NO", *blend],
     "Cantera": [tools / "cantera_to_json.py", data / "cantera_excerpt.yaml", "--species", "N2", "O2", "NO",
                 "--atomic-weights", "N=14.0067", "O=15.9994", *blend],
-    "GDTk layout": [tools / "gdtk_to_json.py", "--database", data / "gdtk", "--species", "N2"],
+    "GDTk layout": [tools / "gdtk_to_json.py", "--database", data / "gdtk", "--species", "N2", "--transport"],
 }
 
 failures = 0
@@ -44,6 +45,9 @@ with tempfile.TemporaryDirectory() as tmp:
                 if record["thermo"][key] != expected["thermo"][key]:
                     failures += 1
                     print(f"{label} {name}: thermo {key} differs")
+            if "transport" in record and record["transport"] != expected["transport"]:
+                failures += 1
+                print(f"{label} {name}: transport differs")
             print(f"{label} {name}: checked")
 
 # Reaction mechanism converter: CGS to SI by (1e-6)^(order - 1), third-body
@@ -106,5 +110,26 @@ with tempfile.TemporaryDirectory() as tmp:
             failures += 1
             print(f"exchange converter: {got} != {expected}")
     print("exchange converter: checked")
+
+# Collision-integral converter: D shifted to m^2 by ln(1e-20), pairs in file
+# order, equal to the shipped five-species file for the same pairs.
+with tempfile.TemporaryDirectory() as tmp:
+    out = Path(tmp) / "collision_integrals.json"
+    subprocess.run([sys.executable, str(tools / "gdtk_collision_integrals_to_json.py"),
+                    str(data / "gdtk_collision_integrals_sample.lua"), "--species", "N2", "O2",
+                    "--source", "test", "-o", str(out)], check=True)
+    converted = json.loads(out.read_text())
+    shipped_pairs = json.loads((root / "database" / "data" / "air5_collision_integrals.json").read_text())["pairs"]
+    checks = [
+        (converted["format"], "gaslib-collision-integrals-1"),
+        (converted["units"], {"temperature": "K", "area": "m^2"}),
+        ([p["species"] for p in converted["pairs"]], [["N2", "N2"], ["O2", "N2"], ["O2", "O2"]]),
+        (converted["pairs"], shipped_pairs[:3]),
+    ]
+    for got, expected in checks:
+        if got != expected:
+            failures += 1
+            print(f"collision-integral converter: {got} != {expected}")
+    print("collision-integral converter: checked")
 
 sys.exit(1 if failures else 0)

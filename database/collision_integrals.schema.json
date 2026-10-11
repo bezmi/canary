@@ -1,0 +1,113 @@
+{
+   "type": "object",
+   "properties": {
+      "format": {
+         "type": "string"
+      },
+      "notes": {
+         "type": [
+            "string",
+            "null"
+         ]
+      },
+      "pairs": {
+         "type": "array",
+         "items": {
+            "type": "object",
+            "properties": {
+               "notes": {
+                  "type": [
+                     "string",
+                     "null"
+                  ]
+               },
+               "pi_omega_11": {
+                  "$ref": "#/$defs/gaslib::database::CollisionFitRecord"
+               },
+               "pi_omega_22": {
+                  "$ref": "#/$defs/gaslib::database::CollisionFitRecord"
+               },
+               "reference": {
+                  "type": [
+                     "string",
+                     "null"
+                  ]
+               },
+               "species": {
+                  "type": "array",
+                  "items": {
+                     "type": "string"
+                  },
+                  "maxItems": 2
+               }
+            },
+            "additionalProperties": false,
+            "required": [
+               "species",
+               "pi_omega_11",
+               "pi_omega_22"
+            ]
+         }
+      },
+      "reference": {
+         "type": [
+            "string",
+            "null"
+         ]
+      },
+      "units": {
+         "type": "object",
+         "properties": {
+            "area": {
+               "type": "string"
+            },
+            "temperature": {
+               "type": "string"
+            }
+         },
+         "additionalProperties": false,
+         "required": [
+            "temperature",
+            "area"
+         ]
+      }
+   },
+   "additionalProperties": false,
+   "$defs": {
+      "double": {
+         "type": "number",
+         "minimum": -1.7976931348623157E308,
+         "maximum": 1.7976931348623157E308
+      },
+      "gaslib::database::CollisionFitRecord": {
+         "type": "object",
+         "properties": {
+            "A": {
+               "$ref": "#/$defs/double"
+            },
+            "B": {
+               "$ref": "#/$defs/double"
+            },
+            "C": {
+               "$ref": "#/$defs/double"
+            },
+            "D": {
+               "$ref": "#/$defs/double"
+            }
+         },
+         "additionalProperties": false,
+         "required": [
+            "A",
+            "B",
+            "C",
+            "D"
+         ]
+      }
+   },
+   "required": [
+      "format",
+      "units",
+      "pairs"
+   ],
+   "title": "gaslib::database::CollisionIntegralsFile"
+}

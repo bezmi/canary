@@ -1,7 +1,9 @@
 #ifndef GASLIB_TRANSPORT_TRANSPORT_HPP
 #define GASLIB_TRANSPORT_TRANSPORT_HPP
 
+#include <array>
 #include <concepts>
+#include <cstddef>
 #include <gaslib/config.hpp>
 #include <gaslib/quantity.hpp>
 #include <gaslib/scalar.hpp>
@@ -46,6 +48,18 @@ template <Scalar T, UnitSystem U> struct TransportCoefficients {
     ThermalConductivity<T, U> conductivity;
 };
 
+// Transport coefficients at a state with M internal energy modes:
+// conductivity carries the energy that follows the temperature temp of the
+// state, mode_conductivity[k] the energy of mode k, which follows
+// mode_temp[k].
+template <Scalar T, UnitSystem U, std::size_t M>
+    requires(M > 0)
+struct MultiTemperatureTransportCoefficients {
+    DynamicViscosity<T, U> viscosity;
+    ThermalConductivity<T, U> conductivity;
+    std::array<ThermalConductivity<T, U>, M> mode_conductivity;
+};
+
 namespace detail
 {
 template <TransportLaw V, TransportLaw K, Scalar T, UnitSystem U>
@@ -81,22 +95,41 @@ GASLIB_HOST_DEVICE auto transport(const Transport<V, K>& model,
 
 namespace detail
 {
+// The coefficients with one conductivity per mode of a state type S;
+// void for a state without modes.
+template <typename S> struct mode_coefficients {
+    using type = void;
+};
+
+template <Scalar T, UnitSystem U, std::size_t M>
+struct mode_coefficients<MultiTemperatureState<T, U, M>> {
+    using type = MultiTemperatureTransportCoefficients<T, U, M>;
+};
+
+// C is what transport may return at a state of type S: TransportCoefficients,
+// or for a state with modes also MultiTemperatureTransportCoefficients.
+template <typename C, typename S>
+concept TransportCoefficientsFor =
+  ThermoStateType<S> &&
+  (std::same_as<C, TransportCoefficients<typename S::value_type, typename S::units>> ||
+   std::same_as<C, typename mode_coefficients<S>::type>);
+
 template <typename M, typename G, typename T>
 concept TransportAlone = requires(const M& model, const G& gas, const state_t<G, T>& state) {
-    { transport(model, gas, state) } -> std::same_as<TransportCoefficients<T, typename G::units>>;
+    { transport(model, gas, state) } -> TransportCoefficientsFor<state_t<G, T>>;
 };
 
 template <typename M, typename G, typename T>
 concept TransportWithMixture =
   requires(const M& model, const G& gas, const mixture_t<G, T>& mix, const state_t<G, T>& state) {
-      {
-          transport(model, gas, mix, state)
-      } -> std::same_as<TransportCoefficients<T, typename G::units>>;
+      { transport(model, gas, mix, state) } -> TransportCoefficientsFor<state_t<G, T>>;
   };
 }  // namespace detail
 
 // Transport model M gives viscosity and conductivity at a state of gas model
-// G with value type T (with the mixture value for a mixture model).
+// G with value type T (with the mixture value for a mixture model): as
+// TransportCoefficients, or, at a state with internal energy modes, as
+// TransportCoefficients or MultiTemperatureTransportCoefficients.
 template <typename M, typename G, typename T>
 concept TransportModel = GasModel<G, T> && std::is_trivially_copyable_v<M> &&
                          ((HasMixture<G, T> && detail::TransportWithMixture<M, G, T>) ||

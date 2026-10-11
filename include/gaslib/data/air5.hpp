@@ -9,12 +9,16 @@
 
 #include <array>
 #include <concepts>
+#include <cstddef>
 #include <gaslib/build.hpp>
+#include <gaslib/data/air5_transport.hpp>
 #include <gaslib/models/thermally_perfect.hpp>
 #include <gaslib/models/two_temperature.hpp>
 #include <gaslib/quantity.hpp>
 #include <gaslib/species.hpp>
+#include <gaslib/transport/mixture.hpp>
 #include <gaslib/units.hpp>
+#include <string_view>
 
 namespace gaslib
 {
@@ -381,6 +385,65 @@ template <std::floating_point P, UnitSystem U>
 Built<Air5TwoTemperature<P, U>, SpeciesData<P, U, 5>>
   make_air5_two_temperature(const UnitScales<P, U>& scales)
 { return make_two_temperature_mixture(air5_species, air5_rotational_degrees, scales); }
+
+namespace detail
+{
+// Names of air5_species, in their order.
+inline constexpr auto air5_species_names = [] {
+    std::array<std::string_view, air5_species.size()> names {};
+    for (std::size_t i = 0; i < names.size(); ++i) { names[i] = air5_species[i].name; }
+    return names;
+}();
+}  // namespace detail
+
+// Wilke mixture transport of five-species air.
+template <std::floating_point P, UnitSystem U>
+using Air5WilkeTransport = WilkeTransport<P, U, 5, 3>;
+
+// Air5WilkeTransport of air5_species_transport for the species data of an
+// air5 thermo model (from make_air5 or make_air5_two_temperature), in the
+// unit system of the scales, with the conductivity mixing rule mixing. See
+// make_wilke_transport.
+template <std::floating_point P, UnitSystem U>
+Air5WilkeTransport<P, U> make_air5_wilke_transport(const SpeciesData<P, U, 5>& species,
+                                                   const UnitScales<P, U>& scales,
+                                                   ConductivityMixing mixing)
+{
+    return make_wilke_transport(air5_species_transport,
+                                detail::air5_species_names,
+                                species,
+                                scales,
+                                mixing);
+}
+
+// As above, with ConductivityMixing::conductivity_ratio.
+template <std::floating_point P, UnitSystem U>
+Air5WilkeTransport<P, U> make_air5_wilke_transport(const SpeciesData<P, U, 5>& species,
+                                                   const UnitScales<P, U>& scales)
+{
+    return make_wilke_transport(air5_species_transport,
+                                detail::air5_species_names,
+                                species,
+                                scales);
+}
+
+// Gupta-Yos mixture transport of five-species air.
+template <std::floating_point P, UnitSystem U>
+using Air5GuptaYosTransport = GuptaYosTransport<P, U, 5>;
+
+// Air5GuptaYosTransport of air5_collision_integrals and
+// air5_rotational_degrees for the species data of an air5 thermo model, in
+// the unit system of the scales. See make_gupta_yos_transport.
+template <std::floating_point P, UnitSystem U>
+Air5GuptaYosTransport<P, U> make_air5_gupta_yos_transport(const SpeciesData<P, U, 5>& species,
+                                                          const UnitScales<P, U>& scales)
+{
+    return make_gupta_yos_transport(air5_collision_integrals,
+                                    detail::air5_species_names,
+                                    species,
+                                    air5_rotational_degrees,
+                                    scales);
+}
 
 }  // namespace gaslib
 

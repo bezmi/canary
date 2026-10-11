@@ -23,11 +23,13 @@ void check_header(const SpeciesFile& file)
           std::format(R"(format must be "{}", got "{}")", species_format, file.format));
     }
     if (file.units != Units {}) {
-        throw DatabaseError(std::format("units must be molar_mass \"kg/mol\", energy \"J/mol\" and "
-                                        "temperature \"K\", got \"{}\", \"{}\" and \"{}\"",
+        throw DatabaseError(std::format("units must be molar_mass \"kg/mol\", energy \"J/mol\", "
+                                        "temperature \"K\" and length \"m\", got \"{}\", \"{}\", "
+                                        "\"{}\" and \"{}\"",
                                         file.units.molar_mass,
                                         file.units.energy,
-                                        file.units.temperature));
+                                        file.units.temperature,
+                                        file.units.length));
     }
 }
 

@@ -2,7 +2,7 @@
 #define GASLIB_DATABASE_JSON_IO_HPP
 
 // glaze options and file input and output shared by the species,
-// reactions and energy-exchange files. Private to the database library.
+// reactions, energy-exchange and collision-integral files. Private to the database library.
 
 #include <filesystem>
 #include <format>

@@ -9,6 +9,7 @@
 #include <gaslib/data/air5_kim_jo.hpp>            // IWYU pragma: export
 #include <gaslib/data/air5_park.hpp>              // IWYU pragma: export
 #include <gaslib/data/air5_park_exchange.hpp>     // IWYU pragma: export
+#include <gaslib/data/air5_transport.hpp>         // IWYU pragma: export
 #include <gaslib/energy_exchange.hpp>             // IWYU pragma: export
 #include <gaslib/models/calorically_perfect.hpp>  // IWYU pragma: export
 #include <gaslib/models/thermally_perfect.hpp>    // IWYU pragma: export
@@ -21,6 +22,7 @@
 #include <gaslib/state.hpp>                       // IWYU pragma: export
 #include <gaslib/status.hpp>                      // IWYU pragma: export
 #include <gaslib/thermo.hpp>                      // IWYU pragma: export
+#include <gaslib/transport/mixture.hpp>           // IWYU pragma: export
 #include <gaslib/units.hpp>                       // IWYU pragma: export
 
 #endif  // GASLIB_GASLIB_HPP

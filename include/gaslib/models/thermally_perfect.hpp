@@ -519,6 +519,24 @@ GASLIB_HOST_DEVICE SpeciesProperties<T, U, N>
     return out;
 }
 
+// Isobaric specific heat cp_i = R_i (cp/R)_i(T) of every species at
+// temperature temp, in model units, with one logarithm.
+template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
+    requires ScalarWith<T, P> && HasLog<T>
+GASLIB_HOST_DEVICE std::array<SpecificHeat<T, U>, N>
+  species_isobaric_specific_heat(const ThermallyPerfectMixture<P, U, N, S>& gas,
+                                 Temperature<T, U> temp)
+{
+    const T t = temp.value();
+    const T ln_t = math::log(t);
+    std::array<SpecificHeat<T, U>, N> out {};
+    for (std::size_t i = 0; i < N; ++i) {
+        const T cp_over_r = nasa9_cp_h(gas.curve[i], t, ln_t).cp_over_r;
+        out[i] = SpecificHeat<T, U> {T(gas.gas_constant[i].value() * cp_over_r)};
+    }
+    return out;
+}
+
 }  // namespace gaslib
 
 #endif  // GASLIB_MODELS_THERMALLY_PERFECT_HPP

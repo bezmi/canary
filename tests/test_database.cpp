@@ -2,7 +2,8 @@
 // reactions and energy-exchange files, errors, the generated schemas,
 // conversion to model inputs, cp/R of the shipped five-species air file
 // against reference values, and the compiled Kim-Jo mechanism, Park
-// mechanism and Park energy exchange against their files.
+// mechanism, Park energy exchange, species transport data and collision
+// integrals against their files.
 
 #include <array>
 #include <boost/ut.hpp>
@@ -15,11 +16,13 @@
 #include <gaslib/data/air5_kim_jo.hpp>
 #include <gaslib/data/air5_park.hpp>
 #include <gaslib/data/air5_park_exchange.hpp>
+#include <gaslib/data/air5_transport.hpp>
 #include <gaslib/database.hpp>
 #include <gaslib/energy_exchange.hpp>
 #include <gaslib/nasa9.hpp>
 #include <gaslib/quantity.hpp>
 #include <gaslib/reactions.hpp>
+#include <gaslib/transport/mixture.hpp>
 #include <gaslib/units.hpp>
 #include <ios>
 #include <iterator>
@@ -43,6 +46,9 @@ std::filesystem::path park_path() { return source_path("database/data/air5_park.
 
 std::filesystem::path exchange_path()
 { return source_path("database/data/air5_park_exchange.json"); }
+
+std::filesystem::path collision_path()
+{ return source_path("database/data/air5_collision_integrals.json"); }
 
 std::string read_text(const std::filesystem::path& path)
 {
@@ -89,6 +95,15 @@ bool same_rate(const gaslib::ArrheniusInput& a, const gaslib::ArrheniusInput& b)
 {
     return a.A == b.A && a.n == b.n && a.activation_temperature == b.activation_temperature &&
            a.translational_exponent == b.translational_exponent;
+}
+
+// air5_collision_integrals.json with one textual replacement.
+std::string collision_with(std::string_view from, std::string_view to)
+{
+    std::string text = read_text(collision_path());
+    const auto at = text.find(from);
+    if (at != std::string::npos) { text.replace(at, from.size(), to); }
+    return text;
 }
 
 // air5_park_exchange.json with one textual replacement.
@@ -595,5 +610,157 @@ int main()
         expect(message(changed).starts_with(
           R"(chemistry_vibration 2 (NO): model must be "impartial_dissociation")"))
           << message(changed);
+    };
+
+    "the shipped air file holds transport data for every species"_test = [] {
+        const db::SpeciesFile file = db::read_species_file(air5_path());
+        for (const auto name : air5_names) {
+            const auto& transport = file.species.at(std::string(name)).transport;
+            expect(transport.has_value() && transport->viscosity.has_value() &&
+                   transport->thermal_conductivity.has_value() &&
+                   transport->lennard_jones.has_value())
+              << name;
+        }
+        const db::TransportRecord& n2 = *file.species.at("N2").transport;
+        expect(n2.viscosity->model == "cea");
+        expect(n2.viscosity->temperature_ranges.size() == 4_u);
+        expect(n2.lennard_jones->sigma == 3.621e-10);
+        expect(n2.lennard_jones->epsilon == 97.53_d);
+        expect(file.species.at("N").transport->viscosity->temperature_ranges.front() == 1000.0_d);
+    };
+
+    "unknown keys, a missing length unit and other lengths are errors of a species file"_test = [] {
+        expect(throws_database_error(
+          [] { db::parse_species(air5_with("\"lennard_jones\"", "\"lj\"")); }));
+        expect(throws_database_error(
+          [] { db::parse_species(air5_with(R"("sigma")", R"("diameter": 1.0, "sigma")")); }));
+        expect(throws_database_error(
+          [] { db::parse_species(air5_with(R"("length": "m")", R"("length": "cm")")); }));
+        expect(throws_database_error([] {
+            db::parse_species(air5_with(R"(,
+      "length": "m")",
+                                        ""));
+        }));
+        // Transport data are optional, as is each of their records.
+        db::SpeciesFile file = db::read_species_file(air5_path());
+        file.species.at("O").transport.reset();
+        file.species.at("N").transport->lennard_jones.reset();
+        expect(db::parse_species(db::write_species(file)) == file);
+    };
+
+    "transport inputs from the air file equal the compiled data"_test = [] {
+        const db::SpeciesFile file = db::read_species_file(air5_path());
+        const auto input = db::species_transport<3>(file, air5_names);
+        for (std::size_t i = 0; i < 5; ++i) {
+            const auto& a = input[i];
+            const auto& b = gaslib::air5_species_transport[i];
+            expect(std::string_view(a.name) == b.name) << i;
+            expect(a.viscosity.segments == b.viscosity.segments &&
+                   a.viscosity.breaks == b.viscosity.breaks &&
+                   a.viscosity.coefficients == b.viscosity.coefficients)
+              << i;
+            expect(a.conductivity.segments == b.conductivity.segments &&
+                   a.conductivity.breaks == b.conductivity.breaks &&
+                   a.conductivity.coefficients == b.conductivity.coefficients)
+              << i;
+            expect(a.lennard_jones.sigma == b.lennard_jones.sigma &&
+                   a.lennard_jones.epsilon == b.lennard_jones.epsilon)
+              << i;
+        }
+    };
+
+    "transport conversion errors name the species and the problem"_test = [] {
+        const db::SpeciesFile file = db::read_species_file(air5_path());
+        const auto message = [](const db::SpeciesFile& f) -> std::string {
+            try {
+                (void)db::species_transport<3>(f, air5_names);
+            } catch (const gaslib::ParameterError& error) {
+                return error.what();
+            }
+            return "no exception";
+        };
+        // N2 has three segments.
+        expect(throws_parameter_error([&] { (void)db::species_transport<2>(file, air5_names); }));
+        db::SpeciesFile changed = file;
+        changed.species.at("O2").transport.reset();
+        expect(message(changed).starts_with("species O2: needs viscosity")) << message(changed);
+        changed = file;
+        changed.species.at("NO").transport->thermal_conductivity->model = "chemkin";
+        expect(
+          message(changed).starts_with(R"(species NO: thermal_conductivity model must be "cea")"))
+          << message(changed);
+        changed = file;
+        changed.species.at("N").transport->viscosity->temperature_ranges.pop_back();
+        expect(message(changed).starts_with("species N: viscosity needs")) << message(changed);
+        changed = file;
+        changed.species.erase("O");
+        expect(throws_database_error([&] { (void)db::species_transport<3>(changed, air5_names); }));
+    };
+
+    "the shipped collision-integral file reads with its 15 pairs"_test = [] {
+        const db::CollisionIntegralsFile file = db::read_collision_integrals_file(collision_path());
+        expect(file.format == db::collision_integrals_format);
+        expect(file.units == db::CollisionUnits {});
+        expect(file.pairs.size() == 15_u);
+        expect(file.pairs[1].species == std::array<std::string, 2> {"O2", "N2"});
+        expect(file.pairs[1].pi_omega_11.C == 0.5729_d);
+    };
+
+    "a collision-integral file reads, writes and reads again to the same data and text"_test = [] {
+        const db::CollisionIntegralsFile file = db::read_collision_integrals_file(collision_path());
+        const std::string text = db::write_collision_integrals(file);
+        const db::CollisionIntegralsFile again = db::parse_collision_integrals(text);
+        expect(again == file);
+        expect(db::write_collision_integrals(again) == text);
+        const auto path = std::filesystem::temp_directory_path() / "gaslib_test_collisions.json";
+        db::write_collision_integrals_file(path, file);
+        expect(db::read_collision_integrals_file(path) == file);
+        std::filesystem::remove(path);
+    };
+
+    "unknown and missing keys, another format or other units of a collision-integral file are errors"_test =
+      [] {
+          expect(throws_database_error([] {
+              db::parse_collision_integrals(
+                collision_with("\"format\"", R"("extra": 1, "format")"));
+          }));
+          expect(throws_database_error([] {
+              db::parse_collision_integrals(collision_with("\"pi_omega_22\"", "\"omega_22\""));
+          }));
+          expect(throws_database_error(
+            [] { db::parse_collision_integrals(collision_with(R"("A": 0.0,)", "")); }));
+          expect(throws_database_error([] {
+              db::parse_collision_integrals(
+                collision_with("gaslib-collision-integrals-1", "gaslib-collision-integrals-2"));
+          }));
+          expect(throws_database_error([] {
+              db::parse_collision_integrals(collision_with(R"("area": "m^2")", R"("area": "A^2")"));
+          }));
+          expect(throws_database_error(
+            [] { db::read_collision_integrals_file(source_path("no_such_file.json")); }));
+          expect(
+            throws_database_error([] { db::parse_collision_integrals(read_text(air5_path())); }));
+      };
+
+    "the shipped collision-integral schema is the schema of the current file structs"_test = [] {
+        expect(db::collision_integrals_schema() ==
+               read_text(source_path("database/collision_integrals.schema.json")));
+    };
+
+    "collision-pair inputs from the file equal the compiled data"_test = [] {
+        const db::CollisionIntegralsFile file = db::read_collision_integrals_file(collision_path());
+        const auto input = db::collision_integral_pairs<15>(file);
+        const auto same = [](const gaslib::CollisionFitInput& a,
+                             const gaslib::CollisionFitInput& b) {
+            return a.A == b.A && a.B == b.B && a.C == b.C && a.D == b.D;
+        };
+        for (std::size_t k = 0; k < 15; ++k) {
+            const auto& a = input[k];
+            const auto& b = gaslib::air5_collision_integrals[k];
+            expect(std::string_view(a.first) == b.first && std::string_view(a.second) == b.second)
+              << k;
+            expect(same(a.pi_omega_11, b.pi_omega_11) && same(a.pi_omega_22, b.pi_omega_22)) << k;
+        }
+        expect(throws_parameter_error([&] { (void)db::collision_integral_pairs<14>(file); }));
     };
 }

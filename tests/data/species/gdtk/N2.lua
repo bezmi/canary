@@ -1,6 +1,7 @@
 -- Test input in the layout of GDTk species-database files, written for
--- gaslib's converter test. Values: NASA CEA thermo.inp (Apache License 2.0,
--- see ../NOTICE.md); blend ranges as used by gaslib's five-species air.
+-- gaslib's converter test. Values: NASA CEA thermo.inp and trans.inp (Apache
+-- License 2.0, see ../NOTICE.md); blend ranges as used by gaslib's
+-- five-species air; Lennard-Jones parameters from GRI-Mech 3.0.
 db.N2 = {}
 db.N2.charge = 0
 db.N2.M = {
@@ -28,4 +29,67 @@ db.N2.ceaThermoCoeffs = {
       -1.672099740e+03
    },
    reference = 'NASA CEA thermo.inp'
+}
+db.N2.sigma = {
+   value = 3.621,
+   units = 'Angstrom',
+   reference = 'GRI-Mech 3.0 transport file.'
+}
+db.N2.epsilon = {
+   value = 97.530,
+   units = 'K'
+}
+db.N2.ceaViscosity = {
+   nsegments = 3,
+   segment0 = {
+      T_lower = 200,
+      T_upper = 1000,
+      A = 0.62526577,
+      B = -31.779652,
+      C = -1640.7983,
+      D = 1.7454992,
+    },
+   segment1 = {
+      T_lower = 1000,
+      T_upper = 5000,
+      A = 0.87395209,
+      B = 561.52222,
+      C = -173948.09,
+      D = -0.39335958,
+    },
+   segment2 = {
+      T_lower = 5000,
+      T_upper = 15000,
+      A = 0.88503551,
+      B = 909.02171,
+      C = -731290.61,
+      D = -0.53503838,
+    },
+}
+db.N2.ceaThermCond = {
+   nsegments = 3,
+   segment0 = {
+      T_lower = 200,
+      T_upper = 1000,
+      A = 0.85439436,
+      B = 105.73224,
+      C = -12347.848,
+      D = 0.47793128,
+    },
+   segment1 = {
+      T_lower = 1000,
+      T_upper = 5000,
+      A = 0.88407146,
+      B = 133.57293,
+      C = -11429.64,
+      D = 0.24417019,
+    },
+   segment2 = {
+      T_lower = 5000,
+      T_upper = 15000,
+      A = 2.4176185,
+      B = 8047.7749,
+      C = 3105580.2,
+      D = -14.517761,
+    },
 }
