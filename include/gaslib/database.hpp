@@ -31,13 +31,15 @@
 //           "lennard_jones": {"sigma": 3.621e-10, "epsilon": 97.53},
 //           "reference": "...", "notes": "..."
 //         },
+//         "electronic_levels": {"degeneracies": [1, 3, 6], "temperatures": [0, 72231.9, 85778.6],
+//                               "reference": "...", "notes": "..."},
 //         "reference": "...", "notes": "..."
 //       }
 //     },
 //     "reference": "...", "notes": "..."
 //   }
-// "reference" and "notes" are optional everywhere, and so are "transport"
-// and each of its three records; every other key is required, and unknown
+// "reference" and "notes" are optional everywhere, and so are "transport",
+// each of its three records, and "electronic_levels"; every other key is required, and unknown
 // keys are errors. Numbers are written in the shortest form that reads back
 // to the same double.
 //
@@ -123,6 +125,7 @@
 #include <format>
 #include <gaslib/build.hpp>
 #include <gaslib/energy_exchange.hpp>
+#include <gaslib/models/multi_temperature.hpp>
 #include <gaslib/models/thermally_perfect.hpp>
 #include <gaslib/nasa9.hpp>
 #include <gaslib/reactions.hpp>
@@ -201,13 +204,25 @@ struct TransportRecord {
     friend bool operator==(const TransportRecord&, const TransportRecord&) = default;
 };
 
+// Electronic energy levels of one species: the degeneracy g_k and the
+// level energy as a temperature theta_k = E_k / k_B in K of every level.
+struct ElectronicLevelsRecord {
+    std::vector<int> degeneracies;
+    std::vector<double> temperatures;
+    std::optional<std::string> reference;
+    std::optional<std::string> notes;
+
+    friend bool operator==(const ElectronicLevelsRecord&, const ElectronicLevelsRecord&) = default;
+};
+
 // One species: molar mass in kg/mol, charge in elementary charges, thermo
-// data and optionally transport data.
+// data and optionally transport data and electronic levels.
 struct SpeciesRecord {
     double molar_mass {};
     double charge {};
     ThermoRecord thermo;
     std::optional<TransportRecord> transport;
+    std::optional<ElectronicLevelsRecord> electronic_levels;
     std::optional<std::string> reference;
     std::optional<std::string> notes;
 
@@ -784,6 +799,46 @@ std::array<SpeciesTransportInput<S>, N>
             };
         } catch (const ParameterError& error) {
             throw ParameterError(std::format("species {}: {}", entry->first, error.what()));
+        }
+    }
+    return out;
+}
+
+// Electronic levels of the named species of file, in the given order, for
+// make_multi_temperature_mixture, with at most L levels each; a species
+// without an electronic_levels record has zero levels. Each name points to
+// the species' key in file, so the result is valid while file exists.
+// Throws DatabaseError for a name that file lacks, and ParameterError (with
+// the species name) when a species has more than L levels or different
+// numbers of degeneracies and temperatures. The values themselves are
+// checked by make_multi_temperature_mixture.
+template <std::size_t L, std::size_t N>
+std::array<ElectronicLevelsInput<L>, N>
+  electronic_levels(const SpeciesFile& file, const std::array<std::string_view, N>& names)
+{
+    std::array<ElectronicLevelsInput<L>, N> out {};
+    for (std::size_t i = 0; i < N; ++i) {
+        const auto entry = file.species.find(std::string(names[i]));
+        if (entry == file.species.end()) {
+            throw DatabaseError(std::format("species \"{}\" is not in the file", names[i]));
+        }
+        out[i].name = entry->first.c_str();
+        if (!entry->second.electronic_levels) { continue; }
+        const ElectronicLevelsRecord& levels = *entry->second.electronic_levels;
+        const std::size_t count = levels.degeneracies.size();
+        if (levels.temperatures.size() != count || count > L) {
+            throw ParameterError(
+              std::format("species {}: needs at most {} levels with as many degeneracies as "
+                          "temperatures, got {} and {}",
+                          entry->first,
+                          L,
+                          count,
+                          levels.temperatures.size()));
+        }
+        out[i].levels = static_cast<int>(count);
+        for (std::size_t k = 0; k < count; ++k) {
+            out[i].degeneracies[k] = levels.degeneracies[k];
+            out[i].temperatures[k] = levels.temperatures[k];
         }
     }
     return out;

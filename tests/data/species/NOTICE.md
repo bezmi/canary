@@ -1,6 +1,7 @@
 # Third-party data in this directory
 
-- `thermo_inp_excerpt.inp`, and the coefficients in `gdtk/N2.lua`: excerpts
+- `thermo_inp_excerpt.inp`, and the coefficients in `gdtk/N2.lua` and
+  `gdtk/N_plus.lua`: excerpts
   of `data/thermo.inp` (and, for the viscosity and conductivity fits in
   `gdtk/N2.lua`, `data/trans.inp`) from NASA CEA, https://github.com/nasa/cea, licensed
   under the Apache License, Version 2.0
@@ -17,3 +18,5 @@
 - `gdtk_collision_integrals_sample.lua`: collision-integral curve fits of
   three pairs from Gupta, Yos, Thompson and Lee, NASA RP-1232 (1990), a
   publication of the United States government.
+- The electronic levels in `gdtk/N2.lua` and `gdtk/N_plus.lua` are NIST
+  atomic and molecular data (level energies in cm^-1).

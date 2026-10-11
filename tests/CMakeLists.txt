@@ -7,7 +7,7 @@ endfunction()
 
 add_executable(gaslib_tests test_main.cpp test_config_default.cpp test_config_consumer.cpp test_scalar.cpp test_quantity.cpp test_units.cpp test_status.cpp test_species.cpp test_state.cpp test_thermo.cpp test_calorically_perfect.cpp test_calorically_perfect_mixture.cpp
                             test_cerberus_parity.cpp test_transport.cpp test_solve.cpp test_nasa9.cpp test_thermally_perfect.cpp
-                            test_two_temperature.cpp test_reactions.cpp test_energy_exchange.cpp test_mixture_transport.cpp)
+                            test_two_temperature.cpp test_multi_temperature.cpp test_reactions.cpp test_energy_exchange.cpp test_mixture_transport.cpp)
 target_link_libraries(gaslib_tests PRIVATE gaslib::gaslib Boost::ut)
 gaslib_test_options(gaslib_tests)
 add_test(NAME gaslib.unit COMMAND gaslib_tests)
@@ -46,6 +46,7 @@ gaslib_compile_fail_test(quantity_implicit_precision "conversion from .*double.*
 gaslib_compile_fail_test(calorically_perfect_si_in_scaled "ClosesInAnyOrder<.*CaloricallyPerfect<double, gaslib::scaled>")
 gaslib_compile_fail_test(thermally_perfect_si_in_scaled "ClosesInAnyOrder<.*ThermallyPerfectMixture<double, gaslib::scaled")
 gaslib_compile_fail_test(two_temperature_si_modes_in_scaled "ClosesInAnyOrder<.*TwoTemperatureMixture<double, gaslib::scaled")
+gaslib_compile_fail_test(multi_temperature_si_modes_in_scaled "ClosesInAnyOrder<.*MultiTemperatureMixture<double, gaslib::scaled")
 gaslib_compile_fail_test(calorically_perfect_swapped_kinds "no matching function for call to [^ ]*make_calorically_perfect")
 gaslib_compile_fail_test(transport_other_units "no matching function for call to [^ ]*viscosity")
 gaslib_compile_fail_test(quantity_molar_scaled "KindUnits<(K, U|gaslib::kind::molar_mass, gaslib::scaled)>")
@@ -91,7 +92,8 @@ if(TARGET gaslib_database)
                COMMAND ${Python3_EXECUTABLE} ${species_tools}/test_converters.py ${PROJECT_SOURCE_DIR})
       add_test(NAME gaslib.database.schema
                COMMAND ${Python3_EXECUTABLE} ${species_tools}/check_species_files.py
-                       ${PROJECT_SOURCE_DIR}/database/species.schema.json ${PROJECT_SOURCE_DIR}/database/data/air5.json --
+                       ${PROJECT_SOURCE_DIR}/database/species.schema.json ${PROJECT_SOURCE_DIR}/database/data/air5.json
+                       ${PROJECT_SOURCE_DIR}/database/data/air11.json --
                        ${PROJECT_SOURCE_DIR}/database/reactions.schema.json
                        ${PROJECT_SOURCE_DIR}/database/data/air5_kim_jo.json
                        ${PROJECT_SOURCE_DIR}/database/data/air5_park.json --

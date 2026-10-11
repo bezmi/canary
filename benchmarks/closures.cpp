@@ -3,8 +3,10 @@
 // with the exact capacity and with capacity 16, and the thermally perfect
 // model for N2 alone and for air (N2 and O2 in the five-species model),
 // without and with a temperature guess equal to the previous cell's
-// temperature, and the two-temperature model for air from (rho, rho_e,
-// rho_e_ve). The last cases are the mass production rates of the Kim-Jo
+// temperature, the two-temperature model for air from (rho, rho_e,
+// rho_e_ve), and the four-temperature model of five-species air and the
+// three-temperature model of weakly ionised eleven-species air from
+// (rho, rho_e, rho_e_m). The last cases are the mass production rates of the Kim-Jo
 // five-species air mechanism from (rho, T), and the mass production rates
 // and vibrational-electronic energy source of the Park five-species air
 // mechanism and energy exchange on the two-temperature model from
@@ -23,6 +25,7 @@
 #include <gaslib/gaslib.hpp>
 #include <mdspan/mdspan.hpp>
 #include <ratio>
+#include <tuple>
 #include <vector>
 
 namespace
@@ -195,6 +198,57 @@ double two_temperature_case(const char* name,
                                                       modes);
             sum += closure.state.p.value() + closure.state.temp.value() +
                    closure.state.mode_temp[0].value();
+        }
+        return sum;
+    });
+}
+
+// Multi-temperature model G with the same mass fractions y in every cell,
+// from (rho, rho_e, rho_e_m). The inputs of each cell are those of the state
+// with its density, the temperature temp[i] and every T_m = 0.8 T.
+template <typename G, std::size_t N>
+double multi_temperature_case(const char* name,
+                              const Cells& c,
+                              const G& gas,
+                              const std::array<double, N>& y,
+                              const std::vector<double>& temp)
+{
+    constexpr std::size_t modes = std::tuple_size_v<decltype(gaslib::state_t<G, double> {}.mode_e)>;
+    const auto fractions = gaslib::as_kind<gaslib::kind::mass_fraction>(
+      Kokkos::mdspan<const double, Kokkos::dextents<std::size_t, 1>>(y.data(), N));
+    const auto mix = gaslib::mixture(gas, fractions);
+    std::vector<double> rho_e(cells);
+    std::vector<double> rho_e_m(cells * modes);
+    for (std::size_t i = 0; i < cells; ++i) {
+        std::array<double, modes> t_m {};
+        t_m.fill(0.8 * temp[i]);
+        const auto state =
+          gaslib::thermo_state(
+            gas,
+            mix,
+            gaslib::Density<double, si> {c.rho[i]},
+            gaslib::Temperature<double, si> {temp[i]},
+            gaslib::as_kind<gaslib::kind::mode_temperature, si>(
+              Kokkos::mdspan<const double, Kokkos::dextents<std::size_t, 1>>(t_m.data(), modes)))
+            .state;
+        rho_e[i] = c.rho[i] * state.e.value();
+        for (std::size_t m = 0; m < modes; ++m) {
+            rho_e_m[(i * modes) + m] = c.rho[i] * state.mode_e[m].value();
+        }
+    }
+    return time_per_cell(name, [&] {
+        double sum = 0;
+        for (std::size_t i = 0; i < cells; ++i) {
+            const auto energies = gaslib::as_kind<gaslib::kind::mode_energy_density, si>(
+              Kokkos::mdspan<const double, Kokkos::dextents<std::size_t, 1>>(&rho_e_m[i * modes],
+                                                                             modes));
+            const auto closure = gaslib::thermo_state(gas,
+                                                      fractions,
+                                                      gaslib::Density<double, si> {c.rho[i]},
+                                                      gaslib::EnergyDensity<double, si> {rho_e[i]},
+                                                      energies);
+            sum += closure.state.p.value() + closure.state.temp.value() +
+                   closure.state.mode_temp[modes - 1].value();
         }
         return sum;
     });
@@ -377,6 +431,47 @@ int main()
     thermally_perfect_case("thermally perfect air (5 species), guess", c, air5, air_y, true);
     const auto air5_two_temperature = gaslib::make_air5_two_temperature<double>(si_scales).model;
     two_temperature_case("two-temperature air (5 species)", c, air5_two_temperature, air_y);
+    // Temperatures of the two-temperature case: those of the
+    // single-temperature model at the cells' (rho, rho_e).
+    std::vector<double> air_temp(cells);
+    for (std::size_t i = 0; i < cells; ++i) {
+        air_temp[i] =
+          gaslib::thermo_state(
+            air5,
+            gaslib::as_kind<gaslib::kind::mass_fraction>(
+              Kokkos::mdspan<const double, Kokkos::dextents<std::size_t, 1>>(air_y.data(), 5)),
+            gaslib::Density<double, si> {c.rho[i]},
+            gaslib::EnergyDensity<double, si> {c.rho_e[i]})
+            .state.temp.value();
+    }
+    multi_temperature_case("four-temperature air (5 species)",
+                           c,
+                           gaslib::make_air5_four_temperature<double>(si_scales).model,
+                           air_y,
+                           air_temp);
+    // Weakly ionised air, charge neutral, at 3000 K to 15000 K.
+    const std::array<double, 11> ionised_y {
+      0.4999995398459613,
+      0.049999953984596134,
+      0.19999981593838453,
+      0.19999981593838453,
+      0.01999998159383845,
+      0.009999990796919225,
+      0.009999990796919225,
+      0.003999996318767691,
+      0.0019999981593838453,
+      0.003999996318767691,
+      9.203080774345904e-07,
+    };
+    std::vector<double> ionised_temp(cells);
+    for (std::size_t i = 0; i < cells; ++i) {
+        ionised_temp[i] = 3000.0 + (12000.0 * static_cast<double>(i % 101) / 101.0);
+    }
+    multi_temperature_case("three-temperature air (11 species)",
+                           c,
+                           gaslib::make_air11_three_temperature<double>(si_scales).model,
+                           ionised_y,
+                           ionised_temp);
     const auto air5_built = gaslib::make_air5<double>(si_scales);
     const auto kim_jo = gaslib::make_air5_kim_jo(air5_built.species, si_scales);
     production_case("Kim-Jo air (13 reactions) production", c, kim_jo, air5);

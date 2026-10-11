@@ -24,6 +24,44 @@
                "charge": {
                   "$ref": "#/$defs/double"
                },
+               "electronic_levels": {
+                  "anyOf": [
+                     {
+                        "type": "object",
+                        "properties": {
+                           "degeneracies": {
+                              "type": "array",
+                              "items": {
+                                 "$ref": "#/$defs/int32_t"
+                              }
+                           },
+                           "notes": {
+                              "type": [
+                                 "string",
+                                 "null"
+                              ]
+                           },
+                           "reference": {
+                              "type": [
+                                 "string",
+                                 "null"
+                              ]
+                           },
+                           "temperatures": {
+                              "$ref": "#/$defs/std::vector<double>"
+                           }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                           "degeneracies",
+                           "temperatures"
+                        ]
+                     },
+                     {
+                        "type": "null"
+                     }
+                  ]
+               },
                "molar_mass": {
                   "$ref": "#/$defs/double"
                },
@@ -235,6 +273,11 @@
             "temperature_ranges",
             "coefficients"
          ]
+      },
+      "int32_t": {
+         "type": "integer",
+         "minimum": -2147483648,
+         "maximum": 2147483647
       },
       "std::vector<double>": {
          "type": "array",

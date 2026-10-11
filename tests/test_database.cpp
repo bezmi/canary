@@ -2,8 +2,8 @@
 // reactions and energy-exchange files, errors, the generated schemas,
 // conversion to model inputs, cp/R of the shipped five-species air file
 // against reference values, and the compiled Kim-Jo mechanism, Park
-// mechanism, Park energy exchange, species transport data and collision
-// integrals against their files.
+// mechanism, Park energy exchange, species transport data, collision
+// integrals and electronic levels against their files.
 
 #include <array>
 #include <boost/ut.hpp>
@@ -12,7 +12,9 @@
 #include <filesystem>
 #include <fstream>
 #include <gaslib/build.hpp>
+#include <gaslib/data/air11_species.hpp>
 #include <gaslib/data/air5.hpp>
+#include <gaslib/data/air5_electronic.hpp>
 #include <gaslib/data/air5_kim_jo.hpp>
 #include <gaslib/data/air5_park.hpp>
 #include <gaslib/data/air5_park_exchange.hpp>
@@ -39,6 +41,8 @@ std::filesystem::path source_path(std::string_view relative)
 { return std::filesystem::path(GASLIB_SOURCE_DIR) / relative; }
 
 std::filesystem::path air5_path() { return source_path("database/data/air5.json"); }
+
+std::filesystem::path air11_path() { return source_path("database/data/air11.json"); }
 
 std::filesystem::path kim_jo_path() { return source_path("database/data/air5_kim_jo.json"); }
 
@@ -136,6 +140,19 @@ template <typename F> bool throws_parameter_error(const F& f)
 }
 
 constexpr std::array<std::string_view, 5> air5_names {"N2", "O2", "N", "O", "NO"};
+constexpr std::array<std::string_view, 11> air11_names {
+  "N2",
+  "O2",
+  "N",
+  "O",
+  "NO",
+  "N+",
+  "O+",
+  "N2+",
+  "O2+",
+  "NO+",
+  "e-",
+};
 
 double cp_over_r(const gaslib::Nasa9Curve<double, 4>& curve, double t)
 { return gaslib::nasa9_cp_h(curve, t, std::log(t)).cp_over_r; }
@@ -762,5 +779,56 @@ int main()
             expect(same(a.pi_omega_11, b.pi_omega_11) && same(a.pi_omega_22, b.pi_omega_22)) << k;
         }
         expect(throws_parameter_error([&] { (void)db::collision_integral_pairs<14>(file); }));
+    };
+
+    "the shipped air files hold electronic levels"_test = [] {
+        const db::SpeciesFile air5 = db::read_species_file(air5_path());
+        const auto& n2 = air5.species.at("N2").electronic_levels;
+        expect(n2.has_value() && n2->degeneracies.size() == 7_u && n2->temperatures.size() == 7_u);
+        expect(n2->temperatures[0] == 0.0_d);
+        // 50203.66 cm^-1 times h c / k_B = 1.438776877... cm K.
+        expect(std::abs(n2->temperatures[1] - (50203.66 * 1.4387768775039338)) <= 1.0e-9 * 7.2e4);
+        const db::SpeciesFile air11 = db::read_species_file(air11_path());
+        expect(air11.species.size() == 11_u);
+        expect(air11.species.at("e-").charge == -1.0_d);
+        expect(!air11.species.at("e-").electronic_levels.has_value());
+        expect(air11.species.at("NO+").electronic_levels->notes.has_value());
+        expect(air11.species.at("N2").thermo == air5.species.at("N2").thermo);
+    };
+
+    "electronic-level inputs from the air files equal the compiled data"_test = [] {
+        const auto same = [](const auto& a, const auto& b) {
+            return std::string_view(a.name) == b.name && a.levels == b.levels &&
+                   a.degeneracies == b.degeneracies && a.temperatures == b.temperatures;
+        };
+        const db::SpeciesFile air5 = db::read_species_file(air5_path());
+        const auto input5 = db::electronic_levels<8>(air5, air5_names);
+        for (std::size_t i = 0; i < 5; ++i) {
+            expect(same(input5[i], gaslib::air5_electronic_levels[i])) << i;
+        }
+        const db::SpeciesFile air11 = db::read_species_file(air11_path());
+        const auto input11 = db::electronic_levels<8>(air11, air11_names);
+        for (std::size_t i = 0; i < 11; ++i) {
+            expect(same(input11[i], gaslib::air11_electronic_levels[i])) << i;
+        }
+        const auto species11 = db::nasa9_species<4>(air11, air11_names);
+        for (std::size_t i = 0; i < 11; ++i) {
+            const auto& a = species11[i];
+            const auto& b = gaslib::air11_species[i];
+            expect(std::string_view(a.name) == b.name && a.molar_mass == b.molar_mass &&
+                   a.charge == b.charge && a.fit.segments == b.fit.segments &&
+                   a.fit.breaks == b.fit.breaks && a.fit.blends == b.fit.blends &&
+                   a.fit.a == b.fit.a)
+              << i;
+        }
+        // N2 has 7 levels.
+        expect(throws_parameter_error([&] { (void)db::electronic_levels<6>(air5, air5_names); }));
+        db::SpeciesFile changed = air5;
+        changed.species.at("O").electronic_levels->temperatures.pop_back();
+        expect(
+          throws_parameter_error([&] { (void)db::electronic_levels<8>(changed, air5_names); }));
+        changed = air5;
+        changed.species.erase("NO");
+        expect(throws_database_error([&] { (void)db::electronic_levels<8>(changed, air5_names); }));
     };
 }

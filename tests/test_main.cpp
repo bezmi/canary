@@ -25,6 +25,7 @@ int main()
     test_nasa9();
     test_thermally_perfect();
     test_two_temperature();
+    test_multi_temperature();
     test_reactions();
     test_energy_exchange();
     test_mixture_transport();

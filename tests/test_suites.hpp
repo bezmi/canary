@@ -21,6 +21,7 @@ void test_solve();
 void test_nasa9();
 void test_thermally_perfect();
 void test_two_temperature();
+void test_multi_temperature();
 void test_reactions();
 void test_energy_exchange();
 void test_mixture_transport();

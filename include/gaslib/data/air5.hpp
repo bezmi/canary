@@ -11,7 +11,9 @@
 #include <concepts>
 #include <cstddef>
 #include <gaslib/build.hpp>
+#include <gaslib/data/air5_electronic.hpp>
 #include <gaslib/data/air5_transport.hpp>
+#include <gaslib/models/multi_temperature.hpp>
 #include <gaslib/models/thermally_perfect.hpp>
 #include <gaslib/models/two_temperature.hpp>
 #include <gaslib/quantity.hpp>
@@ -385,6 +387,63 @@ template <std::floating_point P, UnitSystem U>
 Built<Air5TwoTemperature<P, U>, SpeciesData<P, U, 5>>
   make_air5_two_temperature(const UnitScales<P, U>& scales)
 { return make_two_temperature_mixture(air5_species, air5_rotational_degrees, scales); }
+// Energy modes of four-temperature five-species air, in this order:
+// - N2: N2 vibration and N2 electronic;
+// - O2: O2 vibration, O2 electronic and O electronic;
+// - NO: NO vibration, NO electronic and N electronic.
+inline constexpr std::array<EnergyModeInput<3>, 3> air5_four_temperature_modes {
+  {
+    {
+      .count = 2,
+      .components =
+        {
+          {
+            {.species = "N2", .component = ModeComponent::vibration},
+            {.species = "N2", .component = ModeComponent::electronic},
+            {.species = nullptr, .component = ModeComponent::vibration},
+          },
+        },
+    },
+    {
+      .count = 3,
+      .components =
+        {
+          {
+            {.species = "O2", .component = ModeComponent::vibration},
+            {.species = "O2", .component = ModeComponent::electronic},
+            {.species = "O", .component = ModeComponent::electronic},
+          },
+        },
+    },
+    {
+      .count = 3,
+      .components =
+        {
+          {
+            {.species = "NO", .component = ModeComponent::vibration},
+            {.species = "NO", .component = ModeComponent::electronic},
+            {.species = "N", .component = ModeComponent::electronic},
+          },
+        },
+    },
+  },
+};
+// Four-temperature five-species air.
+template <std::floating_point P, UnitSystem U>
+using Air5FourTemperature = MultiTemperatureMixture<P, U, 5, 3, 4, 8>;
+// Air5FourTemperature model of air5_species, air5_rotational_degrees,
+// air5_electronic_levels and air5_four_temperature_modes in the unit system
+// of the scales, with its species data. See make_multi_temperature_mixture.
+template <std::floating_point P, UnitSystem U>
+Built<Air5FourTemperature<P, U>, SpeciesData<P, U, 5>>
+  make_air5_four_temperature(const UnitScales<P, U>& scales)
+{
+    return make_multi_temperature_mixture(air5_species,
+                                          air5_rotational_degrees,
+                                          air5_electronic_levels,
+                                          air5_four_temperature_modes,
+                                          scales);
+}
 
 namespace detail
 {

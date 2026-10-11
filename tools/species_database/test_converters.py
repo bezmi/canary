@@ -25,7 +25,8 @@ runs = {
                    "--species", "N2", "O2", "NO", *blend],
     "Cantera": [tools / "cantera_to_json.py", data / "cantera_excerpt.yaml", "--species", "N2", "O2", "NO",
                 "--atomic-weights", "N=14.0067", "O=15.9994", *blend],
-    "GDTk layout": [tools / "gdtk_to_json.py", "--database", data / "gdtk", "--species", "N2", "--transport"],
+    "GDTk layout": [tools / "gdtk_to_json.py", "--database", data / "gdtk", "--species", "N2", "--transport",
+                    "--electronic"],
 }
 
 failures = 0
@@ -45,10 +46,32 @@ with tempfile.TemporaryDirectory() as tmp:
                 if record["thermo"][key] != expected["thermo"][key]:
                     failures += 1
                     print(f"{label} {name}: thermo {key} differs")
+            if "electronic_levels" in record and record["electronic_levels"] != expected["electronic_levels"]:
+                failures += 1
+                print(f"{label} {name}: electronic levels differ")
             if "transport" in record and record["transport"] != expected["transport"]:
                 failures += 1
                 print(f"{label} {name}: transport differs")
             print(f"{label} {name}: checked")
+
+# GDTk layout with the bracket form of a species name (N+ in N_plus.lua),
+# with its electronic levels converted to temperatures: equal to the shipped
+# eleven-species air file.
+with tempfile.TemporaryDirectory() as tmp:
+    out = Path(tmp) / "ion.json"
+    subprocess.run([sys.executable, str(tools / "gdtk_to_json.py"), "--database", str(data / "gdtk"),
+                    "--species", "N+", "--electronic", "--source", "test", "-o", str(out)], check=True)
+    converted = json.loads(out.read_text())["species"]["N+"]
+    expected = json.loads((root / "database" / "data" / "air11.json").read_text())["species"]["N+"]
+    for key in ("molar_mass", "charge", "electronic_levels"):
+        if converted[key] != expected[key]:
+            failures += 1
+            print(f"GDTk bracket form N+: {key} {converted[key]} != {expected[key]}")
+    for key in ("temperature_ranges", "blend_widths", "coefficients"):
+        if converted["thermo"][key] != expected["thermo"][key]:
+            failures += 1
+            print(f"GDTk bracket form N+: thermo {key} differs")
+    print("GDTk bracket form N+: checked")
 
 # Reaction mechanism converter: CGS to SI by (1e-6)^(order - 1), third-body
 # efficiencies, the default backward rate from the equilibrium constant, and

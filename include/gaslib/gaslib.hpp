@@ -5,13 +5,17 @@
 
 #include <gaslib/build.hpp>                       // IWYU pragma: export
 #include <gaslib/config.hpp>                      // IWYU pragma: export
+#include <gaslib/data/air11.hpp>                  // IWYU pragma: export
+#include <gaslib/data/air11_species.hpp>          // IWYU pragma: export
 #include <gaslib/data/air5.hpp>                   // IWYU pragma: export
+#include <gaslib/data/air5_electronic.hpp>        // IWYU pragma: export
 #include <gaslib/data/air5_kim_jo.hpp>            // IWYU pragma: export
 #include <gaslib/data/air5_park.hpp>              // IWYU pragma: export
 #include <gaslib/data/air5_park_exchange.hpp>     // IWYU pragma: export
 #include <gaslib/data/air5_transport.hpp>         // IWYU pragma: export
 #include <gaslib/energy_exchange.hpp>             // IWYU pragma: export
 #include <gaslib/models/calorically_perfect.hpp>  // IWYU pragma: export
+#include <gaslib/models/multi_temperature.hpp>    // IWYU pragma: export
 #include <gaslib/models/thermally_perfect.hpp>    // IWYU pragma: export
 #include <gaslib/models/two_temperature.hpp>      // IWYU pragma: export
 #include <gaslib/nasa9.hpp>                       // IWYU pragma: export

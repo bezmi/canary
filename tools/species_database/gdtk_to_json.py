@@ -6,10 +6,14 @@ segments, break points and blend ranges) from <database>/<name>.lua. With
 transport fits ln(x) = A ln T + B / T + C / T^2 + D with the viscosity in
 micropoise and the conductivity in microwatt / (cm K); D is converted to SI by
 adding ln(1e-7) and ln(1e-4)) and the Lennard-Jones db.<name>.sigma
-(Angstrom, converted to m) and db.<name>.epsilon (K).
+(Angstrom, converted to m) and db.<name>.epsilon (K). With --electronic,
+also db.<name>.electronic_levels (degeneracies g and level energies Te in
+cm^-1, converted to temperatures in K with h c / k_B). Entries are written
+db.<name> or db['<name>']; the file of species N2+ is N2_plus.lua and that
+of e- is e_minus.lua.
 
 Usage: gdtk_to_json.py --database DIR --species N2 O2 N O NO [--transport]
-           --source TEXT -o out.json
+           [--electronic] --source TEXT -o out.json
 """
 
 import argparse
@@ -20,10 +24,23 @@ from pathlib import Path
 
 import species_json
 
+# h c / k_B in cm K (exact in SI since 2019): converts a level energy in cm^-1
+# to a temperature in K.
+SECOND_RADIATION_CONSTANT = Decimal("6.62607015e-34") * Decimal("299792458") * 100 / Decimal("1.380649e-23")
+
+
+def entry(name):
+    """Regex for the start of db.<name> or db['<name>']."""
+    return rf"db(?:\.{re.escape(name)}|\[\s*['\"]{re.escape(name)}['\"]\s*\])"
+
+
+def file_name(name):
+    return name.replace("+", "_plus").replace("e-", "e_minus") + ".lua"
+
 
 def table(text, name, key):
     """Body of the Lua table db.<name>.<key> = { ... } (balanced braces)."""
-    match = re.search(rf"db\.{re.escape(name)}\.{key}\s*=\s*\{{", text)
+    match = re.search(rf"{entry(name)}\.{key}\s*=\s*\{{", text)
     if not match:
         raise SystemExit(f"{name}: no {key} table")
     depth, start = 1, match.end()
@@ -90,11 +107,41 @@ def transport(text, name):
     }
 
 
-def convert(path, name, with_transport=False):
+def electronic_levels(text, name):
+    """db.<name>.electronic_levels as degeneracies and temperatures in K."""
+    body = table(text, name, "electronic_levels")
+    g = [int(species_json.number(x)) for x in field(field_body(body, "g"), "value").split(",") if x.strip()]
+    te = [x.strip() for x in field(field_body(body, "Te"), "value").split(",") if x.strip()]
+    levels = {"reference": "NIST, as in the GDTk species database"}
+    if len(g) != len(te):
+        # GDTk uses the first min(len(g), len(Te)) levels.
+        count = min(len(g), len(te))
+        levels["notes"] = (f"the source lists {len(g)} degeneracies and {len(te)} level energies; "
+                           f"the first {count} of each are used, as GDTk does")
+        g, te = g[:count], te[:count]
+    levels["degeneracies"] = g
+    levels["temperatures"] = [float(Decimal(x) * SECOND_RADIATION_CONSTANT) for x in te]
+    return {k: levels[k] for k in ("degeneracies", "temperatures", "reference", "notes") if k in levels}
+
+
+def field_body(body, key):
+    """Body of the nested table key = { ... } (balanced braces)."""
+    match = re.search(rf"\b{key}\s*=\s*\{{", body)
+    if not match:
+        raise SystemExit(f"no {key} in table")
+    depth, start = 1, match.end()
+    for i in range(start, len(body)):
+        depth += {"{": 1, "}": -1}.get(body[i], 0)
+        if depth == 0:
+            return body[start:i]
+    raise SystemExit(f"unterminated {key} table")
+
+
+def convert(path, name, with_transport=False, with_electronic=False):
     text = path.read_text(encoding="utf-8")
     mass = table(text, name, "M")
     value = re.search(r"value\s*=\s*([0-9.eE+-]+)", mass).group(1)
-    charge = re.search(rf"db\.{re.escape(name)}\.charge\s*=\s*([0-9.eE+-]+)", text)
+    charge = re.search(rf"{entry(name)}\.charge\s*=\s*([0-9.eE+-]+)", text)
     thermo = table(text, name, "ceaThermoCoeffs")
     segments = int(re.search(r"nsegments\s*=\s*(\d+)", thermo).group(1))
     ranges = numbers(field(thermo, "T_break_points"))
@@ -109,6 +156,8 @@ def convert(path, name, with_transport=False):
     }
     if with_transport:
         record["transport"] = transport(text, name)
+    if with_electronic and re.search(rf"{entry(name)}\.electronic_levels\s*=", text):
+        record["electronic_levels"] = electronic_levels(text, name)
     mass_reference = quoted(mass, "reference")
     if mass_reference:
         record["notes"] = f"molar mass: {mass_reference}"
@@ -120,10 +169,12 @@ def main():
     parser.add_argument("--database", required=True, type=Path)
     parser.add_argument("--species", required=True, nargs="+")
     parser.add_argument("--transport", action="store_true", help="also convert the transport data")
+    parser.add_argument("--electronic", action="store_true", help="also convert the electronic levels")
     parser.add_argument("--source", required=True, help="where the database files came from (version, path)")
     parser.add_argument("-o", "--output", required=True)
     args = parser.parse_args()
-    species = {name: convert(args.database / f"{name}.lua", name, args.transport) for name in args.species}
+    species = {name: convert(args.database / file_name(name), name, args.transport, args.electronic)
+               for name in args.species}
     species_json.dump(species_json.species_file(species, reference=args.source), args.output)
 
 
