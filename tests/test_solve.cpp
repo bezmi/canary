@@ -1,6 +1,7 @@
 #include "dual.hpp"
 #include "test_suites.hpp"
 
+#include <algorithm>
 #include <boost/ut.hpp>
 #include <cmath>
 #include <gaslib/detail/solve.hpp>
@@ -77,6 +78,28 @@ void test_solve()
                                      settings);
         expect(r.status == Status::Valid);
         expect(std::abs(r.root - 1.0) <= 4.0 * eps) << r.root;
+    };
+
+    "a solve that converges from one side ends Valid"_test = [] {
+        // exp(x) - c is convex and increasing: from the upper bracket end
+        // every Newton iterate lies above the root ln(c), so the bracket's
+        // lower end stays at -10, and the last Newton step often rounds to
+        // the iterate itself.
+        int not_valid = 0;
+        double worst = 0.0;
+        for (int k = 0; k < 10000; ++k) {
+            const double c = 1.0 + (0.001 * k);
+            const auto f = [c](double x) {
+                return Residual<double> {.value = std::exp(x) - c, .derivative = std::exp(x)};
+            };
+            const auto r =
+              solve<double>(f, f, Bracket<double> {.lower = -10.0, .upper = 10.0}, 10.0, settings);
+            not_valid += r.status == Status::Valid ? 0 : 1;
+            worst = std::max(worst, std::abs(r.root - std::log(c)));
+        }
+        expect(not_valid == 0_i);
+        // The tolerance 1e-14 |x| with |x| <= ln(11), plus rounding of log.
+        expect(worst <= 1.0e-13) << worst;
     };
 
     "one iteration on a hard case gives NotConverged"_test = [] {

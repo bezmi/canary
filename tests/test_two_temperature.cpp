@@ -646,4 +646,18 @@ void test_two_temperature()
         expect(std::abs(back.state.temp.value() - 2000.0F) <= 1.0e-5F * 2000.0F);
         expect(std::abs(back.state.mode_temp[0].value() - 1500.0F) <= 1.0e-5F * 1500.0F);
     };
+
+    "two-temperature: a T_ve solve that converges from one side ends Valid"_test = [&] {
+        // Pure N2 with e_ve = e_ve(T_ve = 2210.65 K), solved from the guess
+        // 7660.64 K: every Newton iterate lies above the root, and the last
+        // Newton step rounds to the iterate itself.
+        const std::array<double, 5> y {1.0, 0.0, 0.0, 0.0, 0.0};
+        const auto mix = mixture(gas, fractions(y));
+        const auto solved = gaslib::detail::solve_mode_temperature(gas,
+                                                                   mix,
+                                                                   E {288859.87009850127},
+                                                                   7660.6364266913906);
+        expect(solved.status == Status::Valid);
+        expect(relative(solved.root, 2210.6513935268, 1.0e-12)) << solved.root;
+    };
 }
