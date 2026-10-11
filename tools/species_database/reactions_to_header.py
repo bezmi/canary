@@ -54,12 +54,19 @@ def coefficients(values):
 
 
 def arrhenius(rate):
-    if rate is None:
+    """An ArrheniusInput; an equilibrium rate carries only its other_temperature."""
+    other = rate.get("other_temperature") if rate else None
+    other_text = f" .other_temperature = {string(other)}," if other is not None else ""
+    if rate is None or rate["model"] == "equilibrium":
+        if other is not None:
+            return "{.A = 0.0, .n = 0.0, .activation_temperature = 0.0, .translational_exponent = 1.0," + other_text + "}"
         return "{.A = 0.0, .n = 0.0, .activation_temperature = 0.0,}"
     exponent = rate.get("translational_exponent")
+    if exponent is None and other is not None:
+        exponent = 1.0
     return (f"{{.A = {number(rate['A'])}, .n = {number(rate['n'])}, "
             f".activation_temperature = {number(rate['activation_temperature'])},"
-            + (f" .translational_exponent = {number(exponent)}," if exponent is not None else "") + "}")
+            + (f" .translational_exponent = {number(exponent)}," if exponent is not None else "") + other_text + "}")
 
 
 def reaction(record):
@@ -73,7 +80,7 @@ def reaction(record):
         f".products = {coefficients(record['products'])},",
         f".forward = {arrhenius(record['forward'])},",
         f".backward_model = BackwardRateModel::{'equilibrium' if equilibrium else 'arrhenius'},",
-        f".backward = {arrhenius(None if equilibrium else backward)},",
+        f".backward = {arrhenius(backward)},",
         f".third_body = {'true' if third_body is not None else 'false'},",
         f".efficiencies = {coefficients(third_body['efficiencies'] if third_body else {})},",
         "},",
@@ -169,6 +176,17 @@ template <std::floating_point P, UnitSystem U>
                                 const UnitScales<P, U>& scales)
 {{
     return make_reaction_mechanism({args.name}, detail::{args.name}_species_names, species, scales);
+}}
+
+// As above for the thermo model gas with several energy modes: rates'
+// other temperatures resolve to its modes. See make_reaction_mechanism.
+template <std::floating_point P, UnitSystem U, typename G>
+{args.alias}<P, U> make_{args.name}(const SpeciesData<P, U, {args.species_array}.size()>& species,
+                                const UnitScales<P, U>& scales,
+                                Pressure<P, U> standard_pressure,
+                                const G& gas)
+{{
+    return make_reaction_mechanism({args.name}, detail::{args.name}_species_names, species, scales, standard_pressure, gas);
 }}
 
 }}  // namespace gaslib

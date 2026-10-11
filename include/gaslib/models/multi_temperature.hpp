@@ -136,6 +136,7 @@ struct MultiTemperatureMixture {
     using units = U;
     template <Scalar T> using State = MultiTemperatureState<T, U, M>;
     template <Scalar T> using Mixture = NormalisedComposition<T, U, N>;
+    static constexpr std::size_t mode_count = M;
 
     ThermallyPerfectMixture<P, U, N, S> thermally_perfect;
     std::array<SpecificHeat<P, U>, N> translational_rotational_cp;
@@ -1548,6 +1549,66 @@ GASLIB_HOST_DEVICE std::array<SpecificHeat<T, U>, N>
   species_isobaric_specific_heat(const MultiTemperatureMixture<P, U, N, M, S, L>& gas,
                                  Temperature<T, U> temp)
 { return species_isobaric_specific_heat(gas.thermally_perfect, temp); }
+
+// The mode that holds the vibration of species i, or -1 when its vibration
+// is in no mode (an atom, e-, or a frozen vibration).
+template <std::floating_point P,
+          UnitSystem U,
+          std::size_t N,
+          std::size_t M,
+          std::size_t S,
+          std::size_t L>
+GASLIB_HOST_DEVICE constexpr int
+  species_vibration_mode(const MultiTemperatureMixture<P, U, N, M, S, L>& gas, std::size_t i)
+{
+    if (i >= N) { return -1; }
+    for (std::size_t m = 0; m < M; ++m) {
+        if (gas.mode_components[m][i].vibration) { return static_cast<int>(m); }
+    }
+    return -1;
+}
+
+// The mode that holds the energy of the free electrons, or -1 without e-.
+template <std::floating_point P,
+          UnitSystem U,
+          std::size_t N,
+          std::size_t M,
+          std::size_t S,
+          std::size_t L>
+GASLIB_HOST_DEVICE constexpr int
+  electron_energy_mode(const MultiTemperatureMixture<P, U, N, M, S, L>& gas)
+{ return gas.electron_mode; }
+
+// Energy per unit mass e_i,m(T') of the components of every species i that
+// mode m holds, at temperature temp (model units): the vibration, electronic
+// or electron energy of the class comment, their sum when mode m holds
+// both vibration and electronic energy of i, and 0 for a species with no
+// component in mode m. One logarithm.
+template <Scalar T,
+          std::floating_point P,
+          UnitSystem U,
+          std::size_t N,
+          std::size_t M,
+          std::size_t S,
+          std::size_t L>
+    requires ScalarWith<T, P> && HasLog<T> && HasExp<T>
+GASLIB_HOST_DEVICE std::array<SpecificEnergy<T, U>, N> species_mode_energy(
+  const MultiTemperatureMixture<P, U, N, M, S, L>& gas, std::size_t m, Temperature<T, U> temp)
+{
+    using V = ScalarTraits<T>::value_type;
+    // NOLINTNEXTLINE(misc-static-assert): run-time mode index
+    GASLIB_ASSERT(m < M);
+    const T t = temp.value();
+    const T ln_t = math::log(t);
+    std::array<SpecificEnergy<T, U>, N> out {};
+    for (std::size_t i = 0; i < N; ++i) {
+        const ModeComponentSet c = gas.mode_components[m][i];
+        out[i] = SpecificEnergy<T, U> {
+          detail::holds_any(c) ? detail::component_energy(gas, i, c, t, ln_t).e : T(V(0)),
+        };
+    }
+    return out;
+}
 
 // Mass fractions of a charge-neutral composition. With e- at index e, its
 // fraction is replaced by a = m_e sum_{i != e} z_i y_i / m_i (z_i the charge

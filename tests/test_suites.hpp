@@ -24,6 +24,7 @@ void test_two_temperature();
 void test_multi_temperature();
 void test_reactions();
 void test_energy_exchange();
+void test_multi_temperature_kinetics();
 void test_mixture_transport();
 
 #endif  // GASLIB_TESTS_TEST_SUITES_HPP

@@ -7,7 +7,8 @@ endfunction()
 
 add_executable(gaslib_tests test_main.cpp test_config_default.cpp test_config_consumer.cpp test_scalar.cpp test_quantity.cpp test_units.cpp test_status.cpp test_species.cpp test_state.cpp test_thermo.cpp test_calorically_perfect.cpp test_calorically_perfect_mixture.cpp
                             test_cerberus_parity.cpp test_transport.cpp test_solve.cpp test_nasa9.cpp test_thermally_perfect.cpp
-                            test_two_temperature.cpp test_multi_temperature.cpp test_reactions.cpp test_energy_exchange.cpp test_mixture_transport.cpp)
+                            test_two_temperature.cpp test_multi_temperature.cpp test_reactions.cpp test_energy_exchange.cpp
+                            test_multi_temperature_kinetics.cpp test_mixture_transport.cpp)
 target_link_libraries(gaslib_tests PRIVATE gaslib::gaslib Boost::ut)
 gaslib_test_options(gaslib_tests)
 add_test(NAME gaslib.unit COMMAND gaslib_tests)
@@ -52,6 +53,9 @@ gaslib_compile_fail_test(transport_other_units "no matching function for call to
 gaslib_compile_fail_test(quantity_molar_scaled "KindUnits<(K, U|gaslib::kind::molar_mass, gaslib::scaled)>")
 gaslib_compile_fail_test(energy_exchange_single_temperature "RelaxingModel<.*ThermallyPerfectMixture")
 gaslib_compile_fail_test(energy_exchange_mode_energy_missing "HasVibrationalElectronicEnergy<.*ThermallyPerfectMixture")
+gaslib_compile_fail_test(reaction_mechanism_without_modes "HasEnergyModes<.*ThermallyPerfectMixture")
+gaslib_compile_fail_test(multi_temperature_exchange_mode_energy_missing "HasModeEnergies<.*ThermallyPerfectMixture")
+gaslib_compile_fail_test(multi_temperature_exchange_single_temperature "ModeRelaxingModel<.*ThermallyPerfectMixture")
 gaslib_compile_fail_test(mixture_transport_composition "HasNormalisedComposition<.*CaloricallyPerfectMixture")
 gaslib_compile_fail_test(mixture_transport_heat_capacity "HasSpeciesIsobaricSpecificHeat<.*CaloricallyPerfectMixture")
 gaslib_compile_fail_test(mixture_transport_model "TransportModel<.*GuptaYosTransport")
@@ -96,9 +100,11 @@ if(TARGET gaslib_database)
                        ${PROJECT_SOURCE_DIR}/database/data/air11.json --
                        ${PROJECT_SOURCE_DIR}/database/reactions.schema.json
                        ${PROJECT_SOURCE_DIR}/database/data/air5_kim_jo.json
-                       ${PROJECT_SOURCE_DIR}/database/data/air5_park.json --
+                       ${PROJECT_SOURCE_DIR}/database/data/air5_park.json
+                       ${PROJECT_SOURCE_DIR}/database/data/air11_kim_jo.json --
                        ${PROJECT_SOURCE_DIR}/database/energy_exchange.schema.json
-                       ${PROJECT_SOURCE_DIR}/database/data/air5_park_exchange.json --
+                       ${PROJECT_SOURCE_DIR}/database/data/air5_park_exchange.json
+                       ${PROJECT_SOURCE_DIR}/database/data/air11_kim_jo_exchange.json --
                        ${PROJECT_SOURCE_DIR}/database/collision_integrals.schema.json
                        ${PROJECT_SOURCE_DIR}/database/data/air5_collision_integrals.json)
     else()

@@ -7,9 +7,13 @@ or 'NO + M <=> N + O + M', a forward rate fr={'Arrhenius', A=, n=, C=}
 (k = A T^n exp(-C / T), A in (cm^3/mol)^(order - 1) / s, C in K) or
 fr={'Park', A=, n=, C=, s=} (the same at the rate-controlling temperature
 T^s T_ve^(1 - s); written as an Arrhenius rate with translational_exponent
-s), optionally
+s; mode="X" names the species whose vibrational temperature is T_ve, and
+rateControllingTemperature="electron-electronic" the electron temperature,
+written as other_temperature "X" or "electron"), optionally
 a backward rate br={...} of the same form (otherwise the backward rate comes
-from the equilibrium constant), optionally collider efficiencies
+from the equilibrium constant; br={'fromEqConst',
+rateControllingTemperature="electron-electronic"} evaluates it at the
+electron temperature, written as other_temperature "electron"), optionally collider efficiencies
 efficiencies={['N2']=1.0, ...} for reactions with M, and a label. The
 reaction order counts every reactant, including M. Temperature limits come
 from Config{tempLimits={lower=, upper=}}.
@@ -49,7 +53,7 @@ def strip_comments(text):
 def side(expression):
     """'N + N + N2' -> ({'N': 2, 'N2': 1}, has_M)."""
     counts, third_body = {}, False
-    for term in expression.split("+"):
+    for term in re.split(r"\s+\+\s+", expression.strip()):
         term = term.strip()
         match = re.fullmatch(r"(\d*)\s*([A-Za-z][A-Za-z0-9_+-]*?)", term)
         if not match:
@@ -60,6 +64,27 @@ def side(expression):
         else:
             counts[name] = counts.get(name, 0) + coefficient
     return counts, third_body
+
+
+# Energy-mode names of GDTk mechanism files and the gaslib other_temperature
+# they mean.
+OTHER_TEMPERATURES = {"electron-electronic": "electron"}
+
+
+def other_temperature(body):
+    """other_temperature from mode="X" (a species) or
+    rateControllingTemperature="..." in a rate table, or None."""
+    mode = re.search(r"\bmode\s*=\s*['\"]([^'\"]+)['\"]", body)
+    rct = re.search(r"\brateControllingTemperature\s*=\s*['\"]([^'\"]+)['\"]", body)
+    if mode and rct:
+        raise SystemExit(f"both mode and rateControllingTemperature in: {body.strip()[:80]}")
+    if rct:
+        if rct.group(1) not in OTHER_TEMPERATURES:
+            raise SystemExit(f"unknown rateControllingTemperature {rct.group(1)}")
+        return OTHER_TEMPERATURES[rct.group(1)]
+    if mode:
+        return OTHER_TEMPERATURES.get(mode.group(1), mode.group(1))
+    return None
 
 
 def arrhenius(body, order):
@@ -76,8 +101,14 @@ def arrhenius(body, order):
         "n": float(fields.get("n", "0")),
         "activation_temperature": float(fields.get("C", "0")),
     }
+    other = other_temperature(match.group(2))
     if match.group(1) == "Park":
         rate["translational_exponent"] = float(fields["s"])
+    elif other is not None:
+        # An Arrhenius rate at the named temperature alone.
+        rate["translational_exponent"] = 0.0
+    if other is not None:
+        rate["other_temperature"] = other
     return rate
 
 
@@ -99,7 +130,12 @@ def convert_reaction(body):
         "forward": arrhenius(forward_body, order),
     }
     backward = re.search(r"\bbr\s*=\s*(\{[^}]*\})", body)
-    if backward:
+    if backward and re.search(r"['\"]fromEqConst['\"]", backward.group(1)):
+        reaction["backward"] = {"model": "equilibrium"}
+        other = other_temperature(backward.group(1))
+        if other is not None:
+            reaction["backward"]["other_temperature"] = other
+    elif backward:
         backward_order = sum(products.values()) + (1 if m_right else 0)
         reaction["backward"] = arrhenius(backward.group(1), backward_order)
     else:

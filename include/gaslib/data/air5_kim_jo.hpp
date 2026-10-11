@@ -835,6 +835,22 @@ Air5KimJo<P, U> make_air5_kim_jo(const SpeciesData<P, U, air5_species.size()>& s
                                  const UnitScales<P, U>& scales)
 { return make_reaction_mechanism(air5_kim_jo, detail::air5_kim_jo_species_names, species, scales); }
 
+// As above for the thermo model gas with several energy modes: rates'
+// other temperatures resolve to its modes. See make_reaction_mechanism.
+template <std::floating_point P, UnitSystem U, typename G>
+Air5KimJo<P, U> make_air5_kim_jo(const SpeciesData<P, U, air5_species.size()>& species,
+                                 const UnitScales<P, U>& scales,
+                                 Pressure<P, U> standard_pressure,
+                                 const G& gas)
+{
+    return make_reaction_mechanism(air5_kim_jo,
+                                   detail::air5_kim_jo_species_names,
+                                   species,
+                                   scales,
+                                   standard_pressure,
+                                   gas);
+}
+
 }  // namespace gaslib
 
 #endif  // GASLIB_DATA_AIR5_KIM_JO_HPP

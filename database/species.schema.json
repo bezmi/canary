@@ -62,6 +62,16 @@
                      }
                   ]
                },
+               "ionisation_energy": {
+                  "anyOf": [
+                     {
+                        "$ref": "#/$defs/double"
+                     },
+                     {
+                        "type": "null"
+                     }
+                  ]
+               },
                "molar_mass": {
                   "$ref": "#/$defs/double"
                },

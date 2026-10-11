@@ -56,6 +56,7 @@ struct TwoTemperatureMixture {
     using units = U;
     template <Scalar T> using State = MultiTemperatureState<T, U, 1>;
     template <Scalar T> using Mixture = NormalisedComposition<T, U, N>;
+    static constexpr std::size_t mode_count = 1;
 
     ThermallyPerfectMixture<P, U, N, S> thermally_perfect;
     std::array<SpecificHeat<P, U>, N> translational_rotational_cp;
@@ -632,6 +633,33 @@ GASLIB_HOST_DEVICE std::array<SpecificEnergy<T, U>, N>
           SpecificEnergy<T, U> {detail::species_vibrational_electronic_energy(gas, i, t, ln_t).e};
     }
     return out;
+}
+
+// The mode that holds the vibration of species i: the single mode, which
+// holds the vibrational-electronic energy of every species.
+template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
+GASLIB_HOST_DEVICE constexpr int
+  species_vibration_mode(const TwoTemperatureMixture<P, U, N, S>& /*gas*/, std::size_t i)
+{ return i < N ? 0 : -1; }
+
+// -1: the model has no free electrons.
+template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
+GASLIB_HOST_DEVICE constexpr int
+  electron_energy_mode(const TwoTemperatureMixture<P, U, N, S>& /*gas*/)
+{ return -1; }
+
+// Energy per unit mass of every species in mode m (which must be 0) at
+// temperature temp: species_vibrational_electronic_energy.
+template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
+    requires ScalarWith<T, P> && HasLog<T>
+GASLIB_HOST_DEVICE std::array<SpecificEnergy<T, U>, N>
+  species_mode_energy(const TwoTemperatureMixture<P, U, N, S>& gas,
+                      [[maybe_unused]] std::size_t m,
+                      Temperature<T, U> temp)
+{
+    // NOLINTNEXTLINE(misc-static-assert): run-time mode index
+    GASLIB_ASSERT(m == 0);
+    return species_vibrational_electronic_energy(gas, temp);
 }
 
 // cv = sum(y_i (cv_tr,i + cv_ve,i(T_ve))), cp = cv + R, gamma = cp / cv,

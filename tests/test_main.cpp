@@ -28,5 +28,6 @@ int main()
     test_multi_temperature();
     test_reactions();
     test_energy_exchange();
+    test_multi_temperature_kinetics();
     test_mixture_transport();
 }

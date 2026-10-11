@@ -44,6 +44,121 @@
             ]
          }
       },
+      "electron_impact_ionisation": {
+         "type": "array",
+         "items": {
+            "type": "object",
+            "properties": {
+               "notes": {
+                  "type": [
+                     "string",
+                     "null"
+                  ]
+               },
+               "reaction": {
+                  "$ref": "#/$defs/int32_t"
+               },
+               "reference": {
+                  "type": [
+                     "string",
+                     "null"
+                  ]
+               },
+               "species": {
+                  "type": "string"
+               }
+            },
+            "additionalProperties": false,
+            "required": [
+               "reaction",
+               "species"
+            ]
+         }
+      },
+      "electron_translation": {
+         "type": "array",
+         "items": {
+            "type": "object",
+            "properties": {
+               "cross_section": {
+                  "type": "object",
+                  "properties": {
+                     "a": {
+                        "anyOf": [
+                           {
+                              "$ref": "#/$defs/double"
+                           },
+                           {
+                              "type": "null"
+                           }
+                        ]
+                     },
+                     "b": {
+                        "anyOf": [
+                           {
+                              "$ref": "#/$defs/double"
+                           },
+                           {
+                              "type": "null"
+                           }
+                        ]
+                     },
+                     "c": {
+                        "anyOf": [
+                           {
+                              "$ref": "#/$defs/double"
+                           },
+                           {
+                              "type": "null"
+                           }
+                        ]
+                     },
+                     "maximum_temperature": {
+                        "anyOf": [
+                           {
+                              "$ref": "#/$defs/double"
+                           },
+                           {
+                              "type": "null"
+                           }
+                        ]
+                     },
+                     "model": {
+                        "type": "string"
+                     }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                     "model"
+                  ]
+               },
+               "model": {
+                  "type": "string"
+               },
+               "notes": {
+                  "type": [
+                     "string",
+                     "null"
+                  ]
+               },
+               "partner": {
+                  "type": "string"
+               },
+               "reference": {
+                  "type": [
+                     "string",
+                     "null"
+                  ]
+               }
+            },
+            "additionalProperties": false,
+            "required": [
+               "partner",
+               "model",
+               "cross_section"
+            ]
+         }
+      },
       "format": {
          "type": "string"
       },
@@ -78,6 +193,82 @@
             "temperature",
             "area"
          ]
+      },
+      "vibration_electron": {
+         "type": "array",
+         "items": {
+            "type": "object",
+            "properties": {
+               "model": {
+                  "type": "string"
+               },
+               "notes": {
+                  "type": [
+                     "string",
+                     "null"
+                  ]
+               },
+               "reference": {
+                  "type": [
+                     "string",
+                     "null"
+                  ]
+               },
+               "relaxation_time": {
+                  "type": "object",
+                  "properties": {
+                     "a_high": {
+                        "$ref": "#/$defs/double"
+                     },
+                     "a_low": {
+                        "$ref": "#/$defs/double"
+                     },
+                     "b_high": {
+                        "$ref": "#/$defs/double"
+                     },
+                     "b_low": {
+                        "$ref": "#/$defs/double"
+                     },
+                     "blend_lower": {
+                        "$ref": "#/$defs/double"
+                     },
+                     "blend_upper": {
+                        "$ref": "#/$defs/double"
+                     },
+                     "c_high": {
+                        "$ref": "#/$defs/double"
+                     },
+                     "c_low": {
+                        "$ref": "#/$defs/double"
+                     },
+                     "model": {
+                        "type": "string"
+                     }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                     "model",
+                     "a_low",
+                     "b_low",
+                     "c_low",
+                     "a_high",
+                     "b_high",
+                     "c_high",
+                     "blend_lower",
+                     "blend_upper"
+                  ]
+               },
+               "species": {
+                  "type": "string"
+               }
+            },
+            "additionalProperties": false,
+            "required": [
+               "species",
+               "model",
+               "relaxation_time"
+            ]
+         }
       },
       "vibration_translation": {
          "type": "array",
@@ -119,18 +310,34 @@
                                  "cross_section": {
                                     "$ref": "#/$defs/double"
                                  },
+                                 "exponent": {
+                                    "anyOf": [
+                                       {
+                                          "$ref": "#/$defs/double"
+                                       },
+                                       {
+                                          "type": "null"
+                                       }
+                                    ]
+                                 },
                                  "model": {
                                     "type": "string"
                                  },
                                  "reference_temperature": {
-                                    "$ref": "#/$defs/double"
+                                    "anyOf": [
+                                       {
+                                          "$ref": "#/$defs/double"
+                                       },
+                                       {
+                                          "type": "null"
+                                       }
+                                    ]
                                  }
                               },
                               "additionalProperties": false,
                               "required": [
                                  "model",
-                                 "cross_section",
-                                 "reference_temperature"
+                                 "cross_section"
                               ]
                            },
                            {
@@ -180,7 +387,10 @@
       "format",
       "units",
       "vibration_translation",
-      "chemistry_vibration"
+      "chemistry_vibration",
+      "electron_translation",
+      "vibration_electron",
+      "electron_impact_ionisation"
    ],
    "title": "gaslib::database::EnergyExchangeFile"
 }

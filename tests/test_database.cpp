@@ -12,6 +12,8 @@
 #include <filesystem>
 #include <fstream>
 #include <gaslib/build.hpp>
+#include <gaslib/data/air11_kim_jo.hpp>
+#include <gaslib/data/air11_kim_jo_exchange.hpp>
 #include <gaslib/data/air11_species.hpp>
 #include <gaslib/data/air5.hpp>
 #include <gaslib/data/air5_electronic.hpp>
@@ -29,6 +31,7 @@
 #include <ios>
 #include <iterator>
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -43,6 +46,11 @@ std::filesystem::path source_path(std::string_view relative)
 std::filesystem::path air5_path() { return source_path("database/data/air5.json"); }
 
 std::filesystem::path air11_path() { return source_path("database/data/air11.json"); }
+
+std::filesystem::path air11_kim_jo_path() { return source_path("database/data/air11_kim_jo.json"); }
+
+std::filesystem::path air11_exchange_path()
+{ return source_path("database/data/air11_kim_jo_exchange.json"); }
 
 std::filesystem::path kim_jo_path() { return source_path("database/data/air5_kim_jo.json"); }
 
@@ -93,6 +101,22 @@ bool same_coefficients(const gaslib::SpeciesCoefficients<K>& a,
         if (!found) { return false; }
     }
     return true;
+}
+
+// The same other temperature (both absent, or the same name).
+bool same_other(const gaslib::ArrheniusInput& a, const gaslib::ArrheniusInput& b)
+{
+    if (a.other_temperature == nullptr || b.other_temperature == nullptr) {
+        return a.other_temperature == b.other_temperature;
+    }
+    return std::string_view(a.other_temperature) == b.other_temperature;
+}
+
+bool same_correction(const gaslib::RelaxationCorrectionInput& a,
+                     const gaslib::RelaxationCorrectionInput& b)
+{
+    return a.model == b.model && a.cross_section == b.cross_section &&
+           a.reference_temperature == b.reference_temperature && a.exponent == b.exponent;
 }
 
 bool same_rate(const gaslib::ArrheniusInput& a, const gaslib::ArrheniusInput& b)
@@ -577,10 +601,7 @@ int main()
             expect(a.millikan_white.a == b.millikan_white.a &&
                    a.millikan_white.b == b.millikan_white.b)
               << k;
-            expect(a.park_correction == b.park_correction) << k;
-            expect(a.park.cross_section == b.park.cross_section &&
-                   a.park.reference_temperature == b.park.reference_temperature)
-              << k;
+            expect(same_correction(a.correction, b.correction)) << k;
         }
         for (std::size_t k = 0; k < 3; ++k) {
             const auto& a = input.chemistry_vibration[k];
@@ -620,7 +641,7 @@ int main()
         expect(message(changed).starts_with("vibration_translation 4 (N2-NO)")) << message(changed);
         changed = file;
         changed.vibration_translation[5].relaxation_time.high_temperature_correction->model =
-          "park_1985";
+          "park_2000";
         expect(message(changed).starts_with("vibration_translation 5 (O2-N)")) << message(changed);
         changed = file;
         changed.chemistry_vibration[2].model = "marrone_treanor";
@@ -830,5 +851,79 @@ int main()
         changed = air5;
         changed.species.erase("NO");
         expect(throws_database_error([&] { (void)db::electronic_levels<8>(changed, air5_names); }));
+    };
+
+    "the eleven-species Kim-Jo mechanism reads with electron temperatures"_test = [] {
+        const db::ReactionsFile file = db::read_reactions_file(air11_kim_jo_path());
+        expect(file.reactions.size() == 40_u);
+        const db::ReactionRecord& n2e = file.reactions[21];
+        expect(n2e.equation == "N2 + e- <=> N + N + e-");
+        expect(n2e.forward.other_temperature == std::optional<std::string> {"electron"});
+        expect(n2e.backward.other_temperature == std::optional<std::string> {"electron"});
+        expect(!file.reactions[0].forward.other_temperature.has_value());
+        const auto input = db::mechanism_input<40, 11>(file);
+        for (std::size_t k = 0; k < 40; ++k) {
+            const auto& a = input.reactions[k];
+            const auto& b = gaslib::air11_kim_jo.reactions[k];
+            expect(std::string_view(a.equation) == b.equation) << k;
+            expect(same_rate(a.forward, b.forward)) << k;
+            expect(same_other(a.forward, b.forward) && same_other(a.backward, b.backward)) << k;
+            expect(same_coefficients(a.efficiencies, b.efficiencies)) << k;
+        }
+        expect(std::string_view(input.reactions[38].backward.other_temperature) == "electron");
+    };
+
+    "the eleven-species exchange file reads and maps to the compiled electron exchanges"_test = [] {
+        const db::EnergyExchangeFile file = db::read_energy_exchange_file(air11_exchange_path());
+        expect(file.vibration_translation.size() == 30_u &&
+               file.chemistry_vibration.size() == 21_u);
+        expect(file.electron_translation.size() == 10_u && file.vibration_electron.size() == 1_u &&
+               file.electron_impact_ionisation.size() == 2_u);
+        expect(db::parse_energy_exchange(db::write_energy_exchange(file)) == file);
+        const db::SpeciesFile species = db::read_species_file(air11_path());
+        expect(species.species.at("N").ionisation_energy.has_value());
+        const auto electrons = db::electron_exchange_input<10, 1, 2>(file, species);
+        const auto& compiled = gaslib::air11_kim_jo_exchange_electrons;
+        for (std::size_t k = 0; k < 10; ++k) {
+            const auto& a = electrons.electron_translation[k];
+            const auto& b = compiled.electron_translation[k];
+            expect(std::string_view(a.partner) == b.partner && a.cross_section == b.cross_section &&
+                   a.a == b.a && a.b == b.b && a.c == b.c &&
+                   a.maximum_temperature == b.maximum_temperature)
+              << k;
+        }
+        const auto& ve = electrons.vibration_electron[0];
+        expect(std::string_view(ve.species) == "N2" && ve.relaxation_time.a_low == 7.5_d &&
+               ve.relaxation_time.blend_upper == 7050.0_d);
+        for (std::size_t k = 0; k < 2; ++k) {
+            const auto& a = electrons.electron_impact_ionisation[k];
+            const auto& b = compiled.electron_impact_ionisation[k];
+            expect(a.reaction == b.reaction && std::string_view(a.species) == b.species &&
+                   a.ionisation_energy == b.ionisation_energy)
+              << k;
+        }
+        const auto input = db::energy_exchange_input<30, 21>(file);
+        for (std::size_t k = 0; k < 30; ++k) {
+            const auto& a = input.vibration_translation[k];
+            const auto& b = gaslib::air11_kim_jo_exchange.vibration_translation[k];
+            expect(same_correction(a.correction, b.correction) &&
+                   a.millikan_white.a == b.millikan_white.a)
+              << k;
+        }
+        // Errors: counts, an unknown cross-section, a missing ionisation energy.
+        expect(throws_parameter_error(
+          [&] { (void)db::electron_exchange_input<9, 1, 2>(file, species); }));
+        db::EnergyExchangeFile changed = file;
+        changed.electron_translation[3].cross_section.model = "maxwell";
+        expect(throws_parameter_error(
+          [&] { (void)db::electron_exchange_input<10, 1, 2>(changed, species); }));
+        changed = file;
+        changed.vibration_electron[0].relaxation_time.model = "millikan_white";
+        expect(throws_parameter_error(
+          [&] { (void)db::electron_exchange_input<10, 1, 2>(changed, species); }));
+        db::SpeciesFile no_energy = species;
+        no_energy.species.at("O").ionisation_energy.reset();
+        expect(throws_parameter_error(
+          [&] { (void)db::electron_exchange_input<10, 1, 2>(file, no_energy); }));
     };
 }

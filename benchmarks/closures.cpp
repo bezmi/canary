@@ -10,7 +10,10 @@
 // five-species air mechanism from (rho, T), and the mass production rates
 // and vibrational-electronic energy source of the Park five-species air
 // mechanism and energy exchange on the two-temperature model from
-// (rho, T, T_ve), with mass fractions that vary from cell to cell. Then the
+// (rho, T, T_ve), with mass fractions that vary from cell to cell, and the
+// mass production rates and mode sources of the Kim-Jo eleven-species air
+// mechanism and exchange on the three-temperature model of weakly ionised
+// air (RAM-C) from (rho, T, T_v, T_e). Then the
 // transport coefficients and the mixture-averaged diffusion coefficients of
 // five-species air by the Wilke model on the thermally perfect model and by
 // the Gupta-Yos model on the two-temperature model, from states with mass
@@ -319,6 +322,50 @@ double
     });
 }
 
+// multi_temperature_sources of mechanism mech and exchange with the
+// multi-temperature model gas of two modes (vibration, electron), per cell
+// from the mass fractions y, a density between 1e-4 and 1e-3 kg/m^3, the
+// temperatures T of production_case, T_v = T / 2 + 150 K and T_e = 0.8 T.
+template <typename M, typename X, typename G, std::size_t N>
+double multi_temperature_sources_case(const char* name,
+                                      const Cells& c,
+                                      const M& mech,
+                                      const X& exchange,
+                                      const G& gas,
+                                      const std::array<double, N>& y)
+{
+    const auto fractions = gaslib::as_kind<gaslib::kind::mass_fraction>(
+      Kokkos::mdspan<const double, Kokkos::dextents<std::size_t, 1>>(y.data(), N));
+    const auto mix = gaslib::mixture(gas, fractions);
+    std::vector<gaslib::state_t<G, double>> states(cells);
+    for (std::size_t i = 0; i < cells; ++i) {
+        const double temp = 3000.0 + (12000.0 * static_cast<double>(i % 101) / 101.0);
+        const std::array<double, 2> t_m {(0.5 * temp) + 150.0, 0.8 * temp};
+        states[i] =
+          gaslib::thermo_state(
+            gas,
+            mix,
+            gaslib::Density<double, si> {1.0e-4 + (6.0e-4 * (c.rho[i] - 1.0))},
+            gaslib::Temperature<double, si> {temp},
+            gaslib::as_kind<gaslib::kind::mode_temperature, si>(
+              Kokkos::mdspan<const double, Kokkos::dextents<std::size_t, 1>>(t_m.data(), 2)))
+            .state;
+    }
+    return time_per_cell(name, [&] {
+        double sum = 0;
+        for (std::size_t i = 0; i < cells; ++i) {
+            const auto sources = gaslib::multi_temperature_sources(mech,
+                                                                   exchange,
+                                                                   gas,
+                                                                   gaslib::mixture(gas, fractions),
+                                                                   states[i]);
+            sum += sources.species[2].value() + sources.species[10].value() +
+                   sources.modes[0].value() + sources.modes[1].value();
+        }
+        return sum;
+    });
+}
+
 // States of gas per cell from (p, T) and, for a model with modes,
 // T_ve = T / 2 + 150 K, with the mass fractions y of make_fractions, the
 // temperatures of production_case and p = 1e4 Pa times the cell's density.
@@ -484,6 +531,21 @@ int main()
                  park,
                  park_exchange,
                  air5_two_temperature_built.model);
+    const auto air11_built = gaslib::make_air11_three_temperature<double>(si_scales);
+    const auto air11_kim_jo = gaslib::make_air11_kim_jo(air11_built.species,
+                                                        si_scales,
+                                                        gaslib::Pressure<double, si> {101325.0},
+                                                        air11_built.model);
+    const auto air11_exchange = gaslib::make_air11_kim_jo_exchange(air11_built.species,
+                                                                   air11_kim_jo,
+                                                                   air11_built.model,
+                                                                   si_scales);
+    multi_temperature_sources_case("RAM-C air (40 reactions) 3T sources",
+                                   c,
+                                   air11_kim_jo,
+                                   air11_exchange,
+                                   air11_built.model,
+                                   ionised_y);
     const auto wilke = gaslib::make_air5_wilke_transport(air5_built.species, si_scales);
     const auto gupta_yos =
       gaslib::make_air5_gupta_yos_transport(air5_two_temperature_built.species, si_scales);

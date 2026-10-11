@@ -84,7 +84,7 @@ with tempfile.TemporaryDirectory() as tmp:
     checks = [
         (mechanism["format"], "gaslib-reactions-1"),
         (mechanism["temperature_limits"], {"lower": 300.0, "upper": 30000.0}),
-        (len(mechanism["reactions"]), 4),
+        (len(mechanism["reactions"]), 5),
         (mechanism["reactions"][0]["reactants"], {"N2": 2.0}),
         (mechanism["reactions"][0]["products"], {"N": 2.0, "N2": 1.0}),
         (mechanism["reactions"][0]["forward"], {"model": "arrhenius", "A": 1.216e14, "n": -1.214,
@@ -98,6 +98,12 @@ with tempfile.TemporaryDirectory() as tmp:
                                                 "activation_temperature": 59500.0,
                                                 "translational_exponent": 0.5}),
         ("translational_exponent" in mechanism["reactions"][0]["forward"], False),
+        (mechanism["reactions"][4]["reactants"], {"N": 1.0, "e-": 1.0}),
+        (mechanism["reactions"][4]["products"], {"N+": 1.0, "e-": 2.0}),
+        (mechanism["reactions"][4]["forward"], {"model": "arrhenius", "A": 2.5e28, "n": -3.82,
+                                                "activation_temperature": 168600.0, "translational_exponent": 0.0,
+                                                "other_temperature": "electron"}),
+        (mechanism["reactions"][4]["backward"], {"model": "equilibrium", "other_temperature": "electron"}),
     ]
     for got, expected in checks:
         if got != expected:
@@ -105,8 +111,10 @@ with tempfile.TemporaryDirectory() as tmp:
             print(f"reaction converter: {got} != {expected}")
     print("reaction converter: checked")
 
-# Energy-exchange converter: V-T entries with and without Park's
-# correction, and an impartial-dissociation C-V entry.
+# Energy-exchange converter: V-T entries without and with the Park (1993),
+# Kim and Jo and Park (1985) corrections, an impartial-dissociation C-V
+# entry (and one with negative dissociation energy, dropped), elastic
+# electron exchange with a neutral and an ion, and Candler's V-E.
 with tempfile.TemporaryDirectory() as tmp:
     out = Path(tmp) / "exchange.json"
     subprocess.run([sys.executable, str(tools / "gdtk_exchange_to_json.py"), str(data / "gdtk_exchange_sample.lua"),
@@ -122,11 +130,31 @@ with tempfile.TemporaryDirectory() as tmp:
                                                                  "reference_temperature": 50000.0}}},
             {"species": "O2", "partner": "O2", "model": "landau_teller",
              "relaxation_time": {"model": "millikan_white", "a": 138.0, "b": 0.03}},
+            {"species": "N2", "partner": "N2", "model": "landau_teller",
+             "relaxation_time": {"model": "millikan_white", "a": 221.53, "b": 0.029,
+                                 "high_temperature_correction": {"model": "kim_2021", "cross_section": 1.7e-23,
+                                                                 "exponent": 0.55}}},
+            {"species": "NO", "partner": "N", "model": "landau_teller",
+             "relaxation_time": {"model": "millikan_white", "a": 49.5, "b": 0.042,
+                                 "high_temperature_correction": {"model": "park_1985", "cross_section": 5.8e-20}}},
         ]),
         (exchange["chemistry_vibration"], [
             {"reaction": 0, "species": "N2", "model": "impartial_dissociation",
              "dissociation_energy": 945360.0, "vibrational_temperature": 3393.44},
         ]),
+        (exchange["electron_translation"], [
+            {"partner": "N2", "model": "elastic",
+             "cross_section": {"model": "gnoffo_neutral", "a": 7.5e-20, "b": 5.5e-24, "c": -1e-28,
+                               "maximum_temperature": 30000.0}},
+            {"partner": "N+", "model": "elastic", "cross_section": {"model": "coulomb"}},
+        ]),
+        (exchange["vibration_electron"], [
+            {"species": "N2", "model": "landau_teller",
+             "relaxation_time": {"model": "candler", "a_low": 7.5, "b_low": -57.0, "c_low": 98.7,
+                                 "a_high": 2.36, "b_high": -17.9, "c_high": 24.35,
+                                 "blend_lower": 6950.0, "blend_upper": 7050.0}},
+        ]),
+        (exchange["electron_impact_ionisation"], []),
     ]
     for got, expected in checks:
         if got != expected:

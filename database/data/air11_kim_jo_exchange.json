@@ -1,0 +1,719 @@
+{
+   "format": "gaslib-energy-exchange-1",
+   "units": {
+      "energy": "J/mol",
+      "temperature": "K",
+      "area": "m^2"
+   },
+   "vibration_translation": [
+      {
+         "species": "N2",
+         "partner": "N2",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 221.53,
+            "b": 0.029,
+            "high_temperature_correction": {
+               "model": "kim_2021",
+               "cross_section": 1.7e-23,
+               "exponent": 0.55
+            }
+         }
+      },
+      {
+         "species": "N2",
+         "partner": "O2",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 228.76,
+            "b": 0.0295,
+            "high_temperature_correction": {
+               "model": "kim_2021",
+               "cross_section": 4.5e-23,
+               "exponent": 0.5
+            }
+         }
+      },
+      {
+         "species": "N2",
+         "partner": "NO",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 225.3,
+            "b": 0.0293,
+            "high_temperature_correction": {
+               "model": "kim_2021",
+               "cross_section": 4.5e-23,
+               "exponent": 0.5
+            }
+         }
+      },
+      {
+         "species": "N2",
+         "partner": "N",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 184.44,
+            "b": 0.0389,
+            "high_temperature_correction": {
+               "model": "kim_2021",
+               "cross_section": 1e-22,
+               "exponent": 0.52
+            }
+         }
+      },
+      {
+         "species": "N2",
+         "partner": "O",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 72.4,
+            "b": 0.015,
+            "high_temperature_correction": {
+               "model": "kim_2021",
+               "cross_section": 4.5e-22,
+               "exponent": 0.3
+            }
+         }
+      },
+      {
+         "species": "N2",
+         "partner": "N2+",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 221.53,
+            "b": 0.029,
+            "high_temperature_correction": {
+               "model": "kim_2021",
+               "cross_section": 1.7e-23,
+               "exponent": 0.55
+            }
+         }
+      },
+      {
+         "species": "N2",
+         "partner": "O2+",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 228.76,
+            "b": 0.0295,
+            "high_temperature_correction": {
+               "model": "kim_2021",
+               "cross_section": 4.5e-23,
+               "exponent": 0.5
+            }
+         }
+      },
+      {
+         "species": "N2",
+         "partner": "NO+",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 225.3,
+            "b": 0.0293,
+            "high_temperature_correction": {
+               "model": "kim_2021",
+               "cross_section": 4.5e-23,
+               "exponent": 0.5
+            }
+         }
+      },
+      {
+         "species": "N2",
+         "partner": "N+",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 180.0,
+            "b": 0.0262,
+            "high_temperature_correction": {
+               "model": "kim_2021",
+               "cross_section": 4.5e-23,
+               "exponent": 0.5
+            }
+         }
+      },
+      {
+         "species": "N2",
+         "partner": "O+",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 188.89,
+            "b": 0.0268,
+            "high_temperature_correction": {
+               "model": "kim_2021",
+               "cross_section": 4.5e-23,
+               "exponent": 0.5
+            }
+         }
+      },
+      {
+         "species": "O2",
+         "partner": "N2",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 131.32,
+            "b": 0.0295,
+            "high_temperature_correction": {
+               "model": "kim_2021",
+               "cross_section": 7.5e-22,
+               "exponent": 0.28
+            }
+         }
+      },
+      {
+         "species": "O2",
+         "partner": "O2",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 130.15,
+            "b": 0.0303,
+            "high_temperature_correction": {
+               "model": "kim_2021",
+               "cross_section": 5e-24,
+               "exponent": 0.7
+            }
+         }
+      },
+      {
+         "species": "O2",
+         "partner": "NO",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 133.71,
+            "b": 0.0298,
+            "high_temperature_correction": {
+               "model": "kim_2021",
+               "cross_section": 7.5e-22,
+               "exponent": 0.28
+            }
+         }
+      },
+      {
+         "species": "O2",
+         "partner": "N",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 72.4,
+            "b": 0.015,
+            "high_temperature_correction": {
+               "model": "kim_2021",
+               "cross_section": 7.5e-22,
+               "exponent": 0.28
+            }
+         }
+      },
+      {
+         "species": "O2",
+         "partner": "O",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": -27.32,
+            "b": 0.1465
+         }
+      },
+      {
+         "species": "O2",
+         "partner": "N2+",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 131.32,
+            "b": 0.0295,
+            "high_temperature_correction": {
+               "model": "kim_2021",
+               "cross_section": 7.5e-22,
+               "exponent": 0.28
+            }
+         }
+      },
+      {
+         "species": "O2",
+         "partner": "O2+",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 130.15,
+            "b": 0.0303,
+            "high_temperature_correction": {
+               "model": "kim_2021",
+               "cross_section": 5e-24,
+               "exponent": 0.7
+            }
+         }
+      },
+      {
+         "species": "O2",
+         "partner": "NO+",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 133.71,
+            "b": 0.0298,
+            "high_temperature_correction": {
+               "model": "kim_2021",
+               "cross_section": 7.5e-22,
+               "exponent": 0.28
+            }
+         }
+      },
+      {
+         "species": "O2",
+         "partner": "N+",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 106.06,
+            "b": 0.0265,
+            "high_temperature_correction": {
+               "model": "kim_2021",
+               "cross_section": 7.5e-22,
+               "exponent": 0.28
+            }
+         }
+      },
+      {
+         "species": "O2",
+         "partner": "O+",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 110.97,
+            "b": 0.0271,
+            "high_temperature_correction": {
+               "model": "kim_2021",
+               "cross_section": 7.5e-22,
+               "exponent": 0.28
+            }
+         }
+      },
+      {
+         "species": "NO",
+         "partner": "N2",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 49.5,
+            "b": 0.042,
+            "high_temperature_correction": {
+               "model": "park_1985",
+               "cross_section": 5.8e-20
+            }
+         }
+      },
+      {
+         "species": "NO",
+         "partner": "O2",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 49.5,
+            "b": 0.042,
+            "high_temperature_correction": {
+               "model": "park_1985",
+               "cross_section": 5.8e-20
+            }
+         }
+      },
+      {
+         "species": "NO",
+         "partner": "NO",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 49.5,
+            "b": 0.042,
+            "high_temperature_correction": {
+               "model": "park_1985",
+               "cross_section": 5.8e-20
+            }
+         }
+      },
+      {
+         "species": "NO",
+         "partner": "N",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 49.5,
+            "b": 0.042,
+            "high_temperature_correction": {
+               "model": "park_1985",
+               "cross_section": 5.8e-20
+            }
+         }
+      },
+      {
+         "species": "NO",
+         "partner": "O",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 49.5,
+            "b": 0.042,
+            "high_temperature_correction": {
+               "model": "park_1985",
+               "cross_section": 5.8e-20
+            }
+         }
+      },
+      {
+         "species": "NO",
+         "partner": "N2+",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 175.67,
+            "b": 0.0293,
+            "high_temperature_correction": {
+               "model": "kim_2021",
+               "cross_section": 8.5e-22,
+               "exponent": 0.35
+            }
+         }
+      },
+      {
+         "species": "NO",
+         "partner": "O2+",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 181.6,
+            "b": 0.0298,
+            "high_temperature_correction": {
+               "model": "kim_2021",
+               "cross_section": 8.5e-22,
+               "exponent": 0.35
+            }
+         }
+      },
+      {
+         "species": "NO",
+         "partner": "NO+",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 178.76,
+            "b": 0.0295,
+            "high_temperature_correction": {
+               "model": "kim_2021",
+               "cross_section": 8.5e-22,
+               "exponent": 0.35
+            }
+         }
+      },
+      {
+         "species": "NO",
+         "partner": "N+",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 142.62,
+            "b": 0.0264,
+            "high_temperature_correction": {
+               "model": "kim_2021",
+               "cross_section": 8.5e-22,
+               "exponent": 0.35
+            }
+         }
+      },
+      {
+         "species": "NO",
+         "partner": "O+",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "millikan_white",
+            "a": 149.08,
+            "b": 0.027,
+            "high_temperature_correction": {
+               "model": "kim_2021",
+               "cross_section": 8.5e-22,
+               "exponent": 0.35
+            }
+         }
+      }
+   ],
+   "chemistry_vibration": [
+      {
+         "reaction": 0,
+         "species": "N2",
+         "model": "impartial_dissociation",
+         "dissociation_energy": 945360.0,
+         "vibrational_temperature": 3393.44
+      },
+      {
+         "reaction": 1,
+         "species": "N2",
+         "model": "impartial_dissociation",
+         "dissociation_energy": 945360.0,
+         "vibrational_temperature": 3393.44
+      },
+      {
+         "reaction": 2,
+         "species": "N2",
+         "model": "impartial_dissociation",
+         "dissociation_energy": 945360.0,
+         "vibrational_temperature": 3393.44
+      },
+      {
+         "reaction": 3,
+         "species": "N2",
+         "model": "impartial_dissociation",
+         "dissociation_energy": 945360.0,
+         "vibrational_temperature": 3393.44
+      },
+      {
+         "reaction": 4,
+         "species": "N2",
+         "model": "impartial_dissociation",
+         "dissociation_energy": 945360.0,
+         "vibrational_temperature": 3393.44
+      },
+      {
+         "reaction": 5,
+         "species": "N2",
+         "model": "impartial_dissociation",
+         "dissociation_energy": 945360.0,
+         "vibrational_temperature": 3393.44
+      },
+      {
+         "reaction": 6,
+         "species": "N2",
+         "model": "impartial_dissociation",
+         "dissociation_energy": 945360.0,
+         "vibrational_temperature": 3393.44
+      },
+      {
+         "reaction": 7,
+         "species": "N2",
+         "model": "impartial_dissociation",
+         "dissociation_energy": 945360.0,
+         "vibrational_temperature": 3393.44
+      },
+      {
+         "reaction": 8,
+         "species": "N2",
+         "model": "impartial_dissociation",
+         "dissociation_energy": 945360.0,
+         "vibrational_temperature": 3393.44
+      },
+      {
+         "reaction": 9,
+         "species": "N2",
+         "model": "impartial_dissociation",
+         "dissociation_energy": 945360.0,
+         "vibrational_temperature": 3393.44
+      },
+      {
+         "reaction": 15,
+         "species": "O2",
+         "model": "impartial_dissociation",
+         "dissociation_energy": 498350.006,
+         "vibrational_temperature": 2273.53
+      },
+      {
+         "reaction": 16,
+         "species": "O2",
+         "model": "impartial_dissociation",
+         "dissociation_energy": 498350.006,
+         "vibrational_temperature": 2273.53
+      },
+      {
+         "reaction": 17,
+         "species": "O2",
+         "model": "impartial_dissociation",
+         "dissociation_energy": 498350.006,
+         "vibrational_temperature": 2273.53
+      },
+      {
+         "reaction": 18,
+         "species": "O2",
+         "model": "impartial_dissociation",
+         "dissociation_energy": 498350.006,
+         "vibrational_temperature": 2273.53
+      },
+      {
+         "reaction": 19,
+         "species": "O2",
+         "model": "impartial_dissociation",
+         "dissociation_energy": 498350.006,
+         "vibrational_temperature": 2273.53
+      },
+      {
+         "reaction": 10,
+         "species": "O2",
+         "model": "impartial_dissociation",
+         "dissociation_energy": 498350.006,
+         "vibrational_temperature": 2273.53
+      },
+      {
+         "reaction": 11,
+         "species": "O2",
+         "model": "impartial_dissociation",
+         "dissociation_energy": 498350.006,
+         "vibrational_temperature": 2273.53
+      },
+      {
+         "reaction": 12,
+         "species": "O2",
+         "model": "impartial_dissociation",
+         "dissociation_energy": 498350.006,
+         "vibrational_temperature": 2273.53
+      },
+      {
+         "reaction": 13,
+         "species": "O2",
+         "model": "impartial_dissociation",
+         "dissociation_energy": 498350.006,
+         "vibrational_temperature": 2273.53
+      },
+      {
+         "reaction": 14,
+         "species": "O2",
+         "model": "impartial_dissociation",
+         "dissociation_energy": 498350.006,
+         "vibrational_temperature": 2273.53
+      },
+      {
+         "reaction": 20,
+         "species": "NO",
+         "model": "impartial_dissociation",
+         "dissociation_energy": 630583.693,
+         "vibrational_temperature": 2739.7
+      }
+   ],
+   "electron_translation": [
+      {
+         "partner": "N2",
+         "model": "elastic",
+         "cross_section": {
+            "model": "gnoffo_neutral",
+            "a": 7.5e-20,
+            "b": 5.5e-24,
+            "c": -1e-28,
+            "maximum_temperature": 30000.0
+         }
+      },
+      {
+         "partner": "O2",
+         "model": "elastic",
+         "cross_section": {
+            "model": "gnoffo_neutral",
+            "a": 2e-20,
+            "b": 6e-24,
+            "c": 0.0,
+            "maximum_temperature": 30000.0
+         }
+      },
+      {
+         "partner": "N",
+         "model": "elastic",
+         "cross_section": {
+            "model": "gnoffo_neutral",
+            "a": 5e-20,
+            "b": 0.0,
+            "c": 0.0,
+            "maximum_temperature": 30000.0
+         }
+      },
+      {
+         "partner": "O",
+         "model": "elastic",
+         "cross_section": {
+            "model": "gnoffo_neutral",
+            "a": 1.2e-20,
+            "b": 1.7e-24,
+            "c": -2e-29,
+            "maximum_temperature": 30000.0
+         }
+      },
+      {
+         "partner": "NO",
+         "model": "elastic",
+         "cross_section": {
+            "model": "gnoffo_neutral",
+            "a": 1e-19,
+            "b": 0.0,
+            "c": 0.0,
+            "maximum_temperature": 30000.0
+         }
+      },
+      {
+         "partner": "N+",
+         "model": "elastic",
+         "cross_section": {
+            "model": "coulomb"
+         }
+      },
+      {
+         "partner": "O+",
+         "model": "elastic",
+         "cross_section": {
+            "model": "coulomb"
+         }
+      },
+      {
+         "partner": "N2+",
+         "model": "elastic",
+         "cross_section": {
+            "model": "coulomb"
+         }
+      },
+      {
+         "partner": "O2+",
+         "model": "elastic",
+         "cross_section": {
+            "model": "coulomb"
+         }
+      },
+      {
+         "partner": "NO+",
+         "model": "elastic",
+         "cross_section": {
+            "model": "coulomb"
+         }
+      }
+   ],
+   "vibration_electron": [
+      {
+         "species": "N2",
+         "model": "landau_teller",
+         "relaxation_time": {
+            "model": "candler",
+            "a_low": 7.5,
+            "b_low": -57.0,
+            "c_low": 98.7,
+            "a_high": 2.36,
+            "b_high": -17.9,
+            "c_high": 24.35,
+            "blend_lower": 6950.0,
+            "blend_upper": 7050.0
+         }
+      }
+   ],
+   "electron_impact_ionisation": [
+      {
+         "reaction": 38,
+         "species": "O"
+      },
+      {
+         "reaction": 39,
+         "species": "N"
+      }
+   ],
+   "reference": "V-T: Landau-Teller with Millikan-White and high-temperature corrections from J. G. Kim and S. M. Jo, Int. J. Heat Mass Transf. 169, 2021, Table 1 (Park's corrections for NO); E-T: elastic electron-heavy exchange with Gnoffo, Gupta and Shinn (NASA TP-2867, 1989) cross-section fits and Coulomb cross-sections; V-E: Candler's relaxation time for N2; C-V: impartial dissociation; C-E: electron-impact ionisation (Gnoffo, Gupta and Shinn 1989). From GDTk (gdtk-uq/gdtk bf559c3f) examples/lmr/2D/RAMCII/3T/ee-kim-air11-2T.inp via prep-kinetics with the RAM-C three-temperature gas; C-E entries from the reactions labelled EII."
+}

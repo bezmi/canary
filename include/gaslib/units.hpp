@@ -17,6 +17,8 @@ namespace constants
 template <std::floating_point P> inline constexpr P boltzmann = P(1.380649e-23);             // J/K
 template <std::floating_point P> inline constexpr P elementary_charge = P(1.602176634e-19);  // C
 template <std::floating_point P> inline constexpr P avogadro = P(6.02214076e23);  // 1/mol
+// CODATA 2018 recommended value of the electric constant [F/m].
+template <std::floating_point P> inline constexpr P vacuum_permittivity = P(8.8541878128e-12);
 // Universal gas constant N_A k_B [J/(mol K)], the product of two exact
 // values rounded to P.
 template <std::floating_point P>

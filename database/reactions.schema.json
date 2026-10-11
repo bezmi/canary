@@ -168,6 +168,12 @@
                   }
                ]
             },
+            "other_temperature": {
+               "type": [
+                  "string",
+                  "null"
+               ]
+            },
             "translational_exponent": {
                "anyOf": [
                   {

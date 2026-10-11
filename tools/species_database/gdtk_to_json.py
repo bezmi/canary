@@ -12,8 +12,12 @@ cm^-1, converted to temperatures in K with h c / k_B). Entries are written
 db.<name> or db['<name>']; the file of species N2+ is N2_plus.lua and that
 of e- is e_minus.lua.
 
+With --ionisation-energy N=14.53413 ..., the given ionisation energies
+(in eV, converted to J/mol with e N_A) are added; GDTk's database has none.
+
 Usage: gdtk_to_json.py --database DIR --species N2 O2 N O NO [--transport]
-           [--electronic] --source TEXT -o out.json
+           [--electronic] [--ionisation-energy N=14.53413 O=13.61805]
+           --source TEXT -o out.json
 """
 
 import argparse
@@ -27,6 +31,10 @@ import species_json
 # h c / k_B in cm K (exact in SI since 2019): converts a level energy in cm^-1
 # to a temperature in K.
 SECOND_RADIATION_CONSTANT = Decimal("6.62607015e-34") * Decimal("299792458") * 100 / Decimal("1.380649e-23")
+
+
+# e N_A in J/(mol eV) (exact in SI since 2019).
+MOLAR_ELECTRONVOLT = Decimal("1.602176634e-19") * Decimal("6.02214076e23")
 
 
 def entry(name):
@@ -170,11 +178,18 @@ def main():
     parser.add_argument("--species", required=True, nargs="+")
     parser.add_argument("--transport", action="store_true", help="also convert the transport data")
     parser.add_argument("--electronic", action="store_true", help="also convert the electronic levels")
+    parser.add_argument("--ionisation-energy", nargs="*", default=[], metavar="SPECIES=EV",
+                        help="ionisation energies in eV to add")
     parser.add_argument("--source", required=True, help="where the database files came from (version, path)")
     parser.add_argument("-o", "--output", required=True)
     args = parser.parse_args()
     species = {name: convert(args.database / file_name(name), name, args.transport, args.electronic)
                for name in args.species}
+    for item in args.ionisation_energy:
+        name, value = item.split("=")
+        if name not in species:
+            raise SystemExit(f"ionisation energy for {name}, which is not converted")
+        species[name]["ionisation_energy"] = float(Decimal(value) * MOLAR_ELECTRONVOLT)
     species_json.dump(species_json.species_file(species, reference=args.source), args.output)
 
 

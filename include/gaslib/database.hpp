@@ -89,9 +89,9 @@
 // translational_exponent (default 1), or (backward only) "equilibrium" with
 // none of them; mechanism_input checks this.
 //
-// Energy-exchange files hold the vibration-translation exchange and the
-// chemistry-vibration coupling of a two-temperature model (see
-// energy_exchange.hpp), in SI units per mole:
+// Energy-exchange files hold the vibration-translation exchange, the
+// chemistry-vibration coupling and the exchanges of free electrons of a
+// multi-temperature model (see energy_exchange.hpp), in SI units per mole:
 //   {
 //     "format": "gaslib-energy-exchange-1",
 //     "units": {"energy": "J/mol", "temperature": "K", "area": "m^2"},
@@ -113,11 +113,27 @@
 //         "reference": "...", "notes": "..."
 //       }
 //     ],
+//     "electron_translation": [
+//       {"partner": "N2", "model": "elastic",
+//        "cross_section": {"model": "gnoffo_neutral", "a": 7.5e-20, "b": 5.5e-24,
+//                          "c": -1e-28, "maximum_temperature": 30000.0}},
+//       {"partner": "N+", "model": "elastic", "cross_section": {"model": "coulomb"}}
+//     ],
+//     "vibration_electron": [
+//       {"species": "N2", "model": "landau_teller",
+//        "relaxation_time": {"model": "candler", "a_low": 7.5, "b_low": -57.0,
+//          "c_low": 98.7, "a_high": 2.36, "b_high": -17.9, "c_high": 24.35,
+//          "blend_lower": 6950.0, "blend_upper": 7050.0}}
+//     ],
+//     "electron_impact_ionisation": [{"reaction": 38, "species": "O"}],
 //     "reference": "...", "notes": "..."
 //   }
-// "high_temperature_correction", "reference" and "notes" are optional;
-// every other key is required, and unknown keys are errors. "reaction" is
-// the 0-based index of the reaction in the mechanism used with the file.
+// "high_temperature_correction", the cross-section parameters, the
+// correction's "reference_temperature" and "exponent", "reference" and
+// "notes" are optional; every other key is required (the five lists may be
+// empty), and unknown keys are errors. "reaction" is the 0-based index of
+// the reaction in the mechanism used with the file; the ionisation energy of
+// an electron_impact_ionisation species comes from the species file.
 
 #include <array>
 #include <cstddef>
@@ -216,13 +232,15 @@ struct ElectronicLevelsRecord {
 };
 
 // One species: molar mass in kg/mol, charge in elementary charges, thermo
-// data and optionally transport data and electronic levels.
+// data and optionally transport data, electronic levels and the ionisation
+// energy in J/mol.
 struct SpeciesRecord {
     double molar_mass {};
     double charge {};
     ThermoRecord thermo;
     std::optional<TransportRecord> transport;
     std::optional<ElectronicLevelsRecord> electronic_levels;
+    std::optional<double> ionisation_energy;
     std::optional<std::string> reference;
     std::optional<std::string> notes;
 
@@ -271,6 +289,7 @@ struct RateRecord {
     std::optional<double> n;
     std::optional<double> activation_temperature;
     std::optional<double> translational_exponent;
+    std::optional<std::string> other_temperature;
 
     friend bool operator==(const RateRecord&, const RateRecord&) = default;
 };
@@ -324,13 +343,15 @@ struct ExchangeUnits {
     friend bool operator==(const ExchangeUnits&, const ExchangeUnits&) = default;
 };
 
-// High-temperature correction of a relaxation time: model "park_1993" with
-// the collision cross-section in m^2 at the reference temperature in K (see
-// ParkCorrectionInput).
+// High-temperature correction of a relaxation time, by its collision
+// cross-section sigma in m^2: model "park_1985" (sigma constant),
+// "park_1993" (sigma (reference_temperature / T)^2, reference_temperature in
+// K) or "kim_2021" (sigma T^exponent, T in K).
 struct HighTemperatureCorrectionRecord {
     std::string model;
     double cross_section {};
-    double reference_temperature {};
+    std::optional<double> reference_temperature;
+    std::optional<double> exponent;
 
     friend bool operator==(const HighTemperatureCorrectionRecord&,
                            const HighTemperatureCorrectionRecord&) = default;
@@ -379,12 +400,87 @@ struct ChemistryVibrationRecord {
                            const ChemistryVibrationRecord&) = default;
 };
 
-// An energy-exchange file. Entries keep their order.
+// Momentum-transfer cross-section of free electrons with a heavy species:
+// model "gnoffo_neutral" with sigma = a + b T_e + c T_e^2 in m^2, T_e in K
+// limited to maximum_temperature; or model "coulomb" (charged partner) with
+// no parameters.
+struct ElectronCrossSectionRecord {
+    std::string model;
+    std::optional<double> a;
+    std::optional<double> b;
+    std::optional<double> c;
+    std::optional<double> maximum_temperature;
+
+    friend bool operator==(const ElectronCrossSectionRecord&,
+                           const ElectronCrossSectionRecord&) = default;
+};
+
+// Elastic energy exchange between free electrons and a heavy partner: model
+// "elastic".
+struct ElectronTranslationRecord {
+    std::string partner;
+    std::string model;
+    ElectronCrossSectionRecord cross_section;
+    std::optional<std::string> reference;
+    std::optional<std::string> notes;
+
+    friend bool operator==(const ElectronTranslationRecord&,
+                           const ElectronTranslationRecord&) = default;
+};
+
+// Electron-vibration relaxation time of Candler's form: log10(p_e tau) with
+// p_e in atm and tau in s is a_low x^2 + b_low x + c_low below blend_lower
+// and a_high x^2 + b_high x + c_high above blend_upper, x = log10(T_e / K),
+// blended in between.
+struct CandlerRelaxationRecord {
+    std::string model;
+    double a_low {};
+    double b_low {};
+    double c_low {};
+    double a_high {};
+    double b_high {};
+    double c_high {};
+    double blend_lower {};
+    double blend_upper {};
+
+    friend bool operator==(const CandlerRelaxationRecord&,
+                           const CandlerRelaxationRecord&) = default;
+};
+
+// Vibration-electron exchange of species: model "landau_teller" with a
+// relaxation time of model "candler".
+struct VibrationElectronRecord {
+    std::string species;
+    std::string model;
+    CandlerRelaxationRecord relaxation_time;
+    std::optional<std::string> reference;
+    std::optional<std::string> notes;
+
+    friend bool operator==(const VibrationElectronRecord&,
+                           const VibrationElectronRecord&) = default;
+};
+
+// Electron-impact ionisation of species in the reaction with 0-based index
+// reaction: the electrons lose the species' ionisation energy per event.
+struct ElectronImpactIonisationRecord {
+    int reaction {};
+    std::string species;
+    std::optional<std::string> reference;
+    std::optional<std::string> notes;
+
+    friend bool operator==(const ElectronImpactIonisationRecord&,
+                           const ElectronImpactIonisationRecord&) = default;
+};
+
+// An energy-exchange file. Entries keep their order; any list may be empty.
 struct EnergyExchangeFile {
     std::string format {energy_exchange_format};
     ExchangeUnits units;
     std::vector<VibrationTranslationRecord> vibration_translation;
     std::vector<ChemistryVibrationRecord> chemistry_vibration;
+    std::vector<ElectronTranslationRecord> electron_translation;
+    std::vector<VibrationElectronRecord> vibration_electron;
+    std::vector<ElectronImpactIonisationRecord> electron_impact_ionisation;
     std::optional<std::string> reference;
     std::optional<std::string> notes;
 
@@ -610,6 +706,7 @@ inline ArrheniusInput arrhenius_input(const RateRecord& rate, std::string_view r
       .n = *rate.n,
       .activation_temperature = *rate.activation_temperature,
       .translational_exponent = rate.translational_exponent.value_or(1.0),
+      .other_temperature = rate.other_temperature ? rate.other_temperature->c_str() : nullptr,
     };
 }
 
@@ -651,6 +748,10 @@ MechanismInput<R, K> mechanism_input(const ReactionsFile& file)
                                          "activation_temperature or translational_exponent");
                 }
                 reaction.backward_model = BackwardRateModel::equilibrium;
+                if (record.backward.other_temperature) {
+                    reaction.backward.other_temperature =
+                      record.backward.other_temperature->c_str();
+                }
             } else {
                 reaction.backward_model = BackwardRateModel::arrhenius;
                 reaction.backward = detail::arrhenius_input(record.backward, "backward");
@@ -674,8 +775,9 @@ MechanismInput<R, K> mechanism_input(const ReactionsFile& file)
 // into file, so the result is valid while file exists. Throws ParameterError
 // when file does not have V pairs and C couplings, and (with the entry's
 // list, index and species) when a model is not "landau_teller",
-// "millikan_white", "park_1993" or "impartial_dissociation" where each is
-// expected. The values themselves are checked by make_energy_exchange.
+// "millikan_white", one of the correction models or
+// "impartial_dissociation" where each is expected. The values themselves are checked by
+// make_energy_exchange.
 template <std::size_t V, std::size_t C>
 EnergyExchangeInput<V, C> energy_exchange_input(const EnergyExchangeFile& file)
 {
@@ -707,13 +809,23 @@ EnergyExchangeInput<V, C> energy_exchange_input(const EnergyExchangeFile& file)
         pair.partner = record.partner.c_str();
         pair.millikan_white = {.a = record.relaxation_time.a, .b = record.relaxation_time.b};
         const auto& correction = record.relaxation_time.high_temperature_correction;
-        pair.park_correction = correction.has_value();
+        pair.correction = {.model = RelaxationCorrection::none};
         if (correction) {
-            expect_model(correction->model, "park_1993", entry);
-            pair.park = {
-              .cross_section = correction->cross_section,
-              .reference_temperature = correction->reference_temperature,
-            };
+            pair.correction.cross_section = correction->cross_section;
+            pair.correction.reference_temperature = correction->reference_temperature.value_or(0.0);
+            pair.correction.exponent = correction->exponent.value_or(0.0);
+            if (correction->model == "park_1985") {
+                pair.correction.model = RelaxationCorrection::park_1985;
+            } else if (correction->model == "park_1993") {
+                pair.correction.model = RelaxationCorrection::park_1993;
+            } else if (correction->model == "kim_2021") {
+                pair.correction.model = RelaxationCorrection::kim_2021;
+            } else {
+                throw ParameterError(std::format(
+                  R"({}: correction model must be "park_1985", "park_1993" or "kim_2021", got "{}")",
+                  entry,
+                  correction->model));
+            }
         }
     }
     for (std::size_t k = 0; k < C; ++k) {
@@ -726,6 +838,99 @@ EnergyExchangeInput<V, C> energy_exchange_input(const EnergyExchangeFile& file)
           .species = record.species.c_str(),
           .dissociation_energy = record.dissociation_energy,
           .vibrational_temperature = record.vibrational_temperature,
+        };
+    }
+    return out;
+}
+
+// Model inputs of the E elastic electron-heavy pairs, VE vibration-electron
+// exchanges and I electron-impact ionisations of file, in file order, for
+// make_multi_temperature_exchange, with the ionisation energies from
+// species. Names point into file, so the result is valid while file
+// exists. Throws ParameterError when the counts differ, a model is not
+// "elastic" with "gnoffo_neutral" (a, b, c and maximum_temperature given)
+// or "coulomb", or "landau_teller" with "candler", or (with the species)
+// when an ionised species has no ionisation_energy in species; DatabaseError
+// when that species is not in species.
+template <std::size_t E, std::size_t VE, std::size_t I>
+ElectronExchangeInput<E, VE, I> electron_exchange_input(const EnergyExchangeFile& file,
+                                                        const SpeciesFile& species)
+{
+    if (file.electron_translation.size() != E || file.vibration_electron.size() != VE ||
+        file.electron_impact_ionisation.size() != I) {
+        throw ParameterError(
+          std::format("expected {}, {} and {} electron exchanges, the file has {}, {} and {}",
+                      E,
+                      VE,
+                      I,
+                      file.electron_translation.size(),
+                      file.vibration_electron.size(),
+                      file.electron_impact_ionisation.size()));
+    }
+    ElectronExchangeInput<E, VE, I> out {};
+    for (std::size_t k = 0; k < E; ++k) {
+        const ElectronTranslationRecord& record = file.electron_translation[k];
+        const ElectronCrossSectionRecord& section = record.cross_section;
+        ElectronTranslationInput& entry = out.electron_translation[k];
+        entry.partner = record.partner.c_str();
+        if (record.model == "elastic" && section.model == "gnoffo_neutral" && section.a &&
+            section.b && section.c && section.maximum_temperature) {
+            entry.cross_section = ElectronCrossSection::gnoffo_neutral;
+            entry.a = *section.a;
+            entry.b = *section.b;
+            entry.c = *section.c;
+            entry.maximum_temperature = *section.maximum_temperature;
+        } else if (record.model == "elastic" && section.model == "coulomb") {
+            entry.cross_section = ElectronCrossSection::coulomb;
+        } else {
+            throw ParameterError(std::format(
+              "electron_translation {} ({}): needs model \"elastic\" with a \"gnoffo_neutral\" "
+              "cross-section (a, b, c, maximum_temperature) or a \"coulomb\" one",
+              k,
+              record.partner));
+        }
+    }
+    for (std::size_t k = 0; k < VE; ++k) {
+        const VibrationElectronRecord& record = file.vibration_electron[k];
+        const CandlerRelaxationRecord& fit = record.relaxation_time;
+        if (record.model != "landau_teller" || fit.model != "candler") {
+            throw ParameterError(std::format(
+              "vibration_electron {} ({}): needs model \"landau_teller\" with a \"candler\" "
+              "relaxation time",
+              k,
+              record.species));
+        }
+        out.vibration_electron[k] = VibrationElectronInput {
+          .species = record.species.c_str(),
+          .relaxation_time =
+            {
+              .a_low = fit.a_low,
+              .b_low = fit.b_low,
+              .c_low = fit.c_low,
+              .a_high = fit.a_high,
+              .b_high = fit.b_high,
+              .c_high = fit.c_high,
+              .blend_lower = fit.blend_lower,
+              .blend_upper = fit.blend_upper,
+            },
+        };
+    }
+    for (std::size_t k = 0; k < I; ++k) {
+        const ElectronImpactIonisationRecord& record = file.electron_impact_ionisation[k];
+        const auto found = species.species.find(record.species);
+        if (found == species.species.end()) {
+            throw DatabaseError(std::format("species \"{}\" is not in the file", record.species));
+        }
+        if (!found->second.ionisation_energy) {
+            throw ParameterError(std::format(
+              "electron_impact_ionisation {} ({}): the species has no ionisation_energy",
+              k,
+              record.species));
+        }
+        out.electron_impact_ionisation[k] = ElectronImpactIonisationInput {
+          .reaction = record.reaction,
+          .species = record.species.c_str(),
+          .ionisation_energy = *found->second.ionisation_energy,
         };
     }
     return out;

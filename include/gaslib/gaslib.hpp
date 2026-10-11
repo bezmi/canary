@@ -6,6 +6,8 @@
 #include <gaslib/build.hpp>                       // IWYU pragma: export
 #include <gaslib/config.hpp>                      // IWYU pragma: export
 #include <gaslib/data/air11.hpp>                  // IWYU pragma: export
+#include <gaslib/data/air11_kim_jo.hpp>           // IWYU pragma: export
+#include <gaslib/data/air11_kim_jo_exchange.hpp>  // IWYU pragma: export
 #include <gaslib/data/air11_species.hpp>          // IWYU pragma: export
 #include <gaslib/data/air5.hpp>                   // IWYU pragma: export
 #include <gaslib/data/air5_electronic.hpp>        // IWYU pragma: export

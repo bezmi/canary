@@ -311,7 +311,8 @@ void test_energy_exchange()
         const double mu = built.species.mass[0].value() / 2.0;
         const double k =
           1.0e-21 * 50000.0 * 50000.0 * std::sqrt(8.0 * boltzmann / (std::numbers::pi * mu));
-        expect(relative(n2_n2.park_coefficient, 1.0 / k, 1.0e-15));
+        expect(relative(n2_n2.correction_coefficient, 1.0 / k, 1.0e-15));
+        expect(n2_n2.correction_exponent == 1.5_d);
 
         const auto& n2 = exchange.chemistry_vibration[0];
         expect(n2.reaction == 0_ul && n2.species == 0_ul);
@@ -614,6 +615,93 @@ void test_energy_exchange()
           }
       };
 
+    "energy exchange: each relaxation-time correction adds 1 / (sigma c n_q) to tau"_test = [&] {
+        using gaslib::RelaxationCorrection;
+        const Fractions y {1.0, 0.0, 0.0, 0.0, 0.0};
+        const auto mix = gaslib::mixture(gas, fractions(y));
+        const double m = built.species.mass[0].value();
+        // sigma_0, T_ref and omega of each model; a negative Millikan-White a
+        // with the last.
+        const std::array<gaslib::RelaxationCorrectionInput, 4> corrections {
+          {
+            {
+              .model = RelaxationCorrection::none,
+              .cross_section = 0.0,
+              .reference_temperature = 0.0,
+              .exponent = 0.0,
+            },
+            {
+              .model = RelaxationCorrection::park_1985,
+              .cross_section = 5.8e-20,
+              .reference_temperature = 0.0,
+              .exponent = 0.0,
+            },
+            {
+              .model = RelaxationCorrection::park_1993,
+              .cross_section = 1.0e-21,
+              .reference_temperature = 50000.0,
+              .exponent = 0.0,
+            },
+            {
+              .model = RelaxationCorrection::kim_2021,
+              .cross_section = 1.7e-23,
+              .reference_temperature = 0.0,
+              .exponent = 0.55,
+            },
+          },
+        };
+        for (std::size_t c = 0; c < corrections.size(); ++c) {
+            const double a = c == 3 ? -27.32 : 221.0;
+            const double b = c == 3 ? 0.1465 : 0.029;
+            gaslib::EnergyExchangeInput<1, 0> input {};
+            input.vibration_translation[0] = {
+              .species = "N2",
+              .partner = "N2",
+              .millikan_white = {.a = a, .b = b},
+              .correction = corrections[c],
+            };
+            const auto single =
+              gaslib::make_energy_exchange(input,
+                                           gaslib::detail::air5_park_species_names,
+                                           built.species,
+                                           mech,
+                                           si_scales);
+            for (const double temp : {2000.0, 6000.0, 15000.0}) {
+                const double rho = 0.01;
+                const double t_ve = temp * (1.0 - 1.0e-4);
+                const double q = gaslib::vibration_translation_source(single,
+                                                                      gas,
+                                                                      mix,
+                                                                      Rho {rho},
+                                                                      Temp {temp},
+                                                                      Temp {t_ve})
+                                   .value();
+                const auto e_t = gaslib::species_vibrational_electronic_energy(gas, Temp {temp});
+                const auto e_ve = gaslib::species_vibrational_electronic_energy(gas, Temp {t_ve});
+                const double rate = q / (rho * (e_t[0].value() - e_ve[0].value()));
+                const double n = rho / m;
+                const double tau_mw = (atmosphere / (n * boltzmann * temp)) *
+                                      std::exp((a * (std::cbrt(1.0 / temp) - b)) - 18.42);
+                const gaslib::RelaxationCorrectionInput& k = corrections[c];
+                double sigma = 0.0;
+                if (k.model == RelaxationCorrection::park_1985) { sigma = k.cross_section; }
+                if (k.model == RelaxationCorrection::park_1993) {
+                    sigma = k.cross_section * std::pow(k.reference_temperature / temp, 2);
+                }
+                if (k.model == RelaxationCorrection::kim_2021) {
+                    sigma = k.cross_section * std::pow(temp, k.exponent);
+                }
+                const double speed =
+                  std::sqrt(8.0 * boltzmann * temp / (std::numbers::pi * (m / 2.0)));
+                const double tau_corr = sigma > 0.0 ? 1.0 / (sigma * speed * n) : 0.0;
+                // As for the N2-N2 pair above: a few 1e-15 from T^(-1/3) in an
+                // exponent of about 10, and T^beta through exp(beta ln T).
+                expect(relative(rate, 1.0 / (tau_mw + tau_corr), 1.0e-12))
+                  << c << temp << rate << 1.0 / (tau_mw + tau_corr);
+            }
+        }
+    };
+
     "energy exchange: relaxation at fixed energy reaches the equilibrium temperature"_test = [&] {
         const Fractions y {1.0, 0.0, 0.0, 0.0, 0.0};
         const auto mix = gaslib::mixture(gas, fractions(y));
@@ -905,30 +993,68 @@ void test_energy_exchange()
         input.vibration_translation[3].partner = nullptr;
         starts(input, "vibration-translation pair 3 (N2, ): partner has no name");
 
-        for (const double a : {nan, inf, 0.0, -1.0}) {
+        for (const double a : {nan, inf}) {
             input = gaslib::air5_park_exchange;
             input.vibration_translation[4].millikan_white.a = a;
-            starts(input, "vibration-translation pair 4 (N2, NO): Millikan-White a must be");
+            starts(input, "vibration-translation pair 4 (N2, NO): Millikan-White a must be finite");
+        }
+        // Any finite a is accepted.
+        for (const double a : {0.0, -27.32}) {
+            input = gaslib::air5_park_exchange;
+            input.vibration_translation[4].millikan_white.a = a;
+            build(input);
         }
         input = gaslib::air5_park_exchange;
         input.vibration_translation[4].millikan_white.b = inf;
         starts(input, "vibration-translation pair 4 (N2, NO): Millikan-White b must be finite");
 
-        for (const double sigma : {nan, inf, 0.0, -1.0e-21}) {
-            input = gaslib::air5_park_exchange;
-            input.vibration_translation[5].park.cross_section = sigma;
-            starts(input, "vibration-translation pair 5 (O2, N): Park cross-section must be");
+        using gaslib::RelaxationCorrection;
+        for (const RelaxationCorrection model : {
+               RelaxationCorrection::park_1985,
+               RelaxationCorrection::park_1993,
+               RelaxationCorrection::kim_2021,
+             }) {
+            for (const double sigma : {nan, inf, 0.0, -1.0e-21}) {
+                input = gaslib::air5_park_exchange;
+                input.vibration_translation[5].correction.model = model;
+                input.vibration_translation[5].correction.cross_section = sigma;
+                starts(input,
+                       "vibration-translation pair 5 (O2, N): correction cross-section must be");
+            }
         }
         for (const double t_ref : {nan, inf, 0.0, -5.0e4}) {
             input = gaslib::air5_park_exchange;
-            input.vibration_translation[5].park.reference_temperature = t_ref;
-            starts(input,
-                   "vibration-translation pair 5 (O2, N): Park reference temperature must be");
+            input.vibration_translation[5].correction.reference_temperature = t_ref;
+            starts(
+              input,
+              "vibration-translation pair 5 (O2, N): correction reference temperature must be");
         }
-        // Without the correction its constants are not used.
+        for (const double exponent : {nan, inf}) {
+            input = gaslib::air5_park_exchange;
+            input.vibration_translation[5].correction.model = RelaxationCorrection::kim_2021;
+            input.vibration_translation[5].correction.exponent = exponent;
+            starts(input,
+                   "vibration-translation pair 5 (O2, N): correction exponent must be finite");
+        }
         input = gaslib::air5_park_exchange;
-        input.vibration_translation[5].park_correction = false;
-        input.vibration_translation[5].park.cross_section = nan;
+        // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange): an invalid model
+        input.vibration_translation[5].correction.model = static_cast<RelaxationCorrection>(9);
+        starts(input,
+               "vibration-translation pair 5 (O2, N): unknown relaxation-time correction model");
+        // A model ignores the constants it does not use.
+        input = gaslib::air5_park_exchange;
+        input.vibration_translation[5].correction = {
+          .model = RelaxationCorrection::none,
+          .cross_section = nan,
+          .reference_temperature = nan,
+          .exponent = nan,
+        };
+        build(input);
+        input.vibration_translation[5].correction.model = RelaxationCorrection::park_1985;
+        input.vibration_translation[5].correction.cross_section = 1.0e-21;
+        build(input);
+        input.vibration_translation[5].correction.model = RelaxationCorrection::kim_2021;
+        input.vibration_translation[5].correction.exponent = 0.5;
         build(input);
 
         for (const int reaction : {-1, 5}) {

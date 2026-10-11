@@ -38,11 +38,12 @@ inline constexpr EnergyExchangeInput<15, 3> air5_park_exchange {
               .a = 180.0,
               .b = 0.0262,
             },
-          .park_correction = true,
-          .park =
+          .correction =
             {
+              .model = RelaxationCorrection::park_1993,
               .cross_section = 1e-21,
               .reference_temperature = 50000.0,
+              .exponent = 0.0,
             },
         },
         {
@@ -53,11 +54,12 @@ inline constexpr EnergyExchangeInput<15, 3> air5_park_exchange {
               .a = 72.4,
               .b = 0.015,
             },
-          .park_correction = true,
-          .park =
+          .correction =
             {
+              .model = RelaxationCorrection::park_1993,
               .cross_section = 1e-21,
               .reference_temperature = 50000.0,
+              .exponent = 0.0,
             },
         },
         {
@@ -68,11 +70,12 @@ inline constexpr EnergyExchangeInput<15, 3> air5_park_exchange {
               .a = 221.0,
               .b = 0.029,
             },
-          .park_correction = true,
-          .park =
+          .correction =
             {
+              .model = RelaxationCorrection::park_1993,
               .cross_section = 1e-21,
               .reference_temperature = 50000.0,
+              .exponent = 0.0,
             },
         },
         {
@@ -83,11 +86,12 @@ inline constexpr EnergyExchangeInput<15, 3> air5_park_exchange {
               .a = 229.0,
               .b = 0.0295,
             },
-          .park_correction = true,
-          .park =
+          .correction =
             {
+              .model = RelaxationCorrection::park_1993,
               .cross_section = 1e-21,
               .reference_temperature = 50000.0,
+              .exponent = 0.0,
             },
         },
         {
@@ -98,11 +102,12 @@ inline constexpr EnergyExchangeInput<15, 3> air5_park_exchange {
               .a = 225.0,
               .b = 0.0293,
             },
-          .park_correction = true,
-          .park =
+          .correction =
             {
+              .model = RelaxationCorrection::park_1993,
               .cross_section = 1e-21,
               .reference_temperature = 50000.0,
+              .exponent = 0.0,
             },
         },
         {
@@ -113,11 +118,12 @@ inline constexpr EnergyExchangeInput<15, 3> air5_park_exchange {
               .a = 72.4,
               .b = 0.015,
             },
-          .park_correction = true,
-          .park =
+          .correction =
             {
+              .model = RelaxationCorrection::park_1993,
               .cross_section = 1e-21,
               .reference_temperature = 50000.0,
+              .exponent = 0.0,
             },
         },
         {
@@ -128,11 +134,12 @@ inline constexpr EnergyExchangeInput<15, 3> air5_park_exchange {
               .a = 47.7,
               .b = 0.059,
             },
-          .park_correction = true,
-          .park =
+          .correction =
             {
+              .model = RelaxationCorrection::park_1993,
               .cross_section = 1e-21,
               .reference_temperature = 50000.0,
+              .exponent = 0.0,
             },
         },
         {
@@ -143,11 +150,12 @@ inline constexpr EnergyExchangeInput<15, 3> air5_park_exchange {
               .a = 134.0,
               .b = 0.0295,
             },
-          .park_correction = true,
-          .park =
+          .correction =
             {
+              .model = RelaxationCorrection::park_1993,
               .cross_section = 1e-21,
               .reference_temperature = 50000.0,
+              .exponent = 0.0,
             },
         },
         {
@@ -158,11 +166,12 @@ inline constexpr EnergyExchangeInput<15, 3> air5_park_exchange {
               .a = 138.0,
               .b = 0.03,
             },
-          .park_correction = true,
-          .park =
+          .correction =
             {
+              .model = RelaxationCorrection::park_1993,
               .cross_section = 1e-21,
               .reference_temperature = 50000.0,
+              .exponent = 0.0,
             },
         },
         {
@@ -173,11 +182,12 @@ inline constexpr EnergyExchangeInput<15, 3> air5_park_exchange {
               .a = 136.0,
               .b = 0.0298,
             },
-          .park_correction = true,
-          .park =
+          .correction =
             {
+              .model = RelaxationCorrection::park_1993,
               .cross_section = 1e-21,
               .reference_temperature = 50000.0,
+              .exponent = 0.0,
             },
         },
         {
@@ -188,11 +198,12 @@ inline constexpr EnergyExchangeInput<15, 3> air5_park_exchange {
               .a = 49.5,
               .b = 0.042,
             },
-          .park_correction = true,
-          .park =
+          .correction =
             {
+              .model = RelaxationCorrection::park_1993,
               .cross_section = 1e-21,
               .reference_temperature = 50000.0,
+              .exponent = 0.0,
             },
         },
         {
@@ -203,11 +214,12 @@ inline constexpr EnergyExchangeInput<15, 3> air5_park_exchange {
               .a = 49.5,
               .b = 0.042,
             },
-          .park_correction = true,
-          .park =
+          .correction =
             {
+              .model = RelaxationCorrection::park_1993,
               .cross_section = 1e-21,
               .reference_temperature = 50000.0,
+              .exponent = 0.0,
             },
         },
         {
@@ -218,11 +230,12 @@ inline constexpr EnergyExchangeInput<15, 3> air5_park_exchange {
               .a = 49.5,
               .b = 0.042,
             },
-          .park_correction = true,
-          .park =
+          .correction =
             {
+              .model = RelaxationCorrection::park_1993,
               .cross_section = 1e-21,
               .reference_temperature = 50000.0,
+              .exponent = 0.0,
             },
         },
         {
@@ -233,11 +246,12 @@ inline constexpr EnergyExchangeInput<15, 3> air5_park_exchange {
               .a = 49.5,
               .b = 0.042,
             },
-          .park_correction = true,
-          .park =
+          .correction =
             {
+              .model = RelaxationCorrection::park_1993,
               .cross_section = 1e-21,
               .reference_temperature = 50000.0,
+              .exponent = 0.0,
             },
         },
         {
@@ -248,11 +262,12 @@ inline constexpr EnergyExchangeInput<15, 3> air5_park_exchange {
               .a = 49.5,
               .b = 0.042,
             },
-          .park_correction = true,
-          .park =
+          .correction =
             {
+              .model = RelaxationCorrection::park_1993,
               .cross_section = 1e-21,
               .reference_temperature = 50000.0,
+              .exponent = 0.0,
             },
         },
       },
