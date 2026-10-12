@@ -10,6 +10,24 @@
     #define GASLIB_HOST_DEVICE
 #endif
 
+// Declares a function inline and requires the compiler to inline every call
+// to it, independent of the compiler's size limits. It is for per-cell
+// functions that are called in hot loops. Place it after GASLIB_HOST_DEVICE
+// and in place of the inline keyword. A consumer may define it, for example
+// as AMREX_FORCE_INLINE. With a compiler that has no such attribute it is the
+// inline keyword only.
+#ifndef GASLIB_FORCE_INLINE
+    #if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+        #define GASLIB_FORCE_INLINE __forceinline__
+    #elif defined(__GNUC__)
+        #define GASLIB_FORCE_INLINE inline __attribute__((always_inline))
+    #elif defined(_MSC_VER)
+        #define GASLIB_FORCE_INLINE __forceinline
+    #else
+        #define GASLIB_FORCE_INLINE inline
+    #endif
+#endif
+
 // Check of a precondition in per-cell code. Define it when assert is not
 // usable in device code. Defaults to assert, so it is disabled by NDEBUG.
 #ifndef GASLIB_ASSERT

@@ -5,6 +5,7 @@ int failed_assertions = 0;
 }  // namespace
 
 #define GASLIB_HOST_DEVICE  inline
+#define GASLIB_FORCE_INLINE inline
 #define GASLIB_ASSERT(cond) ((cond) ? void() : void(++failed_assertions))
 
 #include "test_suites.hpp"
@@ -22,6 +23,10 @@ void test_config_consumer()
 
     "a consumer definition of GASLIB_HOST_DEVICE is kept"_test = [] {
         expect(std::string_view(GASLIB_TEST_EXPAND_STRING(GASLIB_HOST_DEVICE)) == "inline");
+    };
+
+    "a consumer definition of GASLIB_FORCE_INLINE is kept"_test = [] {
+        expect(std::string_view(GASLIB_TEST_EXPAND_STRING(GASLIB_FORCE_INLINE)) == "inline");
     };
 
     "a consumer definition of GASLIB_ASSERT is used"_test = [] {
