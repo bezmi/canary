@@ -397,8 +397,8 @@ GASLIB_HOST_DEVICE constexpr Closure<T, U> with_composition_status(Closure<T, U>
 // Per-cell mixture coefficients from mass fractions.
 template <std::floating_point P, UnitSystem U, std::size_t Capacity, typename V>
     requires SpeciesWeights<V, kind::mass_fraction, unitless, P>
-GASLIB_HOST_DEVICE GASLIB_FORCE_INLINE auto
-  mixture(const CaloricallyPerfectMixture<P, U, Capacity>& gas, const V& fractions)
+GASLIB_HOST_DEVICE auto mixture(const CaloricallyPerfectMixture<P, U, Capacity>& gas,
+                                const V& fractions)
 {
     using T = range_quantity_t<V>::value_type;
     return detail::mix(gas,
@@ -411,10 +411,9 @@ GASLIB_HOST_DEVICE GASLIB_FORCE_INLINE auto
 template <std::floating_point P, UnitSystem U, std::size_t Capacity, typename V, Scalar T>
     requires SpeciesWeights<V, kind::density, U, P> &&
              std::same_as<typename range_quantity_t<V>::value_type, T>
-GASLIB_HOST_DEVICE GASLIB_FORCE_INLINE auto
-  mixture(const CaloricallyPerfectMixture<P, U, Capacity>& gas,
-          const V& partial_densities,
-          Density<T, U> rho)
+GASLIB_HOST_DEVICE auto mixture(const CaloricallyPerfectMixture<P, U, Capacity>& gas,
+                                const V& partial_densities,
+                                Density<T, U> rho)
 {
     return detail::mix(gas,
                        partial_densities,
