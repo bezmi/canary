@@ -51,7 +51,8 @@ template <Scalar T> struct SolveResult {
 // step leaves the bracket or the derivative is zero or nonfinite, and also
 // stops when that step is at most
 // relative_tolerance * |x|. The bracket shrinks to the side where f changes sign. After
-// max_iterations it stops with status NotConverged.
+// max_iterations it stops with status NotConverged and returns the last
+// bounded iterate as a constant with zero derivative; f_full is not called.
 //
 // When T is not the value type (a dual number), one final Newton step is
 // then taken in T with f_full, starting from the converged value as a
@@ -121,6 +122,7 @@ CANARY_HOST_DEVICE SolveResult<T> solve(const FValue& f_value,
     if constexpr (std::same_as<T, V>) {
         return {.root = x, .status = status};
     } else {
+        if (status == Status::NotConverged) { return {.root = T(x), .status = status}; }
         const T x0(x);
         const Residual<T> r = f_full(x0);
         return {.root = x0 - (r.value / r.derivative), .status = status};

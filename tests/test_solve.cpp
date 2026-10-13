@@ -147,6 +147,37 @@ void test_solve()
         expect(r.status == Status::NotConverged);
     };
 
+    "an unconverged dual solve returns the constant last bounded iterate"_test = [] {
+        const auto check = []<std::floating_point V>() {
+            using Dual = canary::test::Dual<V>;
+            const auto f_value = [](V x) { return cubic(x, V(10)); };
+            for (const int iterations : {0, 1}) {
+                const SolveSettings<V> limits {
+                  .relative_tolerance = static_cast<V>(settings.relative_tolerance),
+                  .max_iterations = iterations,
+                };
+                for (const V guess : {V(-1), V(1), V(9)}) {
+                    int full_calls = 0;
+                    const auto f_full = [&](Dual x) {
+                        ++full_calls;
+                        return cubic(x, Dual(V(10), V(1)));
+                    };
+                    const Bracket<V> bracket {.lower = V(0), .upper = V(5)};
+                    const auto plain = solve<V>(f_value, f_value, bracket, guess, limits);
+                    const auto dual = solve<Dual>(f_value, f_full, bracket, guess, limits);
+                    expect(plain.status == Status::NotConverged);
+                    expect(dual.status == Status::NotConverged);
+                    expect(dual.root.real() == plain.root);
+                    expect(dual.root.real() >= bracket.lower && dual.root.real() <= bracket.upper);
+                    expect(dual.root.dual() == V(0));
+                    expect(full_calls == 0_i);
+                }
+            }
+        };
+        check.template operator()<float>();
+        check.template operator()<double>();
+    };
+
     "a bracket without a sign change gives Invalid"_test = [] {
         const auto f = [](double x) { return cubic(x, 10.0); };
         expect(
