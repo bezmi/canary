@@ -16,8 +16,8 @@ template <std::floating_point P, UnitSystem U> struct Sutherland {
     Temperature<P, U> s;
 };
 
-// The law is an empirical fit, evaluated on value parts in the order
-// mu_0 * r * sqrt(r) * (T_0 + S) / (T + S) with r = T / T_0.
+// The empirical fit uses the full scalar and propagates temperature derivatives.
+// Evaluation order: mu_0 * r * sqrt(r) * (T_0 + S) / (T + S), with r = T / T_0.
 template <Scalar T, std::floating_point P, UnitSystem U>
     requires ScalarWith<T, P> && HasSqrt<T>
 CANARY_HOST_DEVICE DynamicViscosity<T, U> viscosity(const Sutherland<P, U>& law,

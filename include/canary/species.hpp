@@ -20,7 +20,8 @@ namespace canary
 {
 
 // Particle mass and charge of each species, in the model's unit system. Only
-// the first n entries are used.
+// the first n entries are used. Arithmetic requires 1 <= n <= Capacity
+// and finite positive particle masses in those entries.
 template <std::floating_point P, UnitSystem U, std::size_t Capacity>
     requires(Capacity > 0)
 struct SpeciesData {
@@ -154,8 +155,9 @@ CANARY_HOST_DEVICE constexpr auto
   weight_sums(const SpeciesData<P, U, Capacity>& species, const V& weights, T total)
 {
     // NOLINTNEXTLINE(misc-static-assert): run-time species count and extent
-    CANARY_ASSERT(species.n >= 1 && static_cast<std::size_t>(species.n) ==
-                                      static_cast<std::size_t>(weights.extent(0)));
+    CANARY_ASSERT(species.n >= 1 && static_cast<std::size_t>(species.n) <= Capacity &&
+                  static_cast<std::size_t>(species.n) ==
+                    static_cast<std::size_t>(weights.extent(0)));
     // Number weight w / m and charge weight (w / m) q of one species.
     using Number = decltype(std::declval<T>() / std::declval<P>());
     using ChargeWeight = decltype(std::declval<Number>() * std::declval<P>());

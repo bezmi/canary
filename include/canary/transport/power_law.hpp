@@ -16,7 +16,7 @@ template <std::floating_point P, UnitSystem U> struct PowerLaw {
     P exponent;
 };
 
-// The law is an empirical fit, evaluated on value parts.
+// The empirical fit uses the full scalar and propagates temperature derivatives.
 template <Scalar T, std::floating_point P, UnitSystem U>
     requires ScalarWith<T, P> && HasPow<T>
 CANARY_HOST_DEVICE DynamicViscosity<T, U> viscosity(const PowerLaw<P, U>& law,
