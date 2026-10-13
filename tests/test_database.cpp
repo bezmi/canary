@@ -73,7 +73,9 @@ std::string air5_with(std::string_view from, std::string_view to)
 {
     std::string text = read_text(air5_path());
     const auto at = text.find(from);
-    if (at != std::string::npos) { text.replace(at, from.size(), to); }
+    boost::ut::expect(boost::ut::fatal(at != std::string::npos))
+      << "fixture text to replace is missing: " << from;
+    text.replace(at, from.size(), to);
     return text;
 }
 
@@ -82,7 +84,9 @@ std::string kim_jo_with(std::string_view from, std::string_view to)
 {
     std::string text = read_text(kim_jo_path());
     const auto at = text.find(from);
-    if (at != std::string::npos) { text.replace(at, from.size(), to); }
+    boost::ut::expect(boost::ut::fatal(at != std::string::npos))
+      << "fixture text to replace is missing: " << from;
+    text.replace(at, from.size(), to);
     return text;
 }
 
@@ -130,7 +134,9 @@ std::string collision_with(std::string_view from, std::string_view to)
 {
     std::string text = read_text(collision_path());
     const auto at = text.find(from);
-    if (at != std::string::npos) { text.replace(at, from.size(), to); }
+    boost::ut::expect(boost::ut::fatal(at != std::string::npos))
+      << "fixture text to replace is missing: " << from;
+    text.replace(at, from.size(), to);
     return text;
 }
 
@@ -139,7 +145,9 @@ std::string exchange_with(std::string_view from, std::string_view to)
 {
     std::string text = read_text(exchange_path());
     const auto at = text.find(from);
-    if (at != std::string::npos) { text.replace(at, from.size(), to); }
+    boost::ut::expect(boost::ut::fatal(at != std::string::npos))
+      << "fixture text to replace is missing: " << from;
+    text.replace(at, from.size(), to);
     return text;
 }
 
