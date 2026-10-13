@@ -1,6 +1,6 @@
 """Converts a GDTk collision-integral data file (cis['A:B'] = {pi_Omega_11 =
-{A=, B=, C=, D=}, pi_Omega_22 = {...}}) to a gaslib collision-integral file
-(format gaslib-collision-integrals-1, SI units).
+{A=, B=, C=, D=}, pi_Omega_22 = {...}}) to a canary collision-integral file
+(format canary-collision-integrals-1, SI units).
 
 GDTk's fits give pi Omega in Angstrom^2 as exp(D) T^(A (ln T)^2 + B ln T + C),
 that is ln(pi Omega) = A (ln T)^3 + B (ln T)^2 + C ln T + D; D is converted to
@@ -16,7 +16,7 @@ import json
 import math
 import re
 
-FORMAT = "gaslib-collision-integrals-1"
+FORMAT = "canary-collision-integrals-1"
 UNITS = {"temperature": "K", "area": "m^2"}
 
 

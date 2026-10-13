@@ -51,8 +51,8 @@ Checks: >
      mpi-*
     '
 
-# Diagnostics are reported for gaslib's own headers only.
-HeaderFilterRegex: '(include/gaslib|tests|benchmarks)/.*\.hpp$'
+# Diagnostics are reported for canary's own headers only.
+HeaderFilterRegex: '(include/canary|tests|benchmarks)/.*\.hpp$'
 HeaderFileExtensions:
   - ''
   - H

@@ -1,5 +1,5 @@
-#ifndef GASLIB_TESTS_TEST_SUITES_HPP
-#define GASLIB_TESTS_TEST_SUITES_HPP
+#ifndef CANARY_TESTS_TEST_SUITES_HPP
+#define CANARY_TESTS_TEST_SUITES_HPP
 
 // Each test source defines one function that registers its Boost.UT tests;
 // test_main.cpp calls them in order.
@@ -27,4 +27,4 @@ void test_energy_exchange();
 void test_multi_temperature_kinetics();
 void test_mixture_transport();
 
-#endif  // GASLIB_TESTS_TEST_SUITES_HPP
+#endif  // CANARY_TESTS_TEST_SUITES_HPP

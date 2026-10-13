@@ -1,5 +1,5 @@
 -- Test input in the layout of GDTk reaction-mechanism files, written for
--- gaslib's converter test. Rates: Kim and Jo, Int. J. Heat Mass Transf. 169
+-- canary's converter test. Rates: Kim and Jo, Int. J. Heat Mass Transf. 169
 -- (2021), and Park (1993), in CGS units; the fourth reaction uses Park's
 -- rate-controlling temperature T^s T_ve^(1 - s), and the last the electron
 -- temperature for both directions.

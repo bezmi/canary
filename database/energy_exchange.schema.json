@@ -392,5 +392,5 @@
       "vibration_electron",
       "electron_impact_ionisation"
    ],
-   "title": "gaslib::database::EnergyExchangeFile"
+   "title": "canary::database::EnergyExchangeFile"
 }

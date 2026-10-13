@@ -6,15 +6,15 @@
 #include <boost/ut.hpp>
 #include <cmath>
 #include <cstddef>
-#include <gaslib/build.hpp>
-#include <gaslib/data/air5.hpp>
-#include <gaslib/data/air5_kim_jo.hpp>
-#include <gaslib/models/calorically_perfect.hpp>
-#include <gaslib/models/thermally_perfect.hpp>
-#include <gaslib/quantity.hpp>
-#include <gaslib/reactions.hpp>
-#include <gaslib/species.hpp>
-#include <gaslib/units.hpp>
+#include <canary/build.hpp>
+#include <canary/data/air5.hpp>
+#include <canary/data/air5_kim_jo.hpp>
+#include <canary/models/calorically_perfect.hpp>
+#include <canary/models/thermally_perfect.hpp>
+#include <canary/quantity.hpp>
+#include <canary/reactions.hpp>
+#include <canary/species.hpp>
+#include <canary/units.hpp>
 #include <limits>
 #include <mdspan/mdspan.hpp>
 #include <random>
@@ -25,12 +25,12 @@
 namespace
 {
 
-using gaslib::scaled;
-using gaslib::si;
-using D = gaslib::test::Dual<double>;
-using Air = gaslib::Air5<double, si>;
-using AirScaled = gaslib::Air5<double, scaled>;
-using Mechanism = gaslib::Air5KimJo<double, si>;
+using canary::scaled;
+using canary::si;
+using D = canary::test::Dual<double>;
+using Air = canary::Air5<double, si>;
+using AirScaled = canary::Air5<double, scaled>;
+using Mechanism = canary::Air5KimJo<double, si>;
 using Extents = Kokkos::dextents<std::size_t, 1>;
 
 constexpr std::size_t species_count = 5;
@@ -39,11 +39,11 @@ using Fractions = std::array<double, species_count>;
 using PerReaction = std::array<double, reaction_count>;
 
 constexpr double atmosphere = 101325.0;
-constexpr double avogadro = gaslib::constants::avogadro<double>;
+constexpr double avogadro = canary::constants::avogadro<double>;
 // Universal gas constant of the reference implementation [J/(mol K)].
 constexpr double reference_gas_constant = 8.31451;
 
-const gaslib::UnitScales<double, scaled> reference_scales {
+const canary::UnitScales<double, scaled> reference_scales {
   .mass = 4.65e-26,
   .density = 1.0e-3,
   .temperature = 1000.0,
@@ -52,7 +52,7 @@ const gaslib::UnitScales<double, scaled> reference_scales {
 
 template <typename T> auto fractions(const std::array<T, species_count>& y)
 {
-    return gaslib::as_kind<gaslib::kind::mass_fraction>(
+    return canary::as_kind<canary::kind::mass_fraction>(
       Kokkos::mdspan<const T, Extents>(y.data(), species_count));
 }
 
@@ -123,11 +123,11 @@ template <typename M, typename G>
 Rates evaluate(const M& mech, const G& gas, const Fractions& y, double rho, double temp)
 {
     using U = M::units;
-    const auto mix = gaslib::mixture(gas, fractions(y));
-    const gaslib::Density<double, U> rho_q {rho};
-    const gaslib::Temperature<double, U> temp_q {temp};
-    const auto q = gaslib::rates_of_progress(mech, gas, mix, rho_q, temp_q);
-    const auto omega = gaslib::production_rates(mech, gas, mix, rho_q, temp_q);
+    const auto mix = canary::mixture(gas, fractions(y));
+    const canary::Density<double, U> rho_q {rho};
+    const canary::Temperature<double, U> temp_q {temp};
+    const auto q = canary::rates_of_progress(mech, gas, mix, rho_q, temp_q);
+    const auto omega = canary::production_rates(mech, gas, mix, rho_q, temp_q);
     Rates out {};
     for (std::size_t k = 0; k < reaction_count; ++k) {
         out.forward[k] = q.forward[k].value();
@@ -142,8 +142,8 @@ Rates evaluate(const M& mech, const G& gas, const Fractions& y, double rho, doub
 double
   equilibrium_constant(const Mechanism& mech, const Air& gas, std::size_t k, double temp, double p0)
 {
-    const double kb = gaslib::constants::boltzmann<double>;
-    const auto sp = gaslib::species_properties(gas, gaslib::Temperature<double, si> {temp});
+    const double kb = canary::constants::boltzmann<double>;
+    const auto sp = canary::species_properties(gas, canary::Temperature<double, si> {temp});
     double exponent = 0;
     int change = 0;
     for (std::size_t i = 0; i < species_count; ++i) {
@@ -158,7 +158,7 @@ template <typename F> std::string error_message(const F& f)
 {
     try {
         f();
-    } catch (const gaslib::ParameterError& error) {
+    } catch (const canary::ParameterError& error) {
         return error.what();
     }
     return "no exception";
@@ -166,28 +166,28 @@ template <typename F> std::string error_message(const F& f)
 
 }  // namespace
 
-static_assert(gaslib::HasSpeciesProperties<Air, double, 5>);
-static_assert(gaslib::HasSpeciesProperties<Air, float, 5>);
-static_assert(gaslib::HasSpeciesProperties<Air, D, 5>);
-static_assert(gaslib::HasSpeciesProperties<AirScaled, D, 5>);
-static_assert(!gaslib::HasSpeciesProperties<Air, double, 4>);
-static_assert(!gaslib::HasSpeciesProperties<gaslib::CaloricallyPerfect<double, si>, double, 1>);
-static_assert(gaslib::ReactingModel<Air, double, double, 5>);
-static_assert(gaslib::ReactingModel<Air, float, double, 5>);
-static_assert(gaslib::ReactingModel<Air, D, double, 5>);
+static_assert(canary::HasSpeciesProperties<Air, double, 5>);
+static_assert(canary::HasSpeciesProperties<Air, float, 5>);
+static_assert(canary::HasSpeciesProperties<Air, D, 5>);
+static_assert(canary::HasSpeciesProperties<AirScaled, D, 5>);
+static_assert(!canary::HasSpeciesProperties<Air, double, 4>);
+static_assert(!canary::HasSpeciesProperties<canary::CaloricallyPerfect<double, si>, double, 1>);
+static_assert(canary::ReactingModel<Air, double, double, 5>);
+static_assert(canary::ReactingModel<Air, float, double, 5>);
+static_assert(canary::ReactingModel<Air, D, double, 5>);
 static_assert(std::is_trivially_copyable_v<Mechanism>);
-static_assert(std::is_trivially_copyable_v<gaslib::Air5KimJo<float, scaled>>);
-static_assert(std::is_trivially_copyable_v<gaslib::RatesOfProgress<D, si, 13>>);
-static_assert(gaslib::air5_kim_jo.reactions.size() == 13);
+static_assert(std::is_trivially_copyable_v<canary::Air5KimJo<float, scaled>>);
+static_assert(std::is_trivially_copyable_v<canary::RatesOfProgress<D, si, 13>>);
+static_assert(canary::air5_kim_jo.reactions.size() == 13);
 
 void test_reactions()
 {
     using namespace boost::ut;
-    const gaslib::UnitScales<double, si> si_scales {};
-    const auto built = gaslib::make_air5<double>(si_scales);
+    const canary::UnitScales<double, si> si_scales {};
+    const auto built = canary::make_air5<double>(si_scales);
     const Air& gas = built.model;
     const Mechanism mech =
-      gaslib::make_air5_kim_jo(built.species, si_scales, gaslib::Pressure<double, si> {atmosphere});
+      canary::make_air5_kim_jo(built.species, si_scales, canary::Pressure<double, si> {atmosphere});
 
     "the builder converts rate constants to per-particle units"_test = [&] {
         // N2 + N2 <=> N + N + N2: order 2. NO + M <=> N + O + M: order 2.
@@ -212,17 +212,17 @@ void test_reactions()
         // writes the third-body efficiency of NO, N and O in
         // NO + M <=> N + O + M to 7 significant digits (0.6648276); the file
         // keeps the source value 0.664827586.
-        auto input = gaslib::air5_kim_jo;
+        auto input = canary::air5_kim_jo;
         for (std::size_t e = 2; e < 5; ++e) {
             input.reactions[10].efficiencies.entries[e].value = 0.6648276;
         }
-        const Mechanism reference_mech = gaslib::make_reaction_mechanism(
+        const Mechanism reference_mech = canary::make_reaction_mechanism(
           input,
           std::array<std::string_view, 5> {"N2", "O2", "N", "O", "NO"},
           built.species,
           si_scales,
-          gaslib::Pressure<double, si> {atmosphere});
-        const double r = gaslib::constants::universal_gas_constant<double> / reference_gas_constant;
+          canary::Pressure<double, si> {atmosphere});
+        const double r = canary::constants::universal_gas_constant<double> / reference_gas_constant;
         for (const ReferenceState& s : reference_states) {
             const Rates got = evaluate(reference_mech, gas, s.y, s.rho, s.temp);
             PerReaction forward {};
@@ -318,7 +318,7 @@ void test_reactions()
       };
 
     "the default standard pressure is 1 bar"_test = [&] {
-        const Mechanism bar = gaslib::make_air5_kim_jo(built.species, si_scales);
+        const Mechanism bar = canary::make_air5_kim_jo(built.species, si_scales);
         expect(bar.standard_pressure.value() == 1.0e5);
         const ReferenceState& s = reference_states[1];
         const Rates a = evaluate(bar, gas, s.y, s.rho, s.temp);
@@ -334,7 +334,7 @@ void test_reactions()
     };
 
     "rates outside the temperature limits are those at the limits"_test = [&] {
-        const gaslib::Density<double, si> rho {0.01};
+        const canary::Density<double, si> rho {0.01};
         for (const auto& [outside, limit] :
              {std::array {250.0, 300.0}, std::array {4.0e4, 3.0e4}}) {
             const Rates a = evaluate(mech, gas, reference_states[1].y, rho.value(), outside);
@@ -343,19 +343,19 @@ void test_reactions()
                    a.production == b.production)
               << outside;
             const std::array<D, species_count> y_d {0.6, 0.1, 0.1, 0.15, 0.05};
-            const auto mix_d = gaslib::mixture(gas, fractions(y_d));
-            const gaslib::Density<D, si> rho_d {D(rho.value())};
-            const auto q = gaslib::rates_of_progress(mech,
+            const auto mix_d = canary::mixture(gas, fractions(y_d));
+            const canary::Density<D, si> rho_d {D(rho.value())};
+            const auto q = canary::rates_of_progress(mech,
                                                      gas,
                                                      mix_d,
                                                      rho_d,
-                                                     gaslib::Temperature<D, si> {D(outside, 1.0)});
+                                                     canary::Temperature<D, si> {D(outside, 1.0)});
             const auto omega =
-              gaslib::production_rates(mech,
+              canary::production_rates(mech,
                                        gas,
                                        mix_d,
                                        rho_d,
-                                       gaslib::Temperature<D, si> {D(outside, 1.0)});
+                                       canary::Temperature<D, si> {D(outside, 1.0)});
             for (std::size_t k = 0; k < reaction_count; ++k) {
                 expect(q.forward[k].value().dual() == 0.0 && q.backward[k].value().dual() == 0.0);
                 expect(q.forward[k].value().real() == a.forward[k]);
@@ -376,15 +376,15 @@ void test_reactions()
                                                T temp) {
                 T rho = partial[0];
                 for (std::size_t j = 1; j < species_count; ++j) { rho = rho + partial[j]; }
-                const auto view = gaslib::as_kind<gaslib::kind::density, si>(
+                const auto view = canary::as_kind<canary::kind::density, si>(
                   Kokkos::mdspan<const T, Extents>(partial.data(), species_count));
-                const gaslib::Density<T, si> rho_q {rho};
-                const auto mix = gaslib::mixture(gas, view, rho_q);
-                return gaslib::production_rates(mech,
+                const canary::Density<T, si> rho_q {rho};
+                const auto mix = canary::mixture(gas, view, rho_q);
+                return canary::production_rates(mech,
                                                 gas,
                                                 mix,
                                                 rho_q,
-                                                gaslib::Temperature<T, si> {temp});
+                                                canary::Temperature<T, si> {temp});
             };
             // Columns 0 to 4: d/d(rho_j); column 5: d/dT.
             for (std::size_t c = 0; c <= species_count; ++c) {
@@ -417,36 +417,36 @@ void test_reactions()
     };
 
     "a scaled mechanism gives the SI rates after conversion"_test = [&] {
-        const auto built_s = gaslib::make_air5<double>(reference_scales);
-        const auto mech_s = gaslib::make_air5_kim_jo(
+        const auto built_s = canary::make_air5<double>(reference_scales);
+        const auto mech_s = canary::make_air5_kim_jo(
           built_s.species,
           reference_scales,
-          gaslib::convert<scaled>(gaslib::Pressure<double, si> {atmosphere}, reference_scales));
+          canary::convert<scaled>(canary::Pressure<double, si> {atmosphere}, reference_scales));
         for (const ReferenceState& s : reference_states) {
-            const auto mix = gaslib::mixture(gas, fractions(s.y));
-            const auto mix_s = gaslib::mixture(built_s.model, fractions(s.y));
-            const gaslib::Density<double, si> rho {s.rho};
-            const gaslib::Temperature<double, si> temp {s.temp};
-            const auto rho_s = gaslib::convert<scaled>(rho, reference_scales);
-            const auto temp_s = gaslib::convert<scaled>(temp, reference_scales);
-            const auto q = gaslib::rates_of_progress(mech, gas, mix, rho, temp);
-            const auto q_s = gaslib::rates_of_progress(mech_s, built_s.model, mix_s, rho_s, temp_s);
+            const auto mix = canary::mixture(gas, fractions(s.y));
+            const auto mix_s = canary::mixture(built_s.model, fractions(s.y));
+            const canary::Density<double, si> rho {s.rho};
+            const canary::Temperature<double, si> temp {s.temp};
+            const auto rho_s = canary::convert<scaled>(rho, reference_scales);
+            const auto temp_s = canary::convert<scaled>(temp, reference_scales);
+            const auto q = canary::rates_of_progress(mech, gas, mix, rho, temp);
+            const auto q_s = canary::rates_of_progress(mech_s, built_s.model, mix_s, rho_s, temp_s);
             // The Gibbs energies of the scaled thermo model differ from the
             // SI ones by up to 6e-13 relative at 30000 K; in K_c they are
             // multiplied by m / (k_B T), about 40.
             for (std::size_t k = 0; k < reaction_count; ++k) {
-                const double f = gaslib::convert<si>(q_s.forward[k], reference_scales).value();
-                const double b = gaslib::convert<si>(q_s.backward[k], reference_scales).value();
+                const double f = canary::convert<si>(q_s.forward[k], reference_scales).value();
+                const double b = canary::convert<si>(q_s.backward[k], reference_scales).value();
                 expect(relative(f, q.forward[k].value(), 1.0e-12)) << s.temp << k;
                 expect(relative(b, q.backward[k].value(), 1.0e-10)) << s.temp << k;
             }
-            const auto omega = gaslib::production_rates(mech, gas, mix, rho, temp);
+            const auto omega = canary::production_rates(mech, gas, mix, rho, temp);
             const auto omega_s =
-              gaslib::production_rates(mech_s, built_s.model, mix_s, rho_s, temp_s);
+              canary::production_rates(mech_s, built_s.model, mix_s, rho_s, temp_s);
             double scale = 0;
             for (const auto w : omega) { scale = std::max(scale, std::abs(w.value())); }
             for (std::size_t i = 0; i < species_count; ++i) {
-                const double w = gaslib::convert<si>(omega_s[i], reference_scales).value();
+                const double w = canary::convert<si>(omega_s[i], reference_scales).value();
                 expect(std::abs(w - omega[i].value()) <= 1.0e-12 * scale)
                   << s.temp << i << w << omega[i].value();
             }
@@ -458,13 +458,13 @@ void test_reactions()
             const ReferenceState& s = reference_states[state];
             std::array<float, species_count> y {};
             for (std::size_t i = 0; i < species_count; ++i) { y[i] = static_cast<float>(s.y[i]); }
-            const auto mix = gaslib::mixture(gas, fractions(y));
+            const auto mix = canary::mixture(gas, fractions(y));
             const auto omega =
-              gaslib::production_rates(mech,
+              canary::production_rates(mech,
                                        gas,
                                        mix,
-                                       gaslib::Density<float, si> {static_cast<float>(s.rho)},
-                                       gaslib::Temperature<float, si> {static_cast<float>(s.temp)});
+                                       canary::Density<float, si> {static_cast<float>(s.rho)},
+                                       canary::Temperature<float, si> {static_cast<float>(s.temp)});
             const Rates ref = evaluate(mech, gas, s.y, s.rho, s.temp);
             double scale = 0;
             for (const double w : ref.production) { scale = std::max(scale, std::abs(w)); }
@@ -476,34 +476,34 @@ void test_reactions()
     };
 
     "a float-parameter scaled mechanism gives the SI rates within float precision"_test = [&] {
-        const gaslib::UnitScales<float, scaled> scales_f {
+        const canary::UnitScales<float, scaled> scales_f {
           .mass = 4.65e-26F,
           .density = 1.0e-3F,
           .temperature = 1000.0F,
           .length = 1.0F,
         };
-        const auto built_f = gaslib::make_air5<float>(scales_f);
-        const auto mech_f = gaslib::make_air5_kim_jo(
+        const auto built_f = canary::make_air5<float>(scales_f);
+        const auto mech_f = canary::make_air5_kim_jo(
           built_f.species,
           scales_f,
-          gaslib::convert<scaled>(gaslib::Pressure<float, si> {101325.0F}, scales_f));
+          canary::convert<scaled>(canary::Pressure<float, si> {101325.0F}, scales_f));
         for (const std::size_t state : {std::size_t {1}, std::size_t {2}}) {
             const ReferenceState& s = reference_states[state];
             std::array<float, species_count> y {};
             for (std::size_t i = 0; i < species_count; ++i) { y[i] = static_cast<float>(s.y[i]); }
-            const auto omega = gaslib::production_rates(
+            const auto omega = canary::production_rates(
               mech_f,
               built_f.model,
-              gaslib::mixture(built_f.model, fractions(y)),
-              gaslib::convert<scaled>(gaslib::Density<float, si> {static_cast<float>(s.rho)},
+              canary::mixture(built_f.model, fractions(y)),
+              canary::convert<scaled>(canary::Density<float, si> {static_cast<float>(s.rho)},
                                       scales_f),
-              gaslib::convert<scaled>(gaslib::Temperature<float, si> {static_cast<float>(s.temp)},
+              canary::convert<scaled>(canary::Temperature<float, si> {static_cast<float>(s.temp)},
                                       scales_f));
             const Rates ref = evaluate(mech, gas, s.y, s.rho, s.temp);
             double scale = 0;
             for (const double w : ref.production) { scale = std::max(scale, std::abs(w)); }
             for (std::size_t i = 0; i < species_count; ++i) {
-                const double w = gaslib::convert<si>(omega[i], scales_f).value();
+                const double w = canary::convert<si>(omega[i], scales_f).value();
                 expect(std::abs(w - ref.production[i]) <= 1.0e-3 * scale)
                   << state << i << w << ref.production[i];
             }
@@ -511,8 +511,8 @@ void test_reactions()
     };
 
     "the builder rejects invalid input with the reaction in the message"_test = [&] {
-        const auto build = [&](const gaslib::MechanismInput<13, 5>& input) {
-            (void)gaslib::make_reaction_mechanism(
+        const auto build = [&](const canary::MechanismInput<13, 5>& input) {
+            (void)canary::make_reaction_mechanism(
               input,
               std::array<std::string_view, 5> {"N2", "O2", "N", "O", "NO"},
               built.species,
@@ -521,13 +521,13 @@ void test_reactions()
         const auto starts = [](const std::string& message, std::string_view prefix) {
             return message.starts_with(prefix);
         };
-        auto input = gaslib::air5_kim_jo;
+        auto input = canary::air5_kim_jo;
         input.reactions[3].reactants.entries[1].name = "Ar";
         std::string message = error_message([&] { build(input); });
         expect(starts(message, "reaction 3 (N2 + N <=> N + N + N): unknown species \"Ar\""))
           << message;
 
-        input = gaslib::air5_kim_jo;
+        input = canary::air5_kim_jo;
         input.reactions[5].forward.A = -1.0;
         message = error_message([&] { build(input); });
         expect(starts(message, "reaction 5 (O2 + N2 <=> O + O + N2): forward rate: A must be"))
@@ -537,42 +537,42 @@ void test_reactions()
         input.reactions[5].forward.A = std::numeric_limits<double>::infinity();
         expect(starts(error_message([&] { build(input); }), "reaction 5"));
 
-        input = gaslib::air5_kim_jo;
+        input = canary::air5_kim_jo;
         input.reactions[1].forward.activation_temperature = -1.0;
         expect(starts(error_message([&] { build(input); }), "reaction 1"));
-        input = gaslib::air5_kim_jo;
+        input = canary::air5_kim_jo;
         input.reactions[1].forward.n = std::numeric_limits<double>::quiet_NaN();
         expect(starts(error_message([&] { build(input); }), "reaction 1"));
-        input = gaslib::air5_kim_jo;
+        input = canary::air5_kim_jo;
         input.reactions[0].reactants.entries[0].value = 1.5;
         expect(starts(error_message([&] { build(input); }), "reaction 0"));
-        input = gaslib::air5_kim_jo;
+        input = canary::air5_kim_jo;
         input.reactions[0].products.count = 0;
         expect(starts(error_message([&] { build(input); }), "reaction 0"));
-        input = gaslib::air5_kim_jo;
+        input = canary::air5_kim_jo;
         input.reactions[1].reactants.entries[1].name = "N2";
         expect(starts(error_message([&] { build(input); }), "reaction 1"));
-        input = gaslib::air5_kim_jo;
+        input = canary::air5_kim_jo;
         input.reactions[10].efficiencies.entries[0].value = -1.0;
         expect(starts(error_message([&] { build(input); }), "reaction 10"));
-        input = gaslib::air5_kim_jo;
+        input = canary::air5_kim_jo;
         input.reactions[10].third_body = false;
         expect(starts(error_message([&] { build(input); }), "reaction 10"));
-        input = gaslib::air5_kim_jo;
-        input.reactions[11].backward_model = gaslib::BackwardRateModel::arrhenius;
+        input = canary::air5_kim_jo;
+        input.reactions[11].backward_model = canary::BackwardRateModel::arrhenius;
         expect(starts(error_message([&] { build(input); }),
                       "reaction 11 (NO + O <=> O2 + N): backward rate"));
 
         for (const double s : {-0.1, 1.1, std::numeric_limits<double>::quiet_NaN()}) {
-            input = gaslib::air5_kim_jo;
+            input = canary::air5_kim_jo;
             input.reactions[2].forward.translational_exponent = s;
             message = error_message([&] { build(input); });
             expect(starts(message,
                           "reaction 2 (N2 + NO <=> N + N + NO): forward rate: translational "
                           "exponent must be finite and between 0 and 1"))
               << message;
-            input = gaslib::air5_kim_jo;
-            input.reactions[11].backward_model = gaslib::BackwardRateModel::arrhenius;
+            input = canary::air5_kim_jo;
+            input.reactions[11].backward_model = canary::BackwardRateModel::arrhenius;
             input.reactions[11].backward = input.reactions[11].forward;
             input.reactions[11].backward.translational_exponent = s;
             message = error_message([&] { build(input); });
@@ -581,26 +581,26 @@ void test_reactions()
               << message;
         }
         // An equilibrium backward rate ignores its Arrhenius input.
-        input = gaslib::air5_kim_jo;
+        input = canary::air5_kim_jo;
         input.reactions[11].backward.translational_exponent = 2.0;
         build(input);
 
-        input = gaslib::air5_kim_jo;
+        input = canary::air5_kim_jo;
         input.temperature_lower = 40000.0;
         expect(starts(error_message([&] { build(input); }), "temperature limits"));
         expect(starts(error_message([&] {
-                          (void)gaslib::make_air5_kim_jo(built.species,
+                          (void)canary::make_air5_kim_jo(built.species,
                                                          si_scales,
-                                                         gaslib::Pressure<double, si> {0.0});
+                                                         canary::Pressure<double, si> {0.0});
                       }),
                       "standard pressure"));
         auto species = built.species;
         species.n = 4;
-        expect(starts(error_message([&] { (void)gaslib::make_air5_kim_jo(species, si_scales); }),
+        expect(starts(error_message([&] { (void)canary::make_air5_kim_jo(species, si_scales); }),
                       "species data"));
         expect(starts(error_message([&] {
-                          (void)gaslib::make_reaction_mechanism(
-                            gaslib::air5_kim_jo,
+                          (void)canary::make_reaction_mechanism(
+                            canary::air5_kim_jo,
                             std::array<std::string_view, 5> {"N2", "O2", "N", "N2", "NO"},
                             built.species,
                             si_scales);

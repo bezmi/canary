@@ -1,4 +1,4 @@
-"""Shared output structure of gaslib species files (format gaslib-species-1).
+"""Shared output structure of canary species files (format canary-species-1).
 
 Numbers are written by Python's json module in the shortest form that reads
 back to the same double. Decimal strings from source files are converted with
@@ -9,7 +9,7 @@ rounding, so that "28.0134" g/mol and "28.0134e-3" kg/mol give the same double.
 import json
 from decimal import Decimal
 
-FORMAT = "gaslib-species-1"
+FORMAT = "canary-species-1"
 UNITS = {"molar_mass": "kg/mol", "energy": "J/mol", "temperature": "K", "length": "m"}
 
 

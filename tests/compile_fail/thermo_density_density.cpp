@@ -1,16 +1,16 @@
 // Two densities do not determine a state.
 #include "test_models.hpp"
 
-#include <gaslib/thermo.hpp>
+#include <canary/thermo.hpp>
 
 namespace
 {
-constexpr gaslib::test::IdealGas gas {{gaslib::SpecificGasConstant<double, gaslib::si> {287.0},
-                                       gaslib::SpecificHeat<double, gaslib::si> {717.5}}};
-constexpr gaslib::Density<double, gaslib::si> rho {1.2};
+constexpr canary::test::IdealGas gas {{canary::SpecificGasConstant<double, canary::si> {287.0},
+                                       canary::SpecificHeat<double, canary::si> {717.5}}};
+constexpr canary::Density<double, canary::si> rho {1.2};
 }  // namespace
 
-#ifdef GASLIB_COMPILE_FAIL
-auto bad = gaslib::thermo_state(gas, rho, rho);
+#ifdef CANARY_COMPILE_FAIL
+auto bad = canary::thermo_state(gas, rho, rho);
 #endif
-auto good = gaslib::thermo_state(gas, rho, gaslib::Temperature<double, gaslib::si> {300.0});
+auto good = canary::thermo_state(gas, rho, canary::Temperature<double, canary::si> {300.0});

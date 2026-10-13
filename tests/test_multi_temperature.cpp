@@ -6,20 +6,20 @@
 #include <boost/ut.hpp>
 #include <cmath>
 #include <cstddef>
-#include <gaslib/build.hpp>
-#include <gaslib/data/air11.hpp>
-#include <gaslib/data/air11_species.hpp>
-#include <gaslib/data/air5.hpp>
-#include <gaslib/data/air5_electronic.hpp>
-#include <gaslib/models/multi_temperature.hpp>
-#include <gaslib/models/thermally_perfect.hpp>
-#include <gaslib/models/two_temperature.hpp>
-#include <gaslib/quantity.hpp>
-#include <gaslib/species.hpp>
-#include <gaslib/state.hpp>
-#include <gaslib/status.hpp>
-#include <gaslib/thermo.hpp>
-#include <gaslib/units.hpp>
+#include <canary/build.hpp>
+#include <canary/data/air11.hpp>
+#include <canary/data/air11_species.hpp>
+#include <canary/data/air5.hpp>
+#include <canary/data/air5_electronic.hpp>
+#include <canary/models/multi_temperature.hpp>
+#include <canary/models/thermally_perfect.hpp>
+#include <canary/models/two_temperature.hpp>
+#include <canary/quantity.hpp>
+#include <canary/species.hpp>
+#include <canary/state.hpp>
+#include <canary/status.hpp>
+#include <canary/thermo.hpp>
+#include <canary/units.hpp>
 #include <limits>
 #include <mdspan/mdspan.hpp>
 #include <string>
@@ -28,26 +28,26 @@
 namespace
 {
 
-using gaslib::scaled;
-using gaslib::si;
-using gaslib::Status;
-using D = gaslib::test::Dual<double>;
-using Rho = gaslib::Density<double, si>;
-using E = gaslib::SpecificEnergy<double, si>;
-using RhoE = gaslib::EnergyDensity<double, si>;
-using P = gaslib::Pressure<double, si>;
-using Temp = gaslib::Temperature<double, si>;
+using canary::scaled;
+using canary::si;
+using canary::Status;
+using D = canary::test::Dual<double>;
+using Rho = canary::Density<double, si>;
+using E = canary::SpecificEnergy<double, si>;
+using RhoE = canary::EnergyDensity<double, si>;
+using P = canary::Pressure<double, si>;
+using Temp = canary::Temperature<double, si>;
 using Extents = Kokkos::dextents<std::size_t, 1>;
-using Air4 = gaslib::Air5FourTemperature<double, si>;
-using Air4Scaled = gaslib::Air5FourTemperature<double, scaled>;
-using Air11 = gaslib::Air11ThreeTemperature<double, si>;
-using Air11Scaled = gaslib::Air11ThreeTemperature<double, scaled>;
+using Air4 = canary::Air5FourTemperature<double, si>;
+using Air4Scaled = canary::Air5FourTemperature<double, scaled>;
+using Air11 = canary::Air11ThreeTemperature<double, si>;
+using Air11Scaled = canary::Air11ThreeTemperature<double, scaled>;
 
 constexpr double eps = std::numeric_limits<double>::epsilon();
 // Relative tolerance of the temperature solves (the model default).
 constexpr double solve_tolerance = 1.0e-10;
 
-const gaslib::UnitScales<double, scaled> reference_scales {
+const canary::UnitScales<double, scaled> reference_scales {
   .mass = 4.65e-26,
   .density = 1.0e-3,
   .temperature = 1000.0,
@@ -56,21 +56,21 @@ const gaslib::UnitScales<double, scaled> reference_scales {
 
 template <typename T, std::size_t N> auto fractions(const std::array<T, N>& y)
 {
-    return gaslib::as_kind<gaslib::kind::mass_fraction>(
+    return canary::as_kind<canary::kind::mass_fraction>(
       Kokkos::mdspan<const T, Extents>(y.data(), N));
 }
 
-template <gaslib::UnitSystem U, typename T, std::size_t M>
+template <canary::UnitSystem U, typename T, std::size_t M>
 auto mode_temperatures(const std::array<T, M>& t_m)
 {
-    return gaslib::as_kind<gaslib::kind::mode_temperature, U>(
+    return canary::as_kind<canary::kind::mode_temperature, U>(
       Kokkos::mdspan<const T, Extents>(t_m.data(), M));
 }
 
-template <gaslib::UnitSystem U, typename T, std::size_t M>
+template <canary::UnitSystem U, typename T, std::size_t M>
 auto mode_energy_densities(const std::array<T, M>& rho_e_m)
 {
-    return gaslib::as_kind<gaslib::kind::mode_energy_density, U>(
+    return canary::as_kind<canary::kind::mode_energy_density, U>(
       Kokkos::mdspan<const T, Extents>(rho_e_m.data(), M));
 }
 
@@ -277,45 +277,45 @@ template <typename Build> std::string builder_error(Build build)
 {
     try {
         build();
-    } catch (const gaslib::ParameterError& error) {
+    } catch (const canary::ParameterError& error) {
         return error.what();
     }
     return "no exception";
 }
 
-std::string air11_error(const std::array<gaslib::Nasa9Species<4>, 11>& species,
+std::string air11_error(const std::array<canary::Nasa9Species<4>, 11>& species,
                         const std::array<int, 11>& degrees,
-                        const std::array<gaslib::ElectronicLevelsInput<8>, 11>& levels,
-                        const std::array<gaslib::EnergyModeInput<11>, 2>& modes)
+                        const std::array<canary::ElectronicLevelsInput<8>, 11>& levels,
+                        const std::array<canary::EnergyModeInput<11>, 2>& modes)
 {
     return builder_error([&] {
-        gaslib::make_multi_temperature_mixture(species,
+        canary::make_multi_temperature_mixture(species,
                                                degrees,
                                                levels,
                                                modes,
-                                               gaslib::UnitScales<double, si> {});
+                                               canary::UnitScales<double, si> {});
     });
 }
 
-std::string air11_modes_error(const std::array<gaslib::EnergyModeInput<11>, 2>& modes)
+std::string air11_modes_error(const std::array<canary::EnergyModeInput<11>, 2>& modes)
 {
-    return air11_error(gaslib::air11_species,
-                       gaslib::air11_rotational_degrees,
-                       gaslib::air11_electronic_levels,
+    return air11_error(canary::air11_species,
+                       canary::air11_rotational_degrees,
+                       canary::air11_electronic_levels,
                        modes);
 }
 
-std::string air11_levels_error(const std::array<gaslib::ElectronicLevelsInput<8>, 11>& levels)
+std::string air11_levels_error(const std::array<canary::ElectronicLevelsInput<8>, 11>& levels)
 {
-    return air11_error(gaslib::air11_species,
-                       gaslib::air11_rotational_degrees,
+    return air11_error(canary::air11_species,
+                       canary::air11_rotational_degrees,
                        levels,
-                       gaslib::air11_three_temperature_modes);
+                       canary::air11_three_temperature_modes);
 }
 
 // Long-double evaluation of eps(T) = R sum(g theta exp(-theta / T)) /
 // sum(g exp(-theta / T)) from the model's levels.
-long double direct_electronic_energy(const gaslib::ElectronicLevels<double, si, 8>& levels,
+long double direct_electronic_energy(const canary::ElectronicLevels<double, si, 8>& levels,
                                      double r,
                                      long double t)
 {
@@ -368,84 +368,84 @@ void check_inversion(const G& gas,
                      const std::array<std::array<double, M>, 3>& mode_sets)
 {
     using namespace boost::ut;
-    const auto mix = gaslib::mixture(gas, fractions(y));
-    const auto values = gaslib::detail::fraction_values(mix);
+    const auto mix = canary::mixture(gas, fractions(y));
+    const auto values = canary::detail::fraction_values(mix);
     for (const double rho_value : densities) {
         for (const double t : temperatures) {
             for (const auto& t_m : mode_sets) {
                 const Rho rho {rho_value};
                 const auto base =
-                  gaslib::thermo_state(gas, mix, rho, Temp {t}, mode_temperatures<si>(t_m));
+                  canary::thermo_state(gas, mix, rho, Temp {t}, mode_temperatures<si>(t_m));
                 expect(base.status == Status::Valid);
                 std::array<double, M> rho_e_m {};
                 std::array<double, M> solved_t_m {};
                 for (std::size_t m = 0; m < M; ++m) {
                     rho_e_m[m] = rho_value * base.state.mode_e[m].value();
-                    solved_t_m[m] = gaslib::detail::mode_present(gas, values, m) ? t_m[m] : t;
+                    solved_t_m[m] = canary::detail::mode_present(gas, values, m) ? t_m[m] : t;
                 }
                 const auto temps = mode_temperatures<si>(t_m);
                 const auto energies = mode_energy_densities<si>(rho_e_m);
                 const E e = base.state.e;
                 const P p = base.state.p;
                 const auto& s = base.state;
-                check_state(gaslib::thermo_state(gas, mix, rho, e, temps),
+                check_state(canary::thermo_state(gas, mix, rho, e, temps),
                             s,
                             t_m,
                             solve_tolerance,
                             "rho e T_m");
-                check_state(gaslib::thermo_state(gas, mix, rho, p, temps),
+                check_state(canary::thermo_state(gas, mix, rho, p, temps),
                             s,
                             t_m,
                             solve_tolerance,
                             "rho p T_m");
-                check_state(gaslib::thermo_state(gas, mix, p, Temp {t}, temps),
+                check_state(canary::thermo_state(gas, mix, p, Temp {t}, temps),
                             s,
                             t_m,
                             solve_tolerance,
                             "p T T_m");
-                check_state(gaslib::thermo_state(gas, mix, rho, e, energies),
+                check_state(canary::thermo_state(gas, mix, rho, e, energies),
                             s,
                             solved_t_m,
                             solve_tolerance,
                             "rho e e_m");
                 check_state(
-                  gaslib::thermo_state(gas, mix, rho, RhoE {rho_value * e.value()}, energies),
+                  canary::thermo_state(gas, mix, rho, RhoE {rho_value * e.value()}, energies),
                   s,
                   solved_t_m,
                   solve_tolerance,
                   "rho rho_e e_m");
-                check_state(gaslib::thermo_state(gas, mix, rho, p, energies),
+                check_state(canary::thermo_state(gas, mix, rho, p, energies),
                             s,
                             solved_t_m,
                             solve_tolerance,
                             "rho p e_m");
-                check_state(gaslib::thermo_state(gas, mix, rho, Temp {t}, energies),
+                check_state(canary::thermo_state(gas, mix, rho, Temp {t}, energies),
                             s,
                             solved_t_m,
                             solve_tolerance,
                             "rho T e_m");
-                check_state(gaslib::thermo_state(gas, mix, p, Temp {t}, energies),
+                check_state(canary::thermo_state(gas, mix, p, Temp {t}, energies),
                             s,
                             solved_t_m,
                             solve_tolerance,
                             "p T e_m");
                 if (std::all_of(t_m.begin(), t_m.end(), [t](double x) { return x == t; })) {
-                    check_state(gaslib::thermo_state(gas, mix, rho, e),
+                    check_state(canary::thermo_state(gas, mix, rho, e),
                                 s,
                                 t_m,
                                 solve_tolerance,
                                 "rho e");
-                    check_state(gaslib::thermo_state(gas, mix, rho, p),
+                    check_state(canary::thermo_state(gas, mix, rho, p),
                                 s,
                                 t_m,
                                 solve_tolerance,
                                 "rho p");
-                    check_state(gaslib::thermo_state(gas, mix, rho, Temp {t}),
+                    check_state(canary::thermo_state(gas, mix, rho, Temp {t}),
                                 s,
                                 t_m,
                                 solve_tolerance,
                                 "rho T");
-                    check_state(gaslib::thermo_state(gas, mix, p, Temp {t}),
+                    check_state(canary::thermo_state(gas, mix, p, Temp {t}),
                                 s,
                                 t_m,
                                 solve_tolerance,
@@ -472,8 +472,8 @@ void check_derivatives(const G& gas,
     const auto evaluate = [&](double temp,
                               const std::array<double, M>& modes,
                               const std::array<double, N>& fractions_value) {
-        const auto mix = gaslib::mixture(gas, fractions(fractions_value));
-        const auto c = gaslib::thermo_state(gas,
+        const auto mix = canary::mixture(gas, fractions(fractions_value));
+        const auto c = canary::thermo_state(gas,
                                             mix,
                                             Rho {rho_value},
                                             Temp {temp},
@@ -482,7 +482,7 @@ void check_derivatives(const G& gas,
         out[0] = c.state.e.value();
         for (std::size_t m = 0; m < M; ++m) { out[1 + m] = c.state.mode_e[m].value(); }
         out[M + 1] = c.state.p.value();
-        out[M + 2] = gaslib::properties(gas, mix, c.state).sound_speed.value();
+        out[M + 2] = canary::properties(gas, mix, c.state).sound_speed.value();
         return out;
     };
     // The same with dual numbers, seeded in T (variable 0), T_m (1 + m) or
@@ -494,18 +494,18 @@ void check_derivatives(const G& gas,
         }
         std::array<D, M> t_m_d {};
         for (std::size_t m = 0; m < M; ++m) { t_m_d[m] = D(t_m[m], variable == 1 + m ? 1.0 : 0.0); }
-        const auto mix = gaslib::mixture(gas, fractions(y_d));
+        const auto mix = canary::mixture(gas, fractions(y_d));
         const auto c =
-          gaslib::thermo_state(gas,
+          canary::thermo_state(gas,
                                mix,
-                               gaslib::Density<D, si> {D(rho_value)},
-                               gaslib::Temperature<D, si> {D(t, variable == 0 ? 1.0 : 0.0)},
+                               canary::Density<D, si> {D(rho_value)},
+                               canary::Temperature<D, si> {D(t, variable == 0 ? 1.0 : 0.0)},
                                mode_temperatures<si>(t_m_d));
         std::array<double, M + 3> out {};
         out[0] = c.state.e.value().dual();
         for (std::size_t m = 0; m < M; ++m) { out[1 + m] = c.state.mode_e[m].value().dual(); }
         out[M + 1] = c.state.p.value().dual();
-        out[M + 2] = gaslib::properties(gas, mix, c.state).sound_speed.value().dual();
+        out[M + 2] = canary::properties(gas, mix, c.state).sound_speed.value().dual();
         return out;
     };
     const auto base = evaluate(t, t_m, y);
@@ -557,22 +557,22 @@ void check_derivatives(const G& gas,
 
 }  // namespace
 
-static_assert(gaslib::ThermoStateOf<Air4::State<double>, double, si>);
-static_assert(gaslib::GasModel<Air4, double>);
-static_assert(gaslib::MixtureGasModel<Air4, double>);
-static_assert(gaslib::MultiTemperatureGasModel<Air4, double>);
-static_assert(gaslib::MultiTemperatureGasModel<Air4, float>);
-static_assert(gaslib::MultiTemperatureGasModel<Air4, D>);
-static_assert(gaslib::MultiTemperatureGasModel<Air4Scaled, double>);
-static_assert(gaslib::MultiTemperatureGasModel<Air11, double>);
-static_assert(gaslib::MultiTemperatureGasModel<Air11, float>);
-static_assert(gaslib::MultiTemperatureGasModel<Air11, D>);
-static_assert(gaslib::MultiTemperatureGasModel<Air11Scaled, D>);
-static_assert(gaslib::AcceptsInput<Air4, gaslib::ModeTemperatureView<double, si>>);
-static_assert(gaslib::AcceptsInput<Air4, gaslib::ModeEnergyDensityView<double, si>>);
-static_assert(!gaslib::AcceptsInput<Air4Scaled, gaslib::ModeEnergyDensityView<double, si>>);
-static_assert(std::is_same_v<Air4::State<double>, gaslib::MultiTemperatureState<double, si, 3>>);
-static_assert(std::is_same_v<Air11::State<D>, gaslib::MultiTemperatureState<D, si, 2>>);
+static_assert(canary::ThermoStateOf<Air4::State<double>, double, si>);
+static_assert(canary::GasModel<Air4, double>);
+static_assert(canary::MixtureGasModel<Air4, double>);
+static_assert(canary::MultiTemperatureGasModel<Air4, double>);
+static_assert(canary::MultiTemperatureGasModel<Air4, float>);
+static_assert(canary::MultiTemperatureGasModel<Air4, D>);
+static_assert(canary::MultiTemperatureGasModel<Air4Scaled, double>);
+static_assert(canary::MultiTemperatureGasModel<Air11, double>);
+static_assert(canary::MultiTemperatureGasModel<Air11, float>);
+static_assert(canary::MultiTemperatureGasModel<Air11, D>);
+static_assert(canary::MultiTemperatureGasModel<Air11Scaled, D>);
+static_assert(canary::AcceptsInput<Air4, canary::ModeTemperatureView<double, si>>);
+static_assert(canary::AcceptsInput<Air4, canary::ModeEnergyDensityView<double, si>>);
+static_assert(!canary::AcceptsInput<Air4Scaled, canary::ModeEnergyDensityView<double, si>>);
+static_assert(std::is_same_v<Air4::State<double>, canary::MultiTemperatureState<double, si, 3>>);
+static_assert(std::is_same_v<Air11::State<D>, canary::MultiTemperatureState<D, si, 2>>);
 static_assert(std::is_trivially_copyable_v<Air4>);
 static_assert(std::is_trivially_copyable_v<Air11Scaled>);
 static_assert(std::is_trivially_copyable_v<Air11::State<D>>);
@@ -581,15 +581,15 @@ static_assert(std::is_trivially_copyable_v<Air11::Mixture<D>>);
 void test_multi_temperature()
 {
     using namespace boost::ut;
-    using gaslib::mixture;
-    using gaslib::thermo_state;
-    const gaslib::UnitScales<double, si> si_scales {};
-    const auto built4 = gaslib::make_air5_four_temperature<double>(si_scales);
+    using canary::mixture;
+    using canary::thermo_state;
+    const canary::UnitScales<double, si> si_scales {};
+    const auto built4 = canary::make_air5_four_temperature<double>(si_scales);
     const Air4& air4 = built4.model;
-    const auto built11 = gaslib::make_air11_three_temperature<double>(si_scales);
+    const auto built11 = canary::make_air11_three_temperature<double>(si_scales);
     const Air11& air11 = built11.model;
-    const auto single5 = gaslib::make_air5<double>(si_scales).model;
-    const auto single11 = gaslib::make_air11<double>(si_scales).model;
+    const auto single5 = canary::make_air5<double>(si_scales).model;
+    const auto single11 = canary::make_air11<double>(si_scales).model;
 
     "multi-temperature: the builder holds the single-temperature model, levels and modes"_test =
       [&] {
@@ -601,12 +601,12 @@ void test_multi_temperature()
           for (std::size_t i = 0; i < 11; ++i) {
               expect(air11.thermally_perfect.gas_constant[i] == single11.gas_constant[i]);
               const double r_i = single11.gas_constant[i].value();
-              const double d = gaslib::air11_rotational_degrees[i];
+              const double d = canary::air11_rotational_degrees[i];
               // One multiplication and one division of exact small numbers.
               expect(relative(air11.translational_rotational_cp[i].value(),
                               (2.5 + (0.5 * d)) * r_i,
                               2.0 * eps));
-              const auto& input = gaslib::air11_electronic_levels[i];
+              const auto& input = canary::air11_electronic_levels[i];
               expect(air11.electronic_levels[i].levels == input.levels);
               const auto n = static_cast<std::size_t>(input.levels);
               for (std::size_t k = 0; k < n; ++k) {
@@ -617,7 +617,7 @@ void test_multi_temperature()
               }
               const auto& vib = air11.mode_components[0][i];
               const auto& el = air11.mode_components[1][i];
-              expect(vib.vibration == (gaslib::air11_rotational_degrees[i] > 0));
+              expect(vib.vibration == (canary::air11_rotational_degrees[i] > 0));
               expect(!vib.electronic && !vib.electron);
               expect(el.electronic == (i != 10));
               expect(el.electron == (i == 10));
@@ -627,45 +627,45 @@ void test_multi_temperature()
           // electronic, O electronic.
           expect(air4.mode_components[1][1].vibration && air4.mode_components[1][1].electronic);
           expect(air4.mode_components[1][3].electronic && !air4.mode_components[1][3].vibration);
-          expect(!gaslib::detail::holds_any(air4.mode_components[1][0]));
+          expect(!canary::detail::holds_any(air4.mode_components[1][0]));
       };
 
     "multi-temperature: the builder rejects an unknown species in a mode"_test = [] {
-        auto modes = gaslib::air11_three_temperature_modes;
+        auto modes = canary::air11_three_temperature_modes;
         modes[0].components[2].species = "Ar";
         const std::string error = air11_modes_error(modes);
         expect(error.starts_with("mode 0, component 2 (Ar vibration): unknown species")) << error;
     };
 
     "multi-temperature: the builder rejects an unknown species in the levels"_test = [] {
-        auto levels = gaslib::air11_electronic_levels;
+        auto levels = canary::air11_electronic_levels;
         levels[3].name = "Ar";
         const std::string error = air11_levels_error(levels);
         expect(error.starts_with("electronic levels of Ar: unknown species")) << error;
     };
 
     "multi-temperature: the builder rejects a component given twice"_test = [] {
-        auto modes = gaslib::air11_three_temperature_modes;
-        modes[1].components[2] = {.species = "N2", .component = gaslib::ModeComponent::vibration};
+        auto modes = canary::air11_three_temperature_modes;
+        modes[1].components[2] = {.species = "N2", .component = canary::ModeComponent::vibration};
         std::string error = air11_modes_error(modes);
         expect(error.starts_with("mode 1, component 2 (N2 vibration): already in mode 0")) << error;
-        modes = gaslib::air11_three_temperature_modes;
-        modes[0].components[1] = {.species = "N2", .component = gaslib::ModeComponent::vibration};
+        modes = canary::air11_three_temperature_modes;
+        modes[0].components[1] = {.species = "N2", .component = canary::ModeComponent::vibration};
         error = air11_modes_error(modes);
         expect(error.starts_with("mode 0, component 1 (N2 vibration): already in mode 0")) << error;
     };
 
     "multi-temperature: the builder rejects vibration of an atom"_test = [] {
-        auto modes = gaslib::air11_three_temperature_modes;
-        modes[0].components[1] = {.species = "O+", .component = gaslib::ModeComponent::vibration};
+        auto modes = canary::air11_three_temperature_modes;
+        modes[0].components[1] = {.species = "O+", .component = canary::ModeComponent::vibration};
         const std::string error = air11_modes_error(modes);
         expect(error.starts_with("mode 0, component 1 (O+ vibration): an atom has no vibration"))
           << error;
     };
 
     "multi-temperature: the builder rejects vibration of e-"_test = [] {
-        auto modes = gaslib::air11_three_temperature_modes;
-        modes[1].components[10].component = gaslib::ModeComponent::vibration;
+        auto modes = canary::air11_three_temperature_modes;
+        modes[1].components[10].component = canary::ModeComponent::vibration;
         const std::string error = air11_modes_error(modes);
         expect(error.starts_with(
           "mode 1, component 10 (e- vibration): free electrons have only the electron component"))
@@ -673,8 +673,8 @@ void test_multi_temperature()
     };
 
     "multi-temperature: the builder rejects electronic energy of e-"_test = [] {
-        auto modes = gaslib::air11_three_temperature_modes;
-        modes[1].components[10].component = gaslib::ModeComponent::electronic;
+        auto modes = canary::air11_three_temperature_modes;
+        modes[1].components[10].component = canary::ModeComponent::electronic;
         const std::string error = air11_modes_error(modes);
         expect(error.starts_with(
           "mode 1, component 10 (e- electronic): free electrons have only the electron component"))
@@ -682,8 +682,8 @@ void test_multi_temperature()
     };
 
     "multi-temperature: the builder rejects the electron component of a heavy species"_test = [] {
-        auto modes = gaslib::air11_three_temperature_modes;
-        modes[1].components[3].component = gaslib::ModeComponent::electron;
+        auto modes = canary::air11_three_temperature_modes;
+        modes[1].components[3].component = canary::ModeComponent::electron;
         const std::string error = air11_modes_error(modes);
         expect(
           error.starts_with("mode 1, component 3 (O electron): only e- has the electron component"))
@@ -691,14 +691,14 @@ void test_multi_temperature()
     };
 
     "multi-temperature: the builder rejects e- in no mode"_test = [] {
-        auto modes = gaslib::air11_three_temperature_modes;
+        auto modes = canary::air11_three_temperature_modes;
         modes[1].count = 10;
         const std::string error = air11_modes_error(modes);
         expect(error.starts_with("species e-: free electrons must be in a mode")) << error;
     };
 
     "multi-temperature: the builder rejects a mode without components"_test = [] {
-        auto modes = gaslib::air11_three_temperature_modes;
+        auto modes = canary::air11_three_temperature_modes;
         modes[0].count = 0;
         std::string error = air11_modes_error(modes);
         expect(error.starts_with("mode 0: the component count must be between 1 and 11, got 0"))
@@ -710,30 +710,30 @@ void test_multi_temperature()
     };
 
     "multi-temperature: the builder rejects rotational degrees other than 0, 2 and 3"_test = [] {
-        auto degrees = gaslib::air11_rotational_degrees;
+        auto degrees = canary::air11_rotational_degrees;
         degrees[4] = 1;
-        const std::string error = air11_error(gaslib::air11_species,
+        const std::string error = air11_error(canary::air11_species,
                                               degrees,
-                                              gaslib::air11_electronic_levels,
-                                              gaslib::air11_three_temperature_modes);
+                                              canary::air11_electronic_levels,
+                                              canary::air11_three_temperature_modes);
         expect(
           error.starts_with("species NO: rotational degrees of freedom must be 0, 2 or 3, got 1"))
           << error;
     };
 
     "multi-temperature: the builder rejects rotational degrees of e-"_test = [] {
-        auto degrees = gaslib::air11_rotational_degrees;
+        auto degrees = canary::air11_rotational_degrees;
         degrees[10] = 2;
-        const std::string error = air11_error(gaslib::air11_species,
+        const std::string error = air11_error(canary::air11_species,
                                               degrees,
-                                              gaslib::air11_electronic_levels,
-                                              gaslib::air11_three_temperature_modes);
+                                              canary::air11_electronic_levels,
+                                              canary::air11_three_temperature_modes);
         expect(error.starts_with("species e-: rotational degrees of freedom must be 0, got 2"))
           << error;
     };
 
     "multi-temperature: the builder rejects level temperatures that are not finite"_test = [] {
-        auto levels = gaslib::air11_electronic_levels;
+        auto levels = canary::air11_electronic_levels;
         levels[1].temperatures[2] = std::numeric_limits<double>::infinity();
         const std::string error = air11_levels_error(levels);
         expect(error.starts_with(
@@ -742,7 +742,7 @@ void test_multi_temperature()
     };
 
     "multi-temperature: the builder rejects negative level temperatures"_test = [] {
-        auto levels = gaslib::air11_electronic_levels;
+        auto levels = canary::air11_electronic_levels;
         levels[1].temperatures[2] = -1.0;
         const std::string error = air11_levels_error(levels);
         expect(error.starts_with(
@@ -751,7 +751,7 @@ void test_multi_temperature()
     };
 
     "multi-temperature: the builder rejects degeneracies that are not positive"_test = [] {
-        auto levels = gaslib::air11_electronic_levels;
+        auto levels = canary::air11_electronic_levels;
         levels[2].degeneracies[1] = 0;
         const std::string error = air11_levels_error(levels);
         expect(
@@ -760,7 +760,7 @@ void test_multi_temperature()
     };
 
     "multi-temperature: the builder rejects more levels than the capacity"_test = [] {
-        auto levels = gaslib::air11_electronic_levels;
+        auto levels = canary::air11_electronic_levels;
         levels[0].levels = 9;
         const std::string error = air11_levels_error(levels);
         expect(
@@ -769,7 +769,7 @@ void test_multi_temperature()
     };
 
     "multi-temperature: the builder rejects a first level above zero"_test = [] {
-        auto levels = gaslib::air11_electronic_levels;
+        auto levels = canary::air11_electronic_levels;
         levels[0].temperatures[0] = 10.0;
         const std::string error = air11_levels_error(levels);
         expect(error.starts_with(
@@ -778,39 +778,39 @@ void test_multi_temperature()
     };
 
     "multi-temperature: the builder rejects levels given twice"_test = [] {
-        auto levels = gaslib::air11_electronic_levels;
+        auto levels = canary::air11_electronic_levels;
         levels[10].name = "N2";
         const std::string error = air11_levels_error(levels);
         expect(error.starts_with("electronic levels of N2: given twice")) << error;
     };
 
     "multi-temperature: the builder rejects e- without charge -1"_test = [] {
-        auto species = gaslib::air11_species;
+        auto species = canary::air11_species;
         species[10].charge = 1.0;
         const std::string error = air11_error(species,
-                                              gaslib::air11_rotational_degrees,
-                                              gaslib::air11_electronic_levels,
-                                              gaslib::air11_three_temperature_modes);
+                                              canary::air11_rotational_degrees,
+                                              canary::air11_electronic_levels,
+                                              canary::air11_three_temperature_modes);
         expect(error.starts_with("species e-: charge must be -1, got 1")) << error;
     };
 
     "multi-temperature: the builder rejects species names given twice"_test = [] {
-        auto species = gaslib::air11_species;
+        auto species = canary::air11_species;
         species[6].name = "N+";
         const std::string error = air11_error(species,
-                                              gaslib::air11_rotational_degrees,
-                                              gaslib::air11_electronic_levels,
-                                              gaslib::air11_three_temperature_modes);
+                                              canary::air11_rotational_degrees,
+                                              canary::air11_electronic_levels,
+                                              canary::air11_three_temperature_modes);
         expect(error.starts_with("species N+: name given twice")) << error;
     };
 
     "multi-temperature: the builder rejects what the single-temperature builder rejects"_test = [] {
-        auto species = gaslib::air11_species;
+        auto species = canary::air11_species;
         species[1].molar_mass = -1.0;
         const std::string error = air11_error(species,
-                                              gaslib::air11_rotational_degrees,
-                                              gaslib::air11_electronic_levels,
-                                              gaslib::air11_three_temperature_modes);
+                                              canary::air11_rotational_degrees,
+                                              canary::air11_electronic_levels,
+                                              canary::air11_three_temperature_modes);
         expect(error.starts_with("species O2: molar mass")) << error;
     };
 
@@ -836,14 +836,14 @@ void test_multi_temperature()
               }
               const double floor = 1.0e-3 * std::abs(ref_e);
               expect(close_to(c.state.p.value(), ref.p, 2.0e-5, 0.0)) << ref.temp;
-              expect(gaslib::electron_pressure(air4, mix, c.state).value() == 0.0);
+              expect(canary::electron_pressure(air4, mix, c.state).value() == 0.0);
               expect(close_to(c.state.e.value() - e_m, ref.u, 2.0e-5, floor))
                 << ref.temp << c.state.e.value() - e_m << ref.u;
               for (std::size_t m = 0; m < 3; ++m) {
                   expect(close_to(c.state.mode_e[m].value(), ref.u_m[m], 2.0e-5, floor))
                     << ref.temp << m << c.state.mode_e[m].value() << ref.u_m[m];
               }
-              const auto props = gaslib::properties(air4, mix, c.state);
+              const auto props = canary::properties(air4, mix, c.state);
               expect(relative(props.sound_speed.value(), ref.a, 1.0e-5))
                 << ref.temp << props.sound_speed.value() << ref.a;
           }
@@ -851,7 +851,7 @@ void test_multi_temperature()
 
     "multi-temperature: (rho, T, T_m) gives the reference states of three-temperature air"_test =
       [&] {
-          const auto species = gaslib::species_properties(single11, Temp {298.15});
+          const auto species = canary::species_properties(single11, Temp {298.15});
           const double r_e = single11.gas_constant[10].value();
           for (const auto& ref : air11_reference) {
               const auto mix = mixture(air11, fractions(ref.y));
@@ -869,7 +869,7 @@ void test_multi_temperature()
               const double e_m = c.state.mode_e[0].value() + c.state.mode_e[1].value();
               const double floor = 1.0e-3 * std::abs(ref_e);
               expect(close_to(c.state.p.value(), ref.p, 2.0e-5, 0.0)) << ref.temp;
-              expect(close_to(gaslib::electron_pressure(air11, mix, c.state).value(),
+              expect(close_to(canary::electron_pressure(air11, mix, c.state).value(),
                               ref.p_e,
                               2.0e-5,
                               0.0))
@@ -880,7 +880,7 @@ void test_multi_temperature()
                   expect(close_to(c.state.mode_e[m].value(), u_m[m], 2.0e-5, floor))
                     << ref.temp << m << c.state.mode_e[m].value() << u_m[m];
               }
-              const auto props = gaslib::properties(air11, mix, c.state);
+              const auto props = canary::properties(air11, mix, c.state);
               expect(relative(props.sound_speed.value(), ref.a, 1.0e-5))
                 << ref.temp << props.sound_speed.value() << ref.a;
           }
@@ -914,7 +914,7 @@ void test_multi_temperature()
 
     "multi-temperature: four-temperature air gives the two-temperature e_ve per molecule"_test =
       [&] {
-          const auto two = gaslib::make_air5_two_temperature<double>(si_scales).model;
+          const auto two = canary::make_air5_two_temperature<double>(si_scales).model;
           const auto mix = mixture(air4, fractions(air5_molecules));
           // Mode m holds the vibration and electronic energy of molecule
           // index[m] only.
@@ -928,7 +928,7 @@ void test_multi_temperature()
                 thermo_state(air4, mix, Rho {0.1}, Temp {5000.0}, mode_temperatures<si>(t_m));
               for (std::size_t m = 0; m < 3; ++m) {
                   const auto e_ve =
-                    gaslib::species_vibrational_electronic_energy(two, Temp {t_m[m]});
+                    canary::species_vibrational_electronic_energy(two, Temp {t_m[m]});
                   const std::size_t i = molecule[m];
                   // Both are y_i (h_i - cp_tr,i (T - T_ref) - dh_f,i) with
                   // the same terms; 4 eps of the largest term.
@@ -997,7 +997,7 @@ void test_multi_temperature()
               for (int j = 0; j <= 40; ++j) {
                   const double t = 10.0 * std::pow(10.0, 0.1 * j);
                   const auto ours =
-                    gaslib::detail::electronic_energy(levels,
+                    canary::detail::electronic_energy(levels,
                                                       air11.thermally_perfect.gas_constant[i],
                                                       t);
                   const long double direct = direct_electronic_energy(levels, r, t);
@@ -1054,7 +1054,7 @@ void test_multi_temperature()
         const std::array t_m {9000.0, 12000.0};
         const auto base =
           thermo_state(air11, mix, Rho {1.0}, Temp {14000.0}, mode_temperatures<si>(t_m));
-        const auto props = gaslib::detail::mode_energy(air11, mix.fractions, 1, 12000.0);
+        const auto props = canary::detail::mode_energy(air11, mix.fractions, 1, 12000.0);
         // d T_e / d e_m at fixed rho = 1, e and the other mode energy.
         const std::array rho_e_m {
           D(base.state.mode_e[0].value()),
@@ -1062,8 +1062,8 @@ void test_multi_temperature()
         };
         const auto c = thermo_state(air11,
                                     mix_d,
-                                    gaslib::Density<D, si> {D(1.0)},
-                                    gaslib::SpecificEnergy<D, si> {D(base.state.e.value())},
+                                    canary::Density<D, si> {D(1.0)},
+                                    canary::SpecificEnergy<D, si> {D(base.state.e.value())},
                                     mode_energy_densities<si>(rho_e_m));
         expect(c.status == Status::Valid);
         // The solve converges to 1e-10 relative, and cv_m at the root
@@ -1074,7 +1074,7 @@ void test_multi_temperature()
 
     "multi-temperature: a scaled model gives the SI state after conversion"_test = [&] {
         const auto convert = [](auto q) {
-            return gaslib::convert<si>(q, reference_scales).value();
+            return canary::convert<si>(q, reference_scales).value();
         };
         const auto compare_models = [&](const auto& gas,
                                         const auto& gas_s,
@@ -1086,20 +1086,20 @@ void test_multi_temperature()
             for (const double rho_value : {1.0e-4, 1.0}) {
                 for (const double t : {1000.0, 4000.0, 15000.0}) {
                     const Rho rho {rho_value};
-                    const auto rho_s = gaslib::convert<scaled>(rho, reference_scales);
+                    const auto rho_s = canary::convert<scaled>(rho, reference_scales);
                     const auto base =
                       thermo_state(gas, mix, rho, Temp {t}, mode_temperatures<si>(t_m_values));
                     std::array<double, M> t_m_s {};
                     std::array<double, M> rho_e_m {};
                     std::array<double, M> rho_e_m_s {};
                     for (std::size_t m = 0; m < M; ++m) {
-                        t_m_s[m] = gaslib::convert<scaled>(
-                                     gaslib::ModeTemperature<double, si> {t_m_values[m]},
+                        t_m_s[m] = canary::convert<scaled>(
+                                     canary::ModeTemperature<double, si> {t_m_values[m]},
                                      reference_scales)
                                      .value();
                         rho_e_m[m] = rho_value * base.state.mode_e[m].value();
-                        rho_e_m_s[m] = gaslib::convert<scaled>(
-                                         gaslib::ModeEnergyDensity<double, si> {rho_e_m[m]},
+                        rho_e_m_s[m] = canary::convert<scaled>(
+                                         canary::ModeEnergyDensity<double, si> {rho_e_m[m]},
                                          reference_scales)
                                          .value();
                     }
@@ -1131,19 +1131,19 @@ void test_multi_temperature()
                             thermo_state(gas_s,
                                          mix_s,
                                          rho_s,
-                                         gaslib::convert<scaled>(Temp {t}, reference_scales),
+                                         canary::convert<scaled>(Temp {t}, reference_scales),
                                          mode_temperatures<scaled>(t_m_s)));
                     compare(thermo_state(gas, mix, rho, rho_e, mode_energy_densities<si>(rho_e_m)),
                             thermo_state(gas_s,
                                          mix_s,
                                          rho_s,
-                                         gaslib::convert<scaled>(rho_e, reference_scales),
+                                         canary::convert<scaled>(rho_e, reference_scales),
                                          mode_energy_densities<scaled>(rho_e_m_s)));
                 }
             }
         };
-        const auto air4_s = gaslib::make_air5_four_temperature<double>(reference_scales).model;
-        const auto air11_s = gaslib::make_air11_three_temperature<double>(reference_scales).model;
+        const auto air4_s = canary::make_air5_four_temperature<double>(reference_scales).model;
+        const auto air11_s = canary::make_air11_three_temperature<double>(reference_scales).model;
         compare_models(air4, air4_s, air5_dissociated, std::array {1500.0, 7000.0, 12000.0});
         compare_models(air11, air11_s, air11_ionised, std::array {1500.0, 12000.0});
     };
@@ -1155,8 +1155,8 @@ void test_multi_temperature()
         const std::array t_m {3000.0F, 8000.0F};
         const auto c = thermo_state(air11,
                                     mix,
-                                    gaslib::Density<float, si> {1.0e-3F},
-                                    gaslib::Temperature<float, si> {10000.0F},
+                                    canary::Density<float, si> {1.0e-3F},
+                                    canary::Temperature<float, si> {10000.0F},
                                     mode_temperatures<si>(t_m));
         const std::array rho_e_m {
           1.0e-3F * c.state.mode_e[0].value(),
@@ -1164,7 +1164,7 @@ void test_multi_temperature()
         };
         const auto back = thermo_state(air11,
                                        mix,
-                                       gaslib::Density<float, si> {1.0e-3F},
+                                       canary::Density<float, si> {1.0e-3F},
                                        c.state.e,
                                        mode_energy_densities<si>(rho_e_m));
         expect(back.status == Status::Valid);
@@ -1182,7 +1182,7 @@ void test_multi_temperature()
         const auto c =
           thermo_state(air11, mix, Rho {0.01}, Temp {14000.0}, mode_temperatures<si>(t_m));
         const double r_e = air11.thermally_perfect.gas_constant[10].value();
-        const double p_e = gaslib::electron_pressure(air11, mix, c.state).value();
+        const double p_e = canary::electron_pressure(air11, mix, c.state).value();
         // A product of four values: 4 eps.
         expect(relative(p_e, 0.01 * mix.fractions[10].value() * r_e * 12000.0, 4.0 * eps));
         double r_h = 0;
@@ -1195,14 +1195,14 @@ void test_multi_temperature()
         const auto neutral = mixture(air11, fractions(air11_neutral));
         const auto d =
           thermo_state(air11, neutral, Rho {0.01}, Temp {14000.0}, mode_temperatures<si>(t_m));
-        expect(gaslib::electron_pressure(air11, neutral, d.state).value() == 0.0);
+        expect(canary::electron_pressure(air11, neutral, d.state).value() == 0.0);
     };
 
     "multi-temperature: the charge-neutral fractions balance the ion charge with electrons"_test =
       [&] {
           const auto& species = built11.species;
           const auto y =
-            gaslib::charge_neutral_fractions(air11, species, fractions(air11_weakly_ionised_input));
+            canary::charge_neutral_fractions(air11, species, fractions(air11_weakly_ionised_input));
           double sum = 0;
           double charge = 0;
           double charge_scale = 0;
@@ -1220,7 +1220,7 @@ void test_multi_temperature()
           expect(std::abs(sum - 1.0) <= 16.0 * eps) << sum;
           expect(std::abs(charge) <= 16.0 * eps * charge_scale) << charge;
           const auto unchanged =
-            gaslib::charge_neutral_fractions(air4, built4.species, fractions(air5_dissociated));
+            canary::charge_neutral_fractions(air4, built4.species, fractions(air5_dissociated));
           for (std::size_t i = 0; i < 5; ++i) {
               expect(unchanged[i].value() == air5_dissociated[i]);
           }
@@ -1232,8 +1232,8 @@ void test_multi_temperature()
               expect(single11.gas_constant[i] == single5.gas_constant[i]) << i;
               expect(single11.reference_energy[i] == single5.reference_energy[i]) << i;
               for (const double t : {100.0, 300.0, 1000.0, 5000.0, 12000.0, 25000.0, 60000.0}) {
-                  const auto a = gaslib::species_properties(single11, Temp {t});
-                  const auto b = gaslib::species_properties(single5, Temp {t});
+                  const auto a = canary::species_properties(single11, Temp {t});
+                  const auto b = canary::species_properties(single5, Temp {t});
                   // The same data and the same arithmetic: equal.
                   expect(a.energy[i] == b.energy[i]) << i << t;
                   expect(a.cv[i] == b.cv[i]) << i << t;
@@ -1241,8 +1241,8 @@ void test_multi_temperature()
               }
           }
           for (std::size_t i = 0; i < 5; ++i) {
-              const auto& a = gaslib::air11_electronic_levels[i];
-              const auto& b = gaslib::air5_electronic_levels[i];
+              const auto& a = canary::air11_electronic_levels[i];
+              const auto& b = canary::air5_electronic_levels[i];
               expect(std::string(a.name) == b.name && a.levels == b.levels);
               expect(a.degeneracies == b.degeneracies && a.temperatures == b.temperatures) << i;
           }
@@ -1302,7 +1302,7 @@ void test_multi_temperature()
           const Rho rho {2.0};
           std::array<double, 11> rho_i {};
           for (std::size_t i = 0; i < 11; ++i) { rho_i[i] = rho.value() * air11_ionised[i]; }
-          const auto view = gaslib::as_kind<gaslib::kind::density, si>(
+          const auto view = canary::as_kind<canary::kind::density, si>(
             Kokkos::mdspan<const double, Extents>(rho_i.data(), 11));
           const std::array t_m {2500.0, 7000.0};
           const auto a = thermo_state(air11, view, rho, Temp {3000.0}, mode_temperatures<si>(t_m));

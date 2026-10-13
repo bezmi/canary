@@ -1,11 +1,11 @@
-// The one-species closure from (rho, rho_e) through gaslib, and the same
+// The one-species closure from (rho, rho_e) through canary, and the same
 // arithmetic and validity check on plain doubles, as separate functions for comparing their
 // generated code.
 
 #include <cmath>
-#include <gaslib/models/calorically_perfect.hpp>
-#include <gaslib/quantity.hpp>
-#include <gaslib/state.hpp>
+#include <canary/models/calorically_perfect.hpp>
+#include <canary/quantity.hpp>
+#include <canary/state.hpp>
 
 // The functions have external linkage so that the compiler emits them.
 // NOLINTBEGIN(misc-use-internal-linkage)
@@ -14,7 +14,7 @@ struct RawClosure {
     double e;
     double p;
     double temp;
-    unsigned char status;  // 0 valid, 3 invalid, as gaslib::Status
+    unsigned char status;  // 0 valid, 3 invalid, as canary::Status
 };
 
 struct RawGas {
@@ -22,10 +22,10 @@ struct RawGas {
     double gamma;
 };
 
-gaslib::Closure<double, gaslib::si>
-  gaslib_close(const gaslib::CaloricallyPerfect<double, gaslib::si>& gas,
-               gaslib::Density<double, gaslib::si> rho,
-               gaslib::EnergyDensity<double, gaslib::si> rho_e)
+canary::Closure<double, canary::si>
+  canary_close(const canary::CaloricallyPerfect<double, canary::si>& gas,
+               canary::Density<double, canary::si> rho,
+               canary::EnergyDensity<double, canary::si> rho_e)
 { return close(gas, rho, rho_e); }
 
 RawClosure raw_close(const RawGas& gas, double rho, double rho_e)

@@ -1,6 +1,6 @@
 """Converts a GDTk reaction-mechanism input file (Reaction{...} entries,
-pre-exponential factors in CGS units) to a gaslib reactions file
-(format gaslib-reactions-1, SI units).
+pre-exponential factors in CGS units) to a canary reactions file
+(format canary-reactions-1, SI units).
 
 Each Reaction{...} entry gives an equation such as 'N2 + N2 <=> N + N + N2'
 or 'NO + M <=> N + O + M', a forward rate fr={'Arrhenius', A=, n=, C=}
@@ -26,7 +26,7 @@ import json
 import re
 from decimal import Decimal
 
-FORMAT = "gaslib-reactions-1"
+FORMAT = "canary-reactions-1"
 UNITS = {"quantity": "mol", "length": "m", "time": "s", "temperature": "K"}
 
 
@@ -66,7 +66,7 @@ def side(expression):
     return counts, third_body
 
 
-# Energy-mode names of GDTk mechanism files and the gaslib other_temperature
+# Energy-mode names of GDTk mechanism files and the canary other_temperature
 # they mean.
 OTHER_TEMPERATURES = {"electron-electronic": "electron"}
 

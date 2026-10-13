@@ -1,8 +1,8 @@
 // Quantities of different kinds cannot be added.
-#include <gaslib/quantity.hpp>
+#include <canary/quantity.hpp>
 
-#ifdef GASLIB_COMPILE_FAIL
+#ifdef CANARY_COMPILE_FAIL
 auto bad =
-  gaslib::Pressure<double, gaslib::si> {1.0} + gaslib::Temperature<double, gaslib::si> {1.0};
+  canary::Pressure<double, canary::si> {1.0} + canary::Temperature<double, canary::si> {1.0};
 #endif
-auto good = gaslib::Pressure<double, gaslib::si> {1.0} + gaslib::Pressure<double, gaslib::si> {1.0};
+auto good = canary::Pressure<double, canary::si> {1.0} + canary::Pressure<double, canary::si> {1.0};

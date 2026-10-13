@@ -1,5 +1,5 @@
 -- Test input in the layout of GDTk collision-integral data files, written
--- for gaslib's converter test. Values: Gupta, Yos, Thompson and Lee (1990),
+-- for canary's converter test. Values: Gupta, Yos, Thompson and Lee (1990),
 -- NASA RP-1232.
 cis = {}
 cis['N2:N2'] = {

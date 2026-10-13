@@ -1,17 +1,17 @@
 // The single-temperature model has no vibrational-electronic energy per
 // species.
-#include <gaslib/energy_exchange.hpp>
-#include <gaslib/models/thermally_perfect.hpp>
-#include <gaslib/models/two_temperature.hpp>
-#include <gaslib/quantity.hpp>
+#include <canary/energy_exchange.hpp>
+#include <canary/models/thermally_perfect.hpp>
+#include <canary/models/two_temperature.hpp>
+#include <canary/quantity.hpp>
 
-#ifdef GASLIB_COMPILE_FAIL
+#ifdef CANARY_COMPILE_FAIL
 static_assert(
-  gaslib::HasVibrationalElectronicEnergy<gaslib::ThermallyPerfectMixture<double, gaslib::si, 5, 4>,
+  canary::HasVibrationalElectronicEnergy<canary::ThermallyPerfectMixture<double, canary::si, 5, 4>,
                                          double,
                                          5>);
 #endif
 static_assert(
-  gaslib::HasVibrationalElectronicEnergy<gaslib::TwoTemperatureMixture<double, gaslib::si, 5, 4>,
+  canary::HasVibrationalElectronicEnergy<canary::TwoTemperatureMixture<double, canary::si, 5, 4>,
                                          double,
                                          5>);

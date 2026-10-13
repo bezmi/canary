@@ -1,5 +1,5 @@
 -- Test input in the layout of GDTk species-database files (bracket form of
--- the species name), written for gaslib's converter test. Values: NASA CEA
+-- the species name), written for canary's converter test. Values: NASA CEA
 -- thermo.inp (Apache License 2.0, see ../NOTICE.md); electronic levels from
 -- NIST (cm^-1).
 db['N+'] = {}

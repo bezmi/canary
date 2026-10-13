@@ -1,5 +1,5 @@
-#ifndef GASLIB_TESTS_DUAL_HPP
-#define GASLIB_TESTS_DUAL_HPP
+#ifndef CANARY_TESTS_DUAL_HPP
+#define CANARY_TESTS_DUAL_HPP
 
 // Forward-mode dual number for tests. It has the operators and the free
 // functions sqrt, pow, abs, min, max, isnan and isinf of Ibis::Dual (ibis
@@ -10,9 +10,9 @@
 
 #include <cmath>
 #include <concepts>
-#include <gaslib/scalar.hpp>
+#include <canary/scalar.hpp>
 
-namespace gaslib::test
+namespace canary::test
 {
 
 template <std::floating_point V> class Dual
@@ -142,12 +142,12 @@ template <std::floating_point V> bool isnan(const Dual<V>& d)
 template <std::floating_point V> bool isinf(const Dual<V>& d)
 { return std::isinf(d.real()) || std::isinf(d.dual()); }
 
-}  // namespace gaslib::test
+}  // namespace canary::test
 
-template <std::floating_point V> struct gaslib::ScalarTraits<gaslib::test::Dual<V>> {
+template <std::floating_point V> struct canary::ScalarTraits<canary::test::Dual<V>> {
     using value_type = V;
 
-    static constexpr V value(const gaslib::test::Dual<V>& x) { return x.real(); }
+    static constexpr V value(const canary::test::Dual<V>& x) { return x.real(); }
 };
 
-#endif  // GASLIB_TESTS_DUAL_HPP
+#endif  // CANARY_TESTS_DUAL_HPP

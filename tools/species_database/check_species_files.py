@@ -1,5 +1,5 @@
 """Validates species, reactions, energy-exchange and collision-integral files
-against the JSON Schemas of gaslib database files.
+against the JSON Schemas of canary database files.
 
 Usage: check_species_files.py <schema.json> <file>... [-- <schema.json> <file>...]...
 

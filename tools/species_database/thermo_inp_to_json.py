@@ -1,5 +1,5 @@
 """Converts species from a NASA Glenn thermo.inp file (CEA format, McBride,
-Zehe and Gordon, NASA/TP-2002-211556, appendix A) to a gaslib species file.
+Zehe and Gordon, NASA/TP-2002-211556, appendix A) to a canary species file.
 
 The file gives no blending between temperature intervals, so the blend width
 of each interior boundary is required: --blend 1000=400 6000=1000 ...

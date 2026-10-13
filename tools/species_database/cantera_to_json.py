@@ -1,4 +1,4 @@
-"""Converts NASA9 species from a Cantera YAML file to a gaslib species file.
+"""Converts NASA9 species from a Cantera YAML file to a canary species file.
 
 Cantera files give each species' composition but not its molar mass, so the
 atomic weights (g/mol) are required: --atomic-weights N=14.0067 O=15.9994 E=5.48579909e-4

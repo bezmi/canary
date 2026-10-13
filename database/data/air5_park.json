@@ -1,5 +1,5 @@
 {
-   "format": "gaslib-reactions-1",
+   "format": "canary-reactions-1",
    "units": {
       "quantity": "mol",
       "length": "m",

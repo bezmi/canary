@@ -5,11 +5,11 @@
 #include <boost/ut.hpp>
 #include <cmath>
 #include <cstddef>
-#include <gaslib/build.hpp>
-#include <gaslib/data/air5.hpp>
-#include <gaslib/nasa9.hpp>
-#include <gaslib/scalar.hpp>
-#include <gaslib/units.hpp>
+#include <canary/build.hpp>
+#include <canary/data/air5.hpp>
+#include <canary/nasa9.hpp>
+#include <canary/scalar.hpp>
+#include <canary/units.hpp>
 #include <limits>
 #include <string>
 #include <vector>
@@ -17,9 +17,9 @@
 namespace
 {
 
-using D = gaslib::test::Dual<double>;
-using Curve = gaslib::Nasa9Curve<double, 4>;
-using Data = gaslib::Nasa9Data<4>;
+using D = canary::test::Dual<double>;
+using Curve = canary::Nasa9Curve<double, 4>;
+using Data = canary::Nasa9Data<4>;
 
 constexpr double eps = std::numeric_limits<double>::epsilon();
 constexpr double kilo = 1000.0;
@@ -125,8 +125,8 @@ struct Values {
 Values evaluate(const Curve& curve, double t)
 {
     const double ln_t = std::log(t);
-    const auto cp_h = gaslib::nasa9_cp_h(curve, t, ln_t);
-    return {.cp = cp_h.cp_over_r, .h = cp_h.h_over_r, .s = gaslib::nasa9_s(curve, t, ln_t)};
+    const auto cp_h = canary::nasa9_cp_h(curve, t, ln_t);
+    return {.cp = cp_h.cp_over_r, .h = cp_h.h_over_r, .s = canary::nasa9_s(curve, t, ln_t)};
 }
 
 bool close_to(double value, long double expected, long double scale, double ulps)
@@ -160,7 +160,7 @@ constexpr std::array<Janaf, 10> janaf {
   },
 };
 
-constexpr const auto& species = gaslib::air5_species;
+constexpr const auto& species = canary::air5_species;
 
 }  // namespace
 
@@ -177,10 +177,10 @@ void test_nasa9()
         constexpr double cp_tolerance = 1.5e-2;
         constexpr double s_tolerance = 1.0e-3;
         constexpr double dh_tolerance = 2.0e-2;
-        const double r_u = gaslib::constants::universal_gas_constant<double>;
+        const double r_u = canary::constants::universal_gas_constant<double>;
         for (const Janaf& row : janaf) {
             const auto& sp = species[row.species];
-            const Curve curve = gaslib::make_nasa9_curve(sp.fit, 1.0);
+            const Curve curve = canary::make_nasa9_curve(sp.fit, 1.0);
             const Values v = evaluate(curve, row.temp);
             const Values v298 = evaluate(curve, 298.15);
             const double cp = r_u * v.cp;
@@ -196,7 +196,7 @@ void test_nasa9()
 
     "a curve with temperature scale 1 has the fit's coefficients"_test = [] {
         for (const auto& sp : species) {
-            const Curve curve = gaslib::make_nasa9_curve(sp.fit, 1.0);
+            const Curve curve = canary::make_nasa9_curve(sp.fit, 1.0);
             const auto n = static_cast<std::size_t>(sp.fit.segments);
             for (std::size_t j = 0; j < n; ++j) {
                 for (std::size_t k = 0; k < 9; ++k) {
@@ -217,8 +217,8 @@ void test_nasa9()
         // is exact.
         constexpr double tau = 1000.0;
         for (const auto& sp : species) {
-            const Curve si = gaslib::make_nasa9_curve(sp.fit, 1.0);
-            const Curve scaled = gaslib::make_nasa9_curve(sp.fit, tau);
+            const Curve si = canary::make_nasa9_curve(sp.fit, 1.0);
+            const Curve scaled = canary::make_nasa9_curve(sp.fit, tau);
             for (const double t : {0.25, 0.75, 1.0, 1.5, 3.0, 6.25, 12.5, 19.5, 30.0, 45.0}) {
                 if (t * tau > sp.fit.breaks[static_cast<std::size_t>(sp.fit.segments)]) {
                     continue;
@@ -235,7 +235,7 @@ void test_nasa9()
 
     "values are continuous at the edges of every blending region"_test = [] {
         for (const auto& sp : species) {
-            const Curve curve = gaslib::make_nasa9_curve(sp.fit, 1.0);
+            const Curve curve = canary::make_nasa9_curve(sp.fit, 1.0);
             const auto n = static_cast<std::size_t>(sp.fit.segments);
             for (std::size_t i = 1; i < n; ++i) {
                 const double half = sp.fit.blends[i - 1] / 2;
@@ -257,7 +257,7 @@ void test_nasa9()
 
     "values inside a blending region use the lambda-weighted coefficients"_test = [] {
         for (const auto& sp : species) {
-            const Curve curve = gaslib::make_nasa9_curve(sp.fit, 1.0);
+            const Curve curve = canary::make_nasa9_curve(sp.fit, 1.0);
             const auto n = static_cast<std::size_t>(sp.fit.segments);
             for (std::size_t i = 1; i < n; ++i) {
                 const double w = sp.fit.blends[i - 1];
@@ -275,7 +275,7 @@ void test_nasa9()
 
     "values inside segments equal the polynomial forms"_test = [] {
         for (const auto& sp : species) {
-            const Curve curve = gaslib::make_nasa9_curve(sp.fit, 1.0);
+            const Curve curve = canary::make_nasa9_curve(sp.fit, 1.0);
             for (const double t : {200.0, 300.0, 700.0, 2000.0, 5000.0, 10000.0, 20000.0, 4.0e4}) {
                 if (t > sp.fit.breaks[static_cast<std::size_t>(sp.fit.segments)]) { continue; }
                 const Values v = evaluate(curve, t);
@@ -289,7 +289,7 @@ void test_nasa9()
 
     "beyond the fit cp is constant and h and s continue from the ends"_test = [] {
         for (const auto& sp : species) {
-            const Curve curve = gaslib::make_nasa9_curve(sp.fit, 1.0);
+            const Curve curve = canary::make_nasa9_curve(sp.fit, 1.0);
             const auto n = static_cast<std::size_t>(sp.fit.segments);
             for (const double t_end : {sp.fit.breaks[0], sp.fit.breaks[n]}) {
                 const double out = t_end == sp.fit.breaks[0] ? std::nextafter(t_end, 0.0)
@@ -319,13 +319,13 @@ void test_nasa9()
         // so they agree to a few eps times the sum of the absolute values
         // of the cp terms.
         for (const auto& sp : species) {
-            const Curve curve = gaslib::make_nasa9_curve(sp.fit, 1.0);
+            const Curve curve = canary::make_nasa9_curve(sp.fit, 1.0);
             for (const double t : {300.0, 700.0, 2000.0, 5000.0, 10000.0, 15000.0, 4.0e4}) {
                 if (t > sp.fit.breaks[static_cast<std::size_t>(sp.fit.segments)]) { continue; }
                 const D td(t, 1.0);
-                const D ln_t = gaslib::math::log(td);
-                const auto cp_h = gaslib::nasa9_cp_h(curve, td, ln_t);
-                const D s = gaslib::nasa9_s(curve, td, ln_t);
+                const D ln_t = canary::math::log(td);
+                const auto cp_h = canary::nasa9_cp_h(curve, td, ln_t);
+                const D s = canary::nasa9_s(curve, td, ln_t);
                 const Reference r = reference_at(sp.fit, t);
                 expect(close_to(cp_h.h_over_r.dual(), r.cp, r.cp_scale, 16.0))
                   << sp.name << t << cp_h.h_over_r.dual() << cp_h.cp_over_r.real();
@@ -338,7 +338,7 @@ void test_nasa9()
 
     "make_nasa9_curve rejects invalid fits"_test = [] {
         const Data good = species[0].fit;
-        expect(nothrow([&] { gaslib::make_nasa9_curve(good, 1.0); }));
+        expect(nothrow([&] { canary::make_nasa9_curve(good, 1.0); }));
         std::vector<Data> bad(8, good);
         bad[0].segments = 0;
         bad[1].segments = 5;
@@ -349,8 +349,8 @@ void test_nasa9()
         bad[6].breaks[0] = 0.0;
         bad[7].blends[0] = 2000.0;  // starts before the fit
         for (const Data& data : bad) {
-            expect(throws<gaslib::ParameterError>([&] { gaslib::make_nasa9_curve(data, 1.0); }));
+            expect(throws<canary::ParameterError>([&] { canary::make_nasa9_curve(data, 1.0); }));
         }
-        expect(throws<gaslib::ParameterError>([&] { gaslib::make_nasa9_curve(good, -1.0); }));
+        expect(throws<canary::ParameterError>([&] { canary::make_nasa9_curve(good, -1.0); }));
     };
 }

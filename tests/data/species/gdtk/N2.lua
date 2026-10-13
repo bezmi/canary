@@ -1,6 +1,6 @@
 -- Test input in the layout of GDTk species-database files, written for
--- gaslib's converter test. Values: NASA CEA thermo.inp and trans.inp (Apache
--- License 2.0, see ../NOTICE.md); blend ranges as used by gaslib's
+-- canary's converter test. Values: NASA CEA thermo.inp and trans.inp (Apache
+-- License 2.0, see ../NOTICE.md); blend ranges as used by canary's
 -- five-species air; Lennard-Jones parameters from GRI-Mech 3.0.
 db.N2 = {}
 db.N2.charge = 0

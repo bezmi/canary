@@ -1,8 +1,8 @@
-"""Writes the transport data of a gaslib species file (format gaslib-species-1,
+"""Writes the transport data of a canary species file (format canary-species-1,
 the "transport" record of each species) and a collision-integral file (format
-gaslib-collision-integrals-1) as a C++ header of host input records
-(gaslib::SpeciesTransportInput and gaslib::CollisionPairInput, see
-include/gaslib/transport/mixture.hpp).
+canary-collision-integrals-1) as a C++ header of host input records
+(canary::SpeciesTransportInput and canary::CollisionPairInput, see
+include/canary/transport/mixture.hpp).
 
 Numbers are written with Python's repr, which gives the shortest decimal
 that reads back to the same double. Species are written in the order given
@@ -11,7 +11,7 @@ formatted with clang-format afterwards.
 
 Usage: transport_to_header.py species.json collision_integrals.json
            --species N2 O2 N O NO --name air5 --segments 3
-           -o include/gaslib/data/air5_transport.hpp
+           -o include/canary/data/air5_transport.hpp
 """
 
 import argparse
@@ -20,8 +20,8 @@ from pathlib import Path
 
 from reactions_to_header import comment, number, string
 
-SPECIES_FORMAT = "gaslib-species-1"
-COLLISION_FORMAT = "gaslib-collision-integrals-1"
+SPECIES_FORMAT = "canary-species-1"
+COLLISION_FORMAT = "canary-collision-integrals-1"
 
 
 def array(items):
@@ -85,7 +85,7 @@ def main():
     entries = [species_entry(n, species["species"][n], args.segments) for n in args.species]
     wanted = set(args.species)
     pairs = [p for p in collisions["pairs"] if set(p["species"]) <= wanted]
-    guard = f"GASLIB_DATA_{args.name.upper()}_TRANSPORT_HPP"
+    guard = f"CANARY_DATA_{args.name.upper()}_TRANSPORT_HPP"
     species_source = Path(args.species_file).name
     collision_source = Path(args.collision_file).name
     references = "; ".join(r for r in (species.get("reference"), collisions.get("reference")) if r)
@@ -99,9 +99,9 @@ def main():
 {comment(f"References: {references}") if references else ""}
 
 #include <array>
-#include <gaslib/transport/mixture.hpp>
+#include <canary/transport/mixture.hpp>
 
-namespace gaslib
+namespace canary
 {{
 
 // Transport data of {", ".join(args.species)}, in this order, in SI units:
@@ -117,7 +117,7 @@ inline constexpr std::array<CollisionPairInput, {len(pairs)}> {args.name}_collis
 {chr(10).join(pair_entry(p) for p in pairs)}
 }},}};
 
-}}  // namespace gaslib
+}}  // namespace canary
 
 #endif  // {guard}
 """

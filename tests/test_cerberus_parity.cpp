@@ -1,5 +1,5 @@
 // Values that cerberus's calorically perfect gas produces in its contract
-// tests, reproduced with gaslib in scaled units (k_B = 1). The reference
+// tests, reproduced with canary in scaled units (k_B = 1). The reference
 // values and inputs are copied from cerberus
 // Source/states/Eulerian/hydro/tests/test_gas_contract.cpp at commit
 // 9d45fc5; each test names the line of the cerberus test it follows.
@@ -10,41 +10,41 @@
 #include <boost/ut.hpp>
 #include <cmath>
 #include <cstddef>
-#include <gaslib/models/calorically_perfect.hpp>
-#include <gaslib/quantity.hpp>
-#include <gaslib/species.hpp>
-#include <gaslib/state.hpp>
-#include <gaslib/status.hpp>
-#include <gaslib/thermo.hpp>
+#include <canary/models/calorically_perfect.hpp>
+#include <canary/quantity.hpp>
+#include <canary/species.hpp>
+#include <canary/state.hpp>
+#include <canary/status.hpp>
+#include <canary/thermo.hpp>
 #include <limits>
 #include <mdspan/mdspan.hpp>
 
 namespace
 {
 
-using gaslib::scaled;
-using gaslib::Status;
-using Rho = gaslib::Density<double, scaled>;
-using P = gaslib::Pressure<double, scaled>;
-using Temp = gaslib::Temperature<double, scaled>;
-using Mass = gaslib::ParticleMass<double, scaled>;
-using Q = gaslib::Charge<double, scaled>;
-using Gamma = gaslib::HeatCapacityRatio<double>;
+using canary::scaled;
+using canary::Status;
+using Rho = canary::Density<double, scaled>;
+using P = canary::Pressure<double, scaled>;
+using Temp = canary::Temperature<double, scaled>;
+using Mass = canary::ParticleMass<double, scaled>;
+using Q = canary::Charge<double, scaled>;
+using Gamma = canary::HeatCapacityRatio<double>;
 using View = Kokkos::mdspan<const double, Kokkos::dextents<std::size_t, 1>>;
 
 constexpr double eps = std::numeric_limits<double>::epsilon();
-constexpr gaslib::BoltzmannConstant<double, scaled> k_b {1.0};
+constexpr canary::BoltzmannConstant<double, scaled> k_b {1.0};
 
 bool within_ulp(double a, double b, double ulps)
 { return std::abs(a - b) <= ulps * eps * std::abs(b); }
 
 template <std::size_t N> auto fractions(const std::array<double, N>& y)
-{ return gaslib::as_kind<gaslib::kind::mass_fraction>(View(y.data(), N)); }
+{ return canary::as_kind<canary::kind::mass_fraction>(View(y.data(), N)); }
 
 // mass={2,4}, charge={1,-1}, gamma={1.4,5/3}
 auto two_species()
 {
-    return gaslib::make_calorically_perfect_mixture<2>(std::array {Mass {2.0}, Mass {4.0}},
+    return canary::make_calorically_perfect_mixture<2>(std::array {Mass {2.0}, Mass {4.0}},
                                                        std::array {Q {1.0}, Q {-1.0}},
                                                        k_b,
                                                        std::array {Gamma {1.4}, Gamma {5.0 / 3.0}});
@@ -55,29 +55,29 @@ auto two_species()
 void test_cerberus_parity()
 {
     using namespace boost::ut;
-    using gaslib::thermo_state;
+    using canary::thermo_state;
 
     // Line 244: Y = {0.25, 0.75}, rho = 8, p = 5.
     "two species oracle: mass, charge, cv, cp, gamma, T, rho_e, sound speed"_test = [] {
         const auto gas = two_species();
         const std::array y {0.25, 0.75};
-        const auto mix = gaslib::mixture(gas.model, fractions(y));
-        expect(within_ulp(gaslib::mean_particle_mass(gas.species, fractions(y)).value(), 3.2, 4.0));
-        expect(within_ulp(gaslib::mean_charge(gas.species, fractions(y)).value(), -0.2, 4.0));
+        const auto mix = canary::mixture(gas.model, fractions(y));
+        expect(within_ulp(canary::mean_particle_mass(gas.species, fractions(y)).value(), 3.2, 4.0));
+        expect(within_ulp(canary::mean_charge(gas.species, fractions(y)).value(), -0.2, 4.0));
         expect(within_ulp(mix.cp.value(), 0.90625, 4.0));
         expect(within_ulp(mix.cv.value(), 0.59375, 4.0));
         const auto c = thermo_state(gas.model, mix, Rho {8.0}, P {5.0});
         expect(c.status == Status::Valid);
         expect(within_ulp(c.state.temp.value(), 2.0, 4.0));
         expect(within_ulp(c.state.e.value() * 8.0, 9.5, 4.0));
-        const auto props = gaslib::properties(gas.model, mix, c.state);
+        const auto props = canary::properties(gas.model, mix, c.state);
         expect(within_ulp(props.gamma.value(), 29.0 / 19, 4.0));
         expect(within_ulp(props.sound_speed.value(), std::sqrt((29.0 / 19) * 5 / 8), 4.0));
         // Partial densities rho Y = {2, 6} (cerberus U[5], U[6]).
         const std::array rho_i {2.0, 6.0};
         const auto from_rho =
-          gaslib::mixture(gas.model,
-                          gaslib::as_kind<gaslib::kind::density, scaled>(View(rho_i.data(), 2)),
+          canary::mixture(gas.model,
+                          canary::as_kind<canary::kind::density, scaled>(View(rho_i.data(), 2)),
                           Rho {8.0});
         expect(from_rho.cp == mix.cp && from_rho.cv == mix.cv &&
                from_rho.gas_constant == mix.gas_constant);
@@ -92,7 +92,7 @@ void test_cerberus_parity()
             expect(c.status == Status::Valid);
             expect(within_ulp(c.state.temp.value(), 2.0, 4.0)) << rho;
             const auto props =
-              gaslib::properties(gas.model, gaslib::mixture(gas.model, fractions(y)), c.state);
+              canary::properties(gas.model, canary::mixture(gas.model, fractions(y)), c.state);
             expect(within_ulp(props.sound_speed.value(), std::sqrt((29.0 / 19) * 5 / 8), 4.0))
               << rho;
         }
@@ -100,7 +100,7 @@ void test_cerberus_parity()
 
     // Line 298: mass={2,4,8}, charge={1,-1,2}, gamma={1.4,5/3,1.5}.
     "pure endpoints and an unequal three-species mixture match the analytic weights"_test = [] {
-        const auto gas = gaslib::make_calorically_perfect_mixture<3>(
+        const auto gas = canary::make_calorically_perfect_mixture<3>(
           std::array {Mass {2.0}, Mass {4.0}, Mass {8.0}},
           std::array {Q {1.0}, Q {-1.0}, Q {2.0}},
           k_b,
@@ -114,15 +114,15 @@ void test_cerberus_parity()
         const std::array expected_cp {1.75, 0.625, 0.375, 41.0 / 64};
         for (std::size_t i = 0; i < mixtures.size(); ++i) {
             const auto y = fractions(mixtures[i]);
-            const auto mix = gaslib::mixture(gas.model, y);
+            const auto mix = canary::mixture(gas.model, y);
             expect(
-              within_ulp(gaslib::mean_particle_mass(gas.species, y).value(), expected_mass[i], 4.0))
+              within_ulp(canary::mean_particle_mass(gas.species, y).value(), expected_mass[i], 4.0))
               << i;
-            expect(within_ulp(gaslib::mean_charge(gas.species, y).value(), expected_charge[i], 4.0))
+            expect(within_ulp(canary::mean_charge(gas.species, y).value(), expected_charge[i], 4.0))
               << i;
             expect(within_ulp(mix.cv.value(), expected_cv[i], 4.0)) << i;
             expect(within_ulp(mix.cp.value(), expected_cp[i], 4.0)) << i;
-            expect(within_ulp(gaslib::heat_capacity_ratio(mix.cp, mix.cv).value(),
+            expect(within_ulp(canary::heat_capacity_ratio(mix.cp, mix.cv).value(),
                               expected_cp[i] / expected_cv[i],
                               4.0))
               << i;
@@ -132,18 +132,18 @@ void test_cerberus_parity()
     // Line 354: equal or unequal masses with equal charge and gamma.
     "equal charges and gammas give the constant values"_test = [] {
         for (const double second_mass : {2.0, 4.0}) {
-            const auto gas = gaslib::make_calorically_perfect_mixture<2>(
+            const auto gas = canary::make_calorically_perfect_mixture<2>(
               std::array {Mass {2.0}, Mass {second_mass}},
               std::array {Q {-1.0}, Q {-1.0}},
               k_b,
               std::array {Gamma {1.4}, Gamma {1.4}});
             const std::array y {0.25, 0.75};
             const double mass = second_mass == 2.0 ? 2.0 : 3.2;
-            const auto mix = gaslib::mixture(gas.model, fractions(y));
+            const auto mix = canary::mixture(gas.model, fractions(y));
             expect(
-              within_ulp(gaslib::mean_particle_mass(gas.species, fractions(y)).value(), mass, 4.0));
-            expect(within_ulp(gaslib::mean_charge(gas.species, fractions(y)).value(), -1.0, 4.0));
-            expect(within_ulp(gaslib::heat_capacity_ratio(mix.cp, mix.cv).value(), 1.4, 4.0));
+              within_ulp(canary::mean_particle_mass(gas.species, fractions(y)).value(), mass, 4.0));
+            expect(within_ulp(canary::mean_charge(gas.species, fractions(y)).value(), -1.0, 4.0));
+            expect(within_ulp(canary::heat_capacity_ratio(mix.cp, mix.cv).value(), 1.4, 4.0));
             expect(within_ulp(mix.cp.value(), 3.5 / mass, 4.0));
         }
     };
@@ -153,7 +153,7 @@ void test_cerberus_parity()
     "each pair of density, pressure and temperature gives the same state"_test = [] {
         const auto gas = two_species();
         const std::array y {0.25, 0.75};
-        const auto mix = gaslib::mixture(gas.model, fractions(y));
+        const auto mix = canary::mixture(gas.model, fractions(y));
         for (const auto& c : {
                thermo_state(gas.model, mix, Rho {8.0}, P {5.0}),
                thermo_state(gas.model, mix, Rho {8.0}, Temp {2.0}),
@@ -168,7 +168,7 @@ void test_cerberus_parity()
 
     // Line 487: mass=2, charge=-1, gamma=1.4, one species.
     "the one-species model has R = 1/m, cv = 1.25 and cp = 1.75"_test = [] {
-        const auto gas = gaslib::make_calorically_perfect(Mass {2.0}, Q {-1.0}, k_b, Gamma {1.4});
+        const auto gas = canary::make_calorically_perfect(Mass {2.0}, Q {-1.0}, k_b, Gamma {1.4});
         expect(gas.model.gas_constant.value() == 0.5);
         expect(within_ulp(gas.model.cv.value(), 1.25, 4.0));
         expect(within_ulp(gas.model.cp.value(), 1.75, 4.0));

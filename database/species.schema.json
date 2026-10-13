@@ -179,7 +179,7 @@
                            "thermal_conductivity": {
                               "anyOf": [
                                  {
-                                    "$ref": "#/$defs/gaslib::database::TransportCurveRecord"
+                                    "$ref": "#/$defs/canary::database::TransportCurveRecord"
                                  },
                                  {
                                     "type": "null"
@@ -189,7 +189,7 @@
                            "viscosity": {
                               "anyOf": [
                                  {
-                                    "$ref": "#/$defs/gaslib::database::TransportCurveRecord"
+                                    "$ref": "#/$defs/canary::database::TransportCurveRecord"
                                  },
                                  {
                                     "type": "null"
@@ -240,12 +240,7 @@
    },
    "additionalProperties": false,
    "$defs": {
-      "double": {
-         "type": "number",
-         "minimum": -1.7976931348623157E308,
-         "maximum": 1.7976931348623157E308
-      },
-      "gaslib::database::TransportCurveRecord": {
+      "canary::database::TransportCurveRecord": {
          "type": "object",
          "properties": {
             "coefficients": {
@@ -284,6 +279,11 @@
             "coefficients"
          ]
       },
+      "double": {
+         "type": "number",
+         "minimum": -1.7976931348623157E308,
+         "maximum": 1.7976931348623157E308
+      },
       "int32_t": {
          "type": "integer",
          "minimum": -2147483648,
@@ -301,5 +301,5 @@
       "units",
       "species"
    ],
-   "title": "gaslib::database::SpeciesFile"
+   "title": "canary::database::SpeciesFile"
 }

@@ -1,16 +1,16 @@
 // A viscosity law in SI units does not accept a scaled temperature.
-#include <gaslib/transport/sutherland.hpp>
+#include <canary/transport/sutherland.hpp>
 
 namespace
 {
-constexpr gaslib::Sutherland<double, gaslib::si> law {
-  .mu_0 = gaslib::DynamicViscosity<double, gaslib::si> {1.716e-5},
-  .t_0 = gaslib::Temperature<double, gaslib::si> {273.15},
-  .s = gaslib::Temperature<double, gaslib::si> {110.4},
+constexpr canary::Sutherland<double, canary::si> law {
+  .mu_0 = canary::DynamicViscosity<double, canary::si> {1.716e-5},
+  .t_0 = canary::Temperature<double, canary::si> {273.15},
+  .s = canary::Temperature<double, canary::si> {110.4},
 };
 }  // namespace
 
-#ifdef GASLIB_COMPILE_FAIL
-auto bad = gaslib::viscosity(law, gaslib::Temperature<double, gaslib::scaled> {1.0});
+#ifdef CANARY_COMPILE_FAIL
+auto bad = canary::viscosity(law, canary::Temperature<double, canary::scaled> {1.0});
 #endif
-auto good = gaslib::viscosity(law, gaslib::Temperature<double, gaslib::si> {300.0});
+auto good = canary::viscosity(law, canary::Temperature<double, canary::si> {300.0});

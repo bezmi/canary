@@ -2,7 +2,7 @@
 // scalar.
 #include "scalar_types.hpp"
 
-#ifdef GASLIB_COMPILE_FAIL
-bool bad = gaslib::math::isfinite(gaslib::test::NoTraits {1.0});
+#ifdef CANARY_COMPILE_FAIL
+bool bad = canary::math::isfinite(canary::test::NoTraits {1.0});
 #endif
-bool good = gaslib::math::isfinite(1.0);
+bool good = canary::math::isfinite(1.0);

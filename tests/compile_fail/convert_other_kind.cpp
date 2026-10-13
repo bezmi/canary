@@ -1,11 +1,11 @@
 // Conversion keeps the kind: an energy density does not become a pressure.
-#include <gaslib/units.hpp>
+#include <canary/units.hpp>
 
-constexpr gaslib::UnitScales<double, gaslib::scaled> scales {1.0, 1.0, 1.0, 1.0};
+constexpr canary::UnitScales<double, canary::scaled> scales {1.0, 1.0, 1.0, 1.0};
 
-#ifdef GASLIB_COMPILE_FAIL
-gaslib::Pressure<double, gaslib::scaled> bad =
-  gaslib::convert<gaslib::scaled>(gaslib::EnergyDensity<double, gaslib::si> {1.0}, scales);
+#ifdef CANARY_COMPILE_FAIL
+canary::Pressure<double, canary::scaled> bad =
+  canary::convert<canary::scaled>(canary::EnergyDensity<double, canary::si> {1.0}, scales);
 #endif
-gaslib::Pressure<double, gaslib::scaled> good =
-  gaslib::convert<gaslib::scaled>(gaslib::Pressure<double, gaslib::si> {1.0}, scales);
+canary::Pressure<double, canary::scaled> good =
+  canary::convert<canary::scaled>(canary::Pressure<double, canary::si> {1.0}, scales);

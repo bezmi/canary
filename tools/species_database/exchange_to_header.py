@@ -1,6 +1,6 @@
-"""Writes a gaslib energy-exchange file (format gaslib-energy-exchange-1) as a
-C++ header of host input records (gaslib::EnergyExchangeInput, see
-include/gaslib/energy_exchange.hpp) and a builder of the energy exchange for
+"""Writes a canary energy-exchange file (format canary-energy-exchange-1) as a
+C++ header of host input records (canary::EnergyExchangeInput, see
+include/canary/energy_exchange.hpp) and a builder of the energy exchange for
 one thermo model's species and reaction mechanism.
 
 Numbers are written with Python's repr, which gives the shortest decimal
@@ -8,10 +8,10 @@ that reads back to the same double. Entries keep the order of the file. The
 output is meant to be formatted with clang-format afterwards.
 
 Usage: exchange_to_header.py exchange.json --name air5_park_exchange
-           --alias Air5ParkExchange --species-header gaslib/data/air5.hpp
+           --alias Air5ParkExchange --species-header canary/data/air5.hpp
            --species-array air5_species --mechanism-alias Air5Park
-           --mechanism-header gaslib/data/air5_park.hpp
-           -o include/gaslib/data/air5_park_exchange.hpp
+           --mechanism-header canary/data/air5_park.hpp
+           -o include/canary/data/air5_park_exchange.hpp
 """
 
 import argparse
@@ -20,7 +20,7 @@ from pathlib import Path
 
 from reactions_to_header import comment, number, string
 
-FORMAT = "gaslib-energy-exchange-1"
+FORMAT = "canary-energy-exchange-1"
 UNITS = {"energy": "J/mol", "temperature": "K", "area": "m^2"}
 
 
@@ -97,7 +97,7 @@ def main():
     parser.add_argument("--name", required=True, help="name of the input records and of make_<name>")
     parser.add_argument("--alias", required=True, help="name of the energy-exchange type alias")
     parser.add_argument("--species-header", required=True, help="header of the thermo model's species")
-    parser.add_argument("--species-array", required=True, help="array of gaslib::Nasa9Species in that header")
+    parser.add_argument("--species-array", required=True, help="array of canary::Nasa9Species in that header")
     parser.add_argument("--mechanism-header", required=True, help="header of the reaction mechanism")
     parser.add_argument("--mechanism-alias", required=True, help="mechanism type alias in that header")
     parser.add_argument("--species-file", help="species file with ionisation energies (needed for C-E entries)")
@@ -119,13 +119,13 @@ def main():
         raise SystemExit("an exchange with electrons needs --model-alias and --model-header")
     species = (json.loads(Path(args.species_file).read_text(encoding="utf-8"))["species"]
                if args.species_file else {})
-    guard = f"GASLIB_DATA_{args.name.upper()}_HPP"
+    guard = f"CANARY_DATA_{args.name.upper()}_HPP"
     reference = data.get("reference", "")
     source = Path(args.exchange).name
 
     includes = ["#include <array>", "#include <concepts>", "#include <cstddef>",
-                "#include <gaslib/energy_exchange.hpp>", "#include <gaslib/species.hpp>",
-                "#include <gaslib/units.hpp>", "#include <string_view>",
+                "#include <canary/energy_exchange.hpp>", "#include <canary/species.hpp>",
+                "#include <canary/units.hpp>", "#include <string_view>",
                 f"#include <{args.species_header}>", f"#include <{args.mechanism_header}>"]
     if electrons:
         includes.append(f"#include <{args.model_header}>")
@@ -194,7 +194,7 @@ template <std::floating_point P, UnitSystem U>
 
 {chr(10).join(includes)}
 
-namespace gaslib
+namespace canary
 {{
 
 // The {len(vt)} vibration-translation pairs and {len(cv)} chemistry-vibration
@@ -206,7 +206,7 @@ inline constexpr EnergyExchangeInput<{len(vt)}, {len(cv)}> {args.name} {{
 
 {tail}
 
-}}  // namespace gaslib
+}}  // namespace canary
 
 #endif  // {guard}
 """

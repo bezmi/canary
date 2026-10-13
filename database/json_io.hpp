@@ -1,5 +1,5 @@
-#ifndef GASLIB_DATABASE_JSON_IO_HPP
-#define GASLIB_DATABASE_JSON_IO_HPP
+#ifndef CANARY_DATABASE_JSON_IO_HPP
+#define CANARY_DATABASE_JSON_IO_HPP
 
 // glaze options and file input and output shared by the species,
 // reactions, energy-exchange and collision-integral files. Private to the database library.
@@ -7,14 +7,14 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
-#include <gaslib/database.hpp>
+#include <canary/database.hpp>
 #include <glaze/glaze.hpp>
 #include <ios>
 #include <iterator>
 #include <string>
 #include <string_view>
 
-namespace gaslib::database::detail
+namespace canary::database::detail
 {
 
 // Unknown keys and missing required keys are errors; optional members may be
@@ -45,6 +45,6 @@ inline void write_text(const std::filesystem::path& path, const std::string& tex
     if (!out) { throw DatabaseError(std::format("cannot write {}", path.string())); }
 }
 
-}  // namespace gaslib::database::detail
+}  // namespace canary::database::detail
 
-#endif  // GASLIB_DATABASE_JSON_IO_HPP
+#endif  // CANARY_DATABASE_JSON_IO_HPP

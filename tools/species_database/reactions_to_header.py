@@ -1,5 +1,5 @@
-"""Writes a gaslib reactions file (format gaslib-reactions-1) as a C++ header
-of host input records (gaslib::MechanismInput, see include/gaslib/reactions.hpp)
+"""Writes a canary reactions file (format canary-reactions-1) as a C++ header
+of host input records (canary::MechanismInput, see include/canary/reactions.hpp)
 and a builder of the mechanism for one thermo model's species.
 
 Numbers are written with Python's repr, which gives the shortest decimal
@@ -8,15 +8,15 @@ of the file. Species lists keep the order of the file. The output is meant
 to be formatted with clang-format afterwards.
 
 Usage: reactions_to_header.py reactions.json --name air5_kim_jo
-           --alias Air5KimJo --species-header gaslib/data/air5.hpp
-           --species-array air5_species -o include/gaslib/data/air5_kim_jo.hpp
+           --alias Air5KimJo --species-header canary/data/air5.hpp
+           --species-array air5_species -o include/canary/data/air5_kim_jo.hpp
 """
 
 import argparse
 import json
 from pathlib import Path
 
-FORMAT = "gaslib-reactions-1"
+FORMAT = "canary-reactions-1"
 UNITS = {"quantity": "mol", "length": "m", "time": "s", "temperature": "K"}
 
 
@@ -93,7 +93,7 @@ def main():
     parser.add_argument("--name", required=True, help="name of the input records and of make_<name>")
     parser.add_argument("--alias", required=True, help="name of the mechanism type alias")
     parser.add_argument("--species-header", required=True, help="header of the thermo model's species")
-    parser.add_argument("--species-array", required=True, help="array of gaslib::Nasa9Species in that header")
+    parser.add_argument("--species-array", required=True, help="array of canary::Nasa9Species in that header")
     parser.add_argument("-o", "--output", required=True)
     args = parser.parse_args()
 
@@ -110,7 +110,7 @@ def main():
     capacity = max(max(len(r["reactants"]), len(r["products"]),
                        len(r.get("third_body", {}).get("efficiencies", {}))) for r in reactions)
     count = len(reactions)
-    guard = f"GASLIB_DATA_{args.name.upper()}_HPP"
+    guard = f"CANARY_DATA_{args.name.upper()}_HPP"
     reference = data.get("reference", "")
     source = Path(args.reactions).name
 
@@ -124,14 +124,14 @@ def main():
 #include <array>
 #include <concepts>
 #include <cstddef>
-#include <gaslib/quantity.hpp>
-#include <gaslib/reactions.hpp>
-#include <gaslib/species.hpp>
-#include <gaslib/units.hpp>
+#include <canary/quantity.hpp>
+#include <canary/reactions.hpp>
+#include <canary/species.hpp>
+#include <canary/units.hpp>
 #include <string_view>
 #include <{args.species_header}>
 
-namespace gaslib
+namespace canary
 {{
 
 // The {count} reactions of {source} in file order, in SI units per mole,
@@ -189,7 +189,7 @@ template <std::floating_point P, UnitSystem U, typename G>
     return make_reaction_mechanism({args.name}, detail::{args.name}_species_names, species, scales, standard_pressure, gas);
 }}
 
-}}  // namespace gaslib
+}}  // namespace canary
 
 #endif  // {guard}
 """

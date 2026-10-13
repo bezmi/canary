@@ -1,5 +1,5 @@
 {
-   "format": "gaslib-species-1",
+   "format": "canary-species-1",
    "units": {
       "molar_mass": "kg/mol",
       "energy": "J/mol",

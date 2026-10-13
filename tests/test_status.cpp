@@ -2,12 +2,12 @@
 
 #include <array>
 #include <boost/ut.hpp>
-#include <gaslib/status.hpp>
+#include <canary/status.hpp>
 
 namespace
 {
 
-using gaslib::Status;
+using canary::Status;
 
 constexpr std::array all_statuses {
   Status::Valid,
@@ -18,14 +18,14 @@ constexpr std::array all_statuses {
 
 }  // namespace
 
-static_assert(gaslib::combine(Status::Valid, Status::Valid) == Status::Valid);
-static_assert(gaslib::combine(Status::CompositionViolation, Status::NotConverged) ==
+static_assert(canary::combine(Status::Valid, Status::Valid) == Status::Valid);
+static_assert(canary::combine(Status::CompositionViolation, Status::NotConverged) ==
               Status::NotConverged);
 
 void test_status()
 {
     using namespace boost::ut;
-    using gaslib::combine;
+    using canary::combine;
 
     "combine is commutative"_test = [] {
         for (const Status a : all_statuses) {

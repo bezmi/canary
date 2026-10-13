@@ -1,6 +1,6 @@
 """Converts a GDTk energy-exchange file as written by prep-kinetics (a Lua
-table mechanism[k] = {...}) to a gaslib energy-exchange file (format
-gaslib-energy-exchange-1, SI units).
+table mechanism[k] = {...}) to a canary energy-exchange file (format
+canary-energy-exchange-1, SI units).
 
 Converted entries:
 - type 'V-T', rate 'Landau-Teller', with relaxation_time
@@ -26,7 +26,7 @@ C-V entries with a non-positive dissociation energy (GDTk writes them for
 ions) are dropped, and so, with --reactions, are C-V entries of a species
 that has no net change in its reaction; both have no effect. Any other
 entry is an error. With --reactions and --ionisation-label, the
-reactions of that gaslib reactions file with that label become
+reactions of that canary reactions file with that label become
 electron_impact_ionisation entries (the neutral reactant that becomes an
 ion); GDTk's files do not contain them.
 
@@ -38,7 +38,7 @@ import argparse
 import json
 import re
 
-FORMAT = "gaslib-energy-exchange-1"
+FORMAT = "canary-energy-exchange-1"
 UNITS = {"energy": "J/mol", "temperature": "K", "area": "m^2"}
 # Reference temperature of the cross-section of GDTk's ParkHTC2 correction.
 PARK_REFERENCE_TEMPERATURE = 50000.0
@@ -161,7 +161,7 @@ def chemistry_vibration(body):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("exchange")
-    parser.add_argument("--reactions", help="gaslib reactions file for electron_impact_ionisation entries")
+    parser.add_argument("--reactions", help="canary reactions file for electron_impact_ionisation entries")
     parser.add_argument("--ionisation-label", default="EII")
     parser.add_argument("--source", required=True)
     parser.add_argument("-o", "--output", required=True)

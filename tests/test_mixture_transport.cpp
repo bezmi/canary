@@ -8,22 +8,22 @@
 #include <concepts>
 #include <cstddef>
 #include <format>
-#include <gaslib/build.hpp>
-#include <gaslib/data/air5.hpp>
-#include <gaslib/data/air5_transport.hpp>
-#include <gaslib/models/calorically_perfect.hpp>
-#include <gaslib/models/thermally_perfect.hpp>
-#include <gaslib/models/two_temperature.hpp>
-#include <gaslib/nasa9.hpp>
-#include <gaslib/quantity.hpp>
-#include <gaslib/species.hpp>
-#include <gaslib/state.hpp>
-#include <gaslib/thermo.hpp>
-#include <gaslib/transport/constant.hpp>
-#include <gaslib/transport/mixture.hpp>
-#include <gaslib/transport/prandtl.hpp>
-#include <gaslib/transport/transport.hpp>
-#include <gaslib/units.hpp>
+#include <canary/build.hpp>
+#include <canary/data/air5.hpp>
+#include <canary/data/air5_transport.hpp>
+#include <canary/models/calorically_perfect.hpp>
+#include <canary/models/thermally_perfect.hpp>
+#include <canary/models/two_temperature.hpp>
+#include <canary/nasa9.hpp>
+#include <canary/quantity.hpp>
+#include <canary/species.hpp>
+#include <canary/state.hpp>
+#include <canary/thermo.hpp>
+#include <canary/transport/constant.hpp>
+#include <canary/transport/mixture.hpp>
+#include <canary/transport/prandtl.hpp>
+#include <canary/transport/transport.hpp>
+#include <canary/units.hpp>
 #include <limits>
 #include <mdspan/mdspan.hpp>
 #include <numbers>
@@ -35,13 +35,13 @@
 namespace
 {
 
-using gaslib::scaled;
-using gaslib::si;
-using D = gaslib::test::Dual<double>;
-using Air = gaslib::Air5<double, si>;
-using AirTwoTemperature = gaslib::Air5TwoTemperature<double, si>;
-using Wilke = gaslib::Air5WilkeTransport<double, si>;
-using GuptaYos = gaslib::Air5GuptaYosTransport<double, si>;
+using canary::scaled;
+using canary::si;
+using D = canary::test::Dual<double>;
+using Air = canary::Air5<double, si>;
+using AirTwoTemperature = canary::Air5TwoTemperature<double, si>;
+using Wilke = canary::Air5WilkeTransport<double, si>;
+using GuptaYos = canary::Air5GuptaYosTransport<double, si>;
 using Extents = Kokkos::dextents<std::size_t, 1>;
 
 constexpr std::size_t species_count = 5;
@@ -51,11 +51,11 @@ using Matrix = std::array<Row, species_count>;
 
 constexpr double eps = std::numeric_limits<double>::epsilon();
 constexpr double quiet_nan = std::numeric_limits<double>::quiet_NaN();
-constexpr double boltzmann = gaslib::constants::boltzmann<double>;
-constexpr double avogadro = gaslib::constants::avogadro<double>;
+constexpr double boltzmann = canary::constants::boltzmann<double>;
+constexpr double avogadro = canary::constants::avogadro<double>;
 
-const gaslib::UnitScales<double, si> si_scales {};
-const gaslib::UnitScales<double, scaled> reference_scales {
+const canary::UnitScales<double, si> si_scales {};
+const canary::UnitScales<double, scaled> reference_scales {
   .mass = 4.65e-26,
   .density = 1.0e-3,
   .temperature = 1000.0,
@@ -67,13 +67,13 @@ constexpr Fractions dissociated {0.3, 0.1, 0.3, 0.25, 0.05};
 
 template <typename T> auto fractions(const std::array<T, species_count>& y)
 {
-    return gaslib::as_kind<gaslib::kind::mass_fraction>(
+    return canary::as_kind<canary::kind::mass_fraction>(
       Kokkos::mdspan<const T, Extents>(y.data(), species_count));
 }
 
-template <gaslib::UnitSystem U, typename T> auto mode_temperatures(const std::array<T, 1>& t_ve)
+template <canary::UnitSystem U, typename T> auto mode_temperatures(const std::array<T, 1>& t_ve)
 {
-    return gaslib::as_kind<gaslib::kind::mode_temperature, U>(
+    return canary::as_kind<canary::kind::mode_temperature, U>(
       Kokkos::mdspan<const T, Extents>(t_ve.data(), 1));
 }
 
@@ -273,11 +273,11 @@ const std::array<ReferenceState, 7> gupta_yos_reference {
 };
 // clang-format on
 
-// D_ij of gaslib over D_ij of the reference Wilke model, which computes D_ij
+// D_ij of canary over D_ij of the reference Wilke model, which computes D_ij
 // from the constant 0.00266 with p in atm.
 constexpr double reference_diffusion_ratio = 0.9882309643094598;
 
-// gaslib results at one state, in SI: viscosity, conductivity, the mode
+// canary results at one state, in SI: viscosity, conductivity, the mode
 // conductivity (quiet_nan without modes), D_ij and D_i.
 struct Result {
     double mu;
@@ -291,22 +291,22 @@ struct Result {
 // modes, T_ve; the inputs are converted from SI to the units of the gas.
 template <typename G, typename T>
 auto state_at(const G& gas,
-              const gaslib::mixture_t<G, T>& mix,
+              const canary::mixture_t<G, T>& mix,
               T p,
               T temp,
               T t_ve,
-              const gaslib::UnitScales<double, typename G::units>& scales)
+              const canary::UnitScales<double, typename G::units>& scales)
 {
     using U = G::units;
-    const auto p_q = gaslib::convert<U>(gaslib::Pressure<T, si> {p}, scales);
-    const auto temp_q = gaslib::convert<U>(gaslib::Temperature<T, si> {temp}, scales);
-    if constexpr (std::same_as<gaslib::state_t<G, T>, gaslib::ThermoState<T, U>>) {
-        return gaslib::thermo_state(gas, mix, p_q, temp_q).state;
+    const auto p_q = canary::convert<U>(canary::Pressure<T, si> {p}, scales);
+    const auto temp_q = canary::convert<U>(canary::Temperature<T, si> {temp}, scales);
+    if constexpr (std::same_as<canary::state_t<G, T>, canary::ThermoState<T, U>>) {
+        return canary::thermo_state(gas, mix, p_q, temp_q).state;
     } else {
         const std::array<T, 1> modes {
-          gaslib::convert<U>(gaslib::Temperature<T, si> {t_ve}, scales).value(),
+          canary::convert<U>(canary::Temperature<T, si> {t_ve}, scales).value(),
         };
-        return gaslib::thermo_state(gas, mix, p_q, temp_q, mode_temperatures<U>(modes)).state;
+        return canary::thermo_state(gas, mix, p_q, temp_q, mode_temperatures<U>(modes)).state;
     }
 }
 
@@ -317,25 +317,25 @@ Result evaluate(const M& model,
                 double p,
                 double temp,
                 double t_ve,
-                const gaslib::UnitScales<double, typename G::units>& scales)
+                const canary::UnitScales<double, typename G::units>& scales)
 {
-    const auto mix = gaslib::mixture(gas, fractions(y));
+    const auto mix = canary::mixture(gas, fractions(y));
     const auto state = state_at(gas, mix, p, temp, t_ve, scales);
-    const auto coefficients = gaslib::transport(model, gas, mix, state);
-    const auto d = gaslib::binary_diffusion_coefficients(model, gas, mix, state);
-    const auto d_mix = gaslib::mixture_diffusion_coefficients(model, gas, mix, state);
+    const auto coefficients = canary::transport(model, gas, mix, state);
+    const auto d = canary::binary_diffusion_coefficients(model, gas, mix, state);
+    const auto d_mix = canary::mixture_diffusion_coefficients(model, gas, mix, state);
     Result out {};
-    out.mu = gaslib::convert<si>(coefficients.viscosity, scales).value();
-    out.k = gaslib::convert<si>(coefficients.conductivity, scales).value();
+    out.mu = canary::convert<si>(coefficients.viscosity, scales).value();
+    out.k = canary::convert<si>(coefficients.conductivity, scales).value();
     out.k_ve = quiet_nan;
     if constexpr (requires { coefficients.mode_conductivity; }) {
-        out.k_ve = gaslib::convert<si>(coefficients.mode_conductivity[0], scales).value();
+        out.k_ve = canary::convert<si>(coefficients.mode_conductivity[0], scales).value();
     }
     for (std::size_t i = 0; i < species_count; ++i) {
         for (std::size_t j = 0; j < species_count; ++j) {
-            out.d[i][j] = gaslib::convert<si>(d[i][j], scales).value();
+            out.d[i][j] = canary::convert<si>(d[i][j], scales).value();
         }
-        out.d_mix[i] = gaslib::convert<si>(d_mix[i], scales).value();
+        out.d_mix[i] = canary::convert<si>(d_mix[i], scales).value();
     }
     return out;
 }
@@ -343,7 +343,7 @@ Result evaluate(const M& model,
 // A CEA fit in SI at temperature t: the segment k of the input, or by
 // default the first segment that contains t, with t clamped to the ends.
 template <std::size_t S>
-double cea_value(const gaslib::TransportCurveInput<S>& curve, double t, std::size_t k = S)
+double cea_value(const canary::TransportCurveInput<S>& curve, double t, std::size_t k = S)
 {
     const auto n = static_cast<std::size_t>(curve.segments);
     const double tc = std::clamp(t, curve.breaks[0], curve.breaks[n]);
@@ -361,7 +361,7 @@ Row mole_fractions(const Fractions& y)
     Row x {};
     double sum = 0;
     for (std::size_t i = 0; i < species_count; ++i) {
-        x[i] = y[i] / gaslib::air5_species[i].molar_mass;
+        x[i] = y[i] / canary::air5_species[i].molar_mass;
         sum += x[i];
     }
     for (double& v : x) { v /= sum; }
@@ -374,10 +374,10 @@ double wilke_rule(const Row& x, const Row& v, const Row& w)
 {
     double total = 0;
     for (std::size_t i = 0; i < species_count; ++i) {
-        const double m_i = gaslib::air5_species[i].molar_mass;
+        const double m_i = canary::air5_species[i].molar_mass;
         double sum = 0;
         for (std::size_t j = 0; j < species_count; ++j) {
-            const double m_j = gaslib::air5_species[j].molar_mass;
+            const double m_j = canary::air5_species[j].molar_mass;
             const double a = 1.0 + (std::sqrt(w[i] / w[j]) * std::pow(m_j / m_i, 0.25));
             sum += x[j] * a * a / std::sqrt(8.0 * (1.0 + (m_i / m_j)));
         }
@@ -389,12 +389,12 @@ double wilke_rule(const Row& x, const Row& v, const Row& w)
 // Delta(2)_ij in SI at T from the fit of the pair.
 double delta_2(std::size_t i, std::size_t j, double t)
 {
-    const std::string_view a = gaslib::air5_species[i].name;
-    const std::string_view b = gaslib::air5_species[j].name;
-    for (const auto& pair : gaslib::air5_collision_integrals) {
+    const std::string_view a = canary::air5_species[i].name;
+    const std::string_view b = canary::air5_species[j].name;
+    for (const auto& pair : canary::air5_collision_integrals) {
         if ((pair.first == a && pair.second == b) || (pair.first == b && pair.second == a)) {
-            const double m_i = gaslib::air5_species[i].molar_mass / avogadro;
-            const double m_j = gaslib::air5_species[j].molar_mass / avogadro;
+            const double m_i = canary::air5_species[i].molar_mass / avogadro;
+            const double m_j = canary::air5_species[j].molar_mass / avogadro;
             const double mu = m_i * m_j / (m_i + m_j);
             const double l = std::log(t);
             const auto& f = pair.pi_omega_22;
@@ -408,11 +408,11 @@ double delta_2(std::size_t i, std::size_t j, double t)
 
 // A copy of air5_species whose molecules have the constant heat capacity
 // cp / R = cp_over_r at every temperature.
-std::array<gaslib::Nasa9Species<4>, species_count> constant_cp_species(double cp_over_r)
+std::array<canary::Nasa9Species<4>, species_count> constant_cp_species(double cp_over_r)
 {
-    auto species = gaslib::air5_species;
+    auto species = canary::air5_species;
     for (const std::size_t i : {std::size_t {0}, std::size_t {1}, std::size_t {4}}) {
-        gaslib::Nasa9Data<4> fit {};
+        canary::Nasa9Data<4> fit {};
         fit.segments = 1;
         fit.breaks[0] = 200.0;
         fit.breaks[1] = 20000.0;
@@ -426,65 +426,65 @@ template <typename F> std::string error_message(const F& f)
 {
     try {
         f();
-    } catch (const gaslib::ParameterError& error) {
+    } catch (const canary::ParameterError& error) {
         return error.what();
     }
     return "no exception";
 }
 
 using SutherlandPrandtl =
-  gaslib::Transport<gaslib::ConstantViscosity<double, si>, gaslib::ConstantPrandtl<double>>;
-using CaloricallyPerfectAir = gaslib::CaloricallyPerfectMixture<double, si, species_count>;
+  canary::Transport<canary::ConstantViscosity<double, si>, canary::ConstantPrandtl<double>>;
+using CaloricallyPerfectAir = canary::CaloricallyPerfectMixture<double, si, species_count>;
 
 }  // namespace
 
-static_assert(gaslib::HasNormalisedComposition<Air, double, 5>);
-static_assert(gaslib::HasNormalisedComposition<AirTwoTemperature, D, 5>);
-static_assert(!gaslib::HasNormalisedComposition<Air, double, 4>);
-static_assert(!gaslib::HasNormalisedComposition<CaloricallyPerfectAir, double, 5>);
-static_assert(gaslib::HasSpeciesIsobaricSpecificHeat<Air, double, 5>);
-static_assert(gaslib::HasSpeciesIsobaricSpecificHeat<AirTwoTemperature, D, 5>);
-static_assert(gaslib::HasSpeciesIsobaricSpecificHeat<AirTwoTemperature, float, 5>);
-static_assert(!gaslib::HasSpeciesIsobaricSpecificHeat<Air, double, 4>);
-static_assert(!gaslib::HasSpeciesIsobaricSpecificHeat<CaloricallyPerfectAir, double, 5>);
-static_assert(gaslib::TransportModel<Wilke, Air, double>);
-static_assert(gaslib::TransportModel<Wilke, Air, D>);
-static_assert(gaslib::TransportModel<Wilke, Air, float>);
-static_assert(gaslib::TransportModel<Wilke, AirTwoTemperature, D>);
-static_assert(gaslib::TransportModel<GuptaYos, Air, D>);
-static_assert(gaslib::TransportModel<GuptaYos, AirTwoTemperature, double>);
-static_assert(gaslib::TransportModel<GuptaYos, AirTwoTemperature, float>);
-static_assert(gaslib::TransportModel<gaslib::Air5GuptaYosTransport<float, scaled>,
-                                     gaslib::Air5TwoTemperature<float, scaled>,
+static_assert(canary::HasNormalisedComposition<Air, double, 5>);
+static_assert(canary::HasNormalisedComposition<AirTwoTemperature, D, 5>);
+static_assert(!canary::HasNormalisedComposition<Air, double, 4>);
+static_assert(!canary::HasNormalisedComposition<CaloricallyPerfectAir, double, 5>);
+static_assert(canary::HasSpeciesIsobaricSpecificHeat<Air, double, 5>);
+static_assert(canary::HasSpeciesIsobaricSpecificHeat<AirTwoTemperature, D, 5>);
+static_assert(canary::HasSpeciesIsobaricSpecificHeat<AirTwoTemperature, float, 5>);
+static_assert(!canary::HasSpeciesIsobaricSpecificHeat<Air, double, 4>);
+static_assert(!canary::HasSpeciesIsobaricSpecificHeat<CaloricallyPerfectAir, double, 5>);
+static_assert(canary::TransportModel<Wilke, Air, double>);
+static_assert(canary::TransportModel<Wilke, Air, D>);
+static_assert(canary::TransportModel<Wilke, Air, float>);
+static_assert(canary::TransportModel<Wilke, AirTwoTemperature, D>);
+static_assert(canary::TransportModel<GuptaYos, Air, D>);
+static_assert(canary::TransportModel<GuptaYos, AirTwoTemperature, double>);
+static_assert(canary::TransportModel<GuptaYos, AirTwoTemperature, float>);
+static_assert(canary::TransportModel<canary::Air5GuptaYosTransport<float, scaled>,
+                                     canary::Air5TwoTemperature<float, scaled>,
                                      double>);
-static_assert(!gaslib::TransportModel<GuptaYos, CaloricallyPerfectAir, double>);
-static_assert(!gaslib::TransportModel<GuptaYos, gaslib::Air5<double, scaled>, double>);
+static_assert(!canary::TransportModel<GuptaYos, CaloricallyPerfectAir, double>);
+static_assert(!canary::TransportModel<GuptaYos, canary::Air5<double, scaled>, double>);
 // A pair of single-gas laws keeps one conductivity at a state with modes.
-static_assert(gaslib::TransportModel<SutherlandPrandtl, AirTwoTemperature, double>);
+static_assert(canary::TransportModel<SutherlandPrandtl, AirTwoTemperature, double>);
 static_assert(std::is_trivially_copyable_v<Wilke>);
 static_assert(std::is_trivially_copyable_v<GuptaYos>);
 static_assert(
-  std::is_trivially_copyable_v<gaslib::MultiTemperatureTransportCoefficients<D, si, 1>>);
-static_assert(std::same_as<decltype(gaslib::transport(
+  std::is_trivially_copyable_v<canary::MultiTemperatureTransportCoefficients<D, si, 1>>);
+static_assert(std::same_as<decltype(canary::transport(
                              std::declval<const Wilke&>(),
                              std::declval<const AirTwoTemperature&>(),
-                             std::declval<const gaslib::mixture_t<AirTwoTemperature, double>&>(),
-                             std::declval<const gaslib::state_t<AirTwoTemperature, double>&>())),
-                           gaslib::MultiTemperatureTransportCoefficients<double, si, 1>>);
-static_assert(gaslib::air5_species_transport.size() == 5);
-static_assert(gaslib::air5_collision_integrals.size() == 15);
+                             std::declval<const canary::mixture_t<AirTwoTemperature, double>&>(),
+                             std::declval<const canary::state_t<AirTwoTemperature, double>&>())),
+                           canary::MultiTemperatureTransportCoefficients<double, si, 1>>);
+static_assert(canary::air5_species_transport.size() == 5);
+static_assert(canary::air5_collision_integrals.size() == 15);
 
 void test_mixture_transport()
 {
     using namespace boost::ut;
-    const auto air = gaslib::make_air5<double>(si_scales);
-    const auto air_two_temperature = gaslib::make_air5_two_temperature<double>(si_scales);
-    const Wilke wilke = gaslib::make_air5_wilke_transport(air.species, si_scales);
+    const auto air = canary::make_air5<double>(si_scales);
+    const auto air_two_temperature = canary::make_air5_two_temperature<double>(si_scales);
+    const Wilke wilke = canary::make_air5_wilke_transport(air.species, si_scales);
     const Wilke wilke_viscosity_ratio =
-      gaslib::make_air5_wilke_transport(air.species,
+      canary::make_air5_wilke_transport(air.species,
                                         si_scales,
-                                        gaslib::ConductivityMixing::viscosity_ratio);
-    const GuptaYos gupta_yos = gaslib::make_air5_gupta_yos_transport(air.species, si_scales);
+                                        canary::ConductivityMixing::viscosity_ratio);
+    const GuptaYos gupta_yos = canary::make_air5_gupta_yos_transport(air.species, si_scales);
 
     "mixture transport: Wilke values equal the reference"_test = [&] {
         for (const ReferenceState& s : wilke_reference) {
@@ -532,7 +532,7 @@ void test_mixture_transport()
         for (std::size_t i = 0; i < species_count; ++i) {
             Fractions y {};
             y[i] = 1.0;
-            const auto& data = gaslib::air5_species_transport[i];
+            const auto& data = canary::air5_species_transport[i];
             for (const double temp : {150.0, 300.0, 750.0, 2500.0, 7000.0, 12000.0, 20000.0}) {
                 const double mu = cea_value(data.viscosity, temp);
                 const double k = cea_value(data.conductivity, temp);
@@ -556,7 +556,7 @@ void test_mixture_transport()
               return evaluate(wilke, air.model, y, 1.0e5, temp, quiet_nan, si_scales);
           };
           for (std::size_t i = 0; i < species_count; ++i) {
-              const auto& data = gaslib::air5_species_transport[i];
+              const auto& data = canary::air5_species_transport[i];
               const auto n = static_cast<std::size_t>(data.viscosity.segments);
               for (std::size_t k = 0; k + 1 < n; ++k) {
                   const double t_break = data.viscosity.breaks[k + 1];
@@ -586,13 +586,13 @@ void test_mixture_transport()
           }
           // Beyond the ends the derivative with respect to T is zero.
           const std::array<D, species_count> y {1.0, 0.0, 0.0, 0.0, 0.0};
-          const auto mix = gaslib::mixture(air.model, fractions(y));
+          const auto mix = canary::mixture(air.model, fractions(y));
           for (const double temp : {100.0, 30000.0}) {
-              const auto c = gaslib::thermo_state(air.model,
+              const auto c = canary::thermo_state(air.model,
                                                   mix,
-                                                  gaslib::Pressure<D, si> {D(1.0e5)},
-                                                  gaslib::Temperature<D, si> {D(temp, 1.0)});
-              const auto coefficients = gaslib::transport(wilke, air.model, mix, c.state);
+                                                  canary::Pressure<D, si> {D(1.0e5)},
+                                                  canary::Temperature<D, si> {D(temp, 1.0)});
+              const auto coefficients = canary::transport(wilke, air.model, mix, c.state);
               expect(coefficients.viscosity.value().dual() == 0.0 &&
                      coefficients.conductivity.value().dual() == 0.0)
                 << temp;
@@ -607,8 +607,8 @@ void test_mixture_transport()
                   Row mu {};
                   Row k {};
                   for (std::size_t i = 0; i < species_count; ++i) {
-                      mu[i] = cea_value(gaslib::air5_species_transport[i].viscosity, temp);
-                      k[i] = cea_value(gaslib::air5_species_transport[i].conductivity, temp);
+                      mu[i] = cea_value(canary::air5_species_transport[i].viscosity, temp);
+                      k[i] = cea_value(canary::air5_species_transport[i].conductivity, temp);
                   }
                   const Result ratio = evaluate(wilke_viscosity_ratio,
                                                 air.model,
@@ -635,7 +635,7 @@ void test_mixture_transport()
             y[i] = 1.0;
             for (const double temp : {300.0, 2500.0, 9000.0, 25000.0}) {
                 const Result got = evaluate(gupta_yos, air.model, y, 1.0e5, temp, temp, si_scales);
-                const double m = gaslib::air5_species[i].molar_mass / avogadro;
+                const double m = canary::air5_species[i].molar_mass / avogadro;
                 // The constants of Delta are folded into the exponent of
                 // the fit, of magnitude about 50: a few 1e-15.
                 expect(relative(got.mu, m / delta_2(i, i, temp), 1.0e-12)) << i << temp << got.mu;
@@ -710,10 +710,10 @@ void test_mixture_transport()
 
     "mixture transport: k_ve is zero when cp / R <= 7/2 and limited at cp / R >= 9/2"_test = [&] {
         const auto k_ve_of = [&](double cp_over_r, double t_ve) {
-            const auto gas = gaslib::make_two_temperature_mixture(constant_cp_species(cp_over_r),
-                                                                  gaslib::air5_rotational_degrees,
+            const auto gas = canary::make_two_temperature_mixture(constant_cp_species(cp_over_r),
+                                                                  canary::air5_rotational_degrees,
                                                                   si_scales);
-            const auto model = gaslib::make_air5_gupta_yos_transport(gas.species, si_scales);
+            const auto model = canary::make_air5_gupta_yos_transport(gas.species, si_scales);
             return evaluate(model, gas.model, dissociated, 1.0e4, 5000.0, t_ve, si_scales);
         };
         for (const double t_ve : {300.0, 6000.0}) {
@@ -736,16 +736,16 @@ void test_mixture_transport()
     };
 
     "mixture transport: scaled units give the SI results after conversion"_test = [&] {
-        const auto air_s = gaslib::make_air5<double>(reference_scales);
+        const auto air_s = canary::make_air5<double>(reference_scales);
         const auto air_two_temperature_s =
-          gaslib::make_air5_two_temperature<double>(reference_scales);
-        const auto wilke_s = gaslib::make_air5_wilke_transport(air_s.species, reference_scales);
+          canary::make_air5_two_temperature<double>(reference_scales);
+        const auto wilke_s = canary::make_air5_wilke_transport(air_s.species, reference_scales);
         const auto wilke_ratio_s =
-          gaslib::make_air5_wilke_transport(air_s.species,
+          canary::make_air5_wilke_transport(air_s.species,
                                             reference_scales,
-                                            gaslib::ConductivityMixing::viscosity_ratio);
+                                            canary::ConductivityMixing::viscosity_ratio);
         const auto gupta_yos_s =
-          gaslib::make_air5_gupta_yos_transport(air_s.species, reference_scales);
+          canary::make_air5_gupta_yos_transport(air_s.species, reference_scales);
         const auto compare = [](const Result& a, const Result& b, double temp) {
             // The constants are folded in double for each unit system; the
             // folded exponents (up to about 50) differ by a few ulp, and the
@@ -797,11 +797,11 @@ void test_mixture_transport()
               std::array<T, species_count> y {};
               for (std::size_t i = 0; i < species_count; ++i) { y[i] = T(dissociated[i]); }
               y[1] = y_o2;
-              const auto mix = gaslib::mixture(gas, fractions(y));
+              const auto mix = canary::mixture(gas, fractions(y));
               const auto state = state_at(gas, mix, T(1.0e4), temp, t_ve, si_scales);
-              const auto c = gaslib::transport(model, gas, mix, state);
-              const auto d = gaslib::binary_diffusion_coefficients(model, gas, mix, state);
-              const auto d_mix = gaslib::mixture_diffusion_coefficients(model, gas, mix, state);
+              const auto c = canary::transport(model, gas, mix, state);
+              const auto d = canary::binary_diffusion_coefficients(model, gas, mix, state);
+              const auto d_mix = canary::mixture_diffusion_coefficients(model, gas, mix, state);
               std::array<T, outputs> out {};
               out[0] = c.viscosity.value();
               out[1] = c.conductivity.value();
@@ -858,18 +858,18 @@ void test_mixture_transport()
     };
 
     "mixture transport: float states agree with double states within float precision"_test = [&] {
-        const auto mix_d = gaslib::mixture(air_two_temperature.model, fractions(dissociated));
+        const auto mix_d = canary::mixture(air_two_temperature.model, fractions(dissociated));
         std::array<float, species_count> y_f {};
         for (std::size_t i = 0; i < species_count; ++i) {
             y_f[i] = static_cast<float>(dissociated[i]);
         }
-        const auto mix_f = gaslib::mixture(air_two_temperature.model, fractions(y_f));
+        const auto mix_f = canary::mixture(air_two_temperature.model, fractions(y_f));
         const auto state_d =
           state_at(air_two_temperature.model, mix_d, 1.0e4, 6000.0, 2000.0, si_scales);
         const auto state_f =
           state_at(air_two_temperature.model, mix_f, 1.0e4F, 6000.0F, 2000.0F, si_scales);
-        const auto d = gaslib::transport(gupta_yos, air_two_temperature.model, mix_d, state_d);
-        const auto f = gaslib::transport(gupta_yos, air_two_temperature.model, mix_f, state_f);
+        const auto d = canary::transport(gupta_yos, air_two_temperature.model, mix_d, state_d);
+        const auto f = canary::transport(gupta_yos, air_two_temperature.model, mix_f, state_f);
         // Rounding of float inputs and operations, amplified by the
         // exponents of the fits (up to about 50).
         const double bound = 1.0e-5;
@@ -877,9 +877,9 @@ void test_mixture_transport()
         expect(relative(f.conductivity.value(), d.conductivity.value(), bound));
         expect(relative(f.mode_conductivity[0].value(), d.mode_conductivity[0].value(), bound));
         const auto w_d =
-          gaslib::mixture_diffusion_coefficients(wilke, air_two_temperature.model, mix_d, state_d);
+          canary::mixture_diffusion_coefficients(wilke, air_two_temperature.model, mix_d, state_d);
         const auto w_f =
-          gaslib::mixture_diffusion_coefficients(wilke, air_two_temperature.model, mix_f, state_f);
+          canary::mixture_diffusion_coefficients(wilke, air_two_temperature.model, mix_f, state_f);
         for (std::size_t i = 0; i < species_count; ++i) {
             expect(relative(w_f[i].value(), w_d[i].value(), bound)) << i;
         }
@@ -887,19 +887,19 @@ void test_mixture_transport()
 
     "mixture transport: make_transport_curve rejects scales that are not finite and positive"_test =
       [] {
-          const gaslib::TransportCurveInput<3> curve = gaslib::air5_species_transport[0].viscosity;
+          const canary::TransportCurveInput<3> curve = canary::air5_species_transport[0].viscosity;
           for (const double bad : {0.0, -1.0, quiet_nan, std::numeric_limits<double>::infinity()}) {
               expect(error_message([&] {
-                         (void)gaslib::make_transport_curve(curve, bad, 1.0);
+                         (void)canary::make_transport_curve(curve, bad, 1.0);
                      }).starts_with("temperature scale must be finite and positive"));
               expect(error_message([&] {
-                         (void)gaslib::make_transport_curve(curve, 1.0, bad);
+                         (void)canary::make_transport_curve(curve, 1.0, bad);
                      }).starts_with("value scale must be finite and positive"));
           }
       };
 
     // One test per error case of the Wilke builder.
-    using WilkeInput = std::array<gaslib::SpeciesTransportInput<3>, species_count>;
+    using WilkeInput = std::array<canary::SpeciesTransportInput<3>, species_count>;
     struct WilkeCase {
         const char* name;
         void (*change)(WilkeInput&);
@@ -977,11 +977,11 @@ void test_mixture_transport()
     };
     for (const WilkeCase& c : wilke_cases) {
         test(std::string("mixture transport: the Wilke builder rejects ") + c.name) = [&] {
-            WilkeInput input = gaslib::air5_species_transport;
+            WilkeInput input = canary::air5_species_transport;
             c.change(input);
             const std::string message = error_message([&] {
-                (void)gaslib::make_wilke_transport(input,
-                                                   gaslib::detail::air5_species_names,
+                (void)canary::make_wilke_transport(input,
+                                                   canary::detail::air5_species_names,
                                                    air.species,
                                                    si_scales);
             });
@@ -989,11 +989,11 @@ void test_mixture_transport()
         };
     }
     "mixture transport: the Wilke builder rejects a missing species"_test = [&] {
-        std::array<gaslib::SpeciesTransportInput<3>, 4> input {};
-        std::copy_n(gaslib::air5_species_transport.begin(), 4, input.begin());
+        std::array<canary::SpeciesTransportInput<3>, 4> input {};
+        std::copy_n(canary::air5_species_transport.begin(), 4, input.begin());
         const std::string message = error_message([&] {
-            (void)gaslib::make_wilke_transport(input,
-                                               gaslib::detail::air5_species_names,
+            (void)canary::make_wilke_transport(input,
+                                               canary::detail::air5_species_names,
                                                air.species,
                                                si_scales);
         });
@@ -1002,14 +1002,14 @@ void test_mixture_transport()
     "mixture transport: the Wilke builder rejects an unknown mixing rule"_test = [&] {
         const std::string message = error_message([&] {
             // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange): the invalid value
-            const auto invalid = static_cast<gaslib::ConductivityMixing>(7);
-            (void)gaslib::make_air5_wilke_transport(air.species, si_scales, invalid);
+            const auto invalid = static_cast<canary::ConductivityMixing>(7);
+            (void)canary::make_air5_wilke_transport(air.species, si_scales, invalid);
         });
         expect(message == "unknown conductivity mixing rule") << message;
     };
 
     // One test per error case of the Gupta-Yos builder.
-    using Pairs = std::array<gaslib::CollisionPairInput, 15>;
+    using Pairs = std::array<canary::CollisionPairInput, 15>;
     struct GuptaYosCase {
         const char* name;
         void (*change)(Pairs&);
@@ -1050,26 +1050,26 @@ void test_mixture_transport()
     };
     for (const GuptaYosCase& c : gupta_yos_cases) {
         test(std::string("mixture transport: the Gupta-Yos builder rejects ") + c.name) = [&] {
-            Pairs pairs = gaslib::air5_collision_integrals;
+            Pairs pairs = canary::air5_collision_integrals;
             c.change(pairs);
             const std::string message = error_message([&] {
-                (void)gaslib::make_gupta_yos_transport(pairs,
-                                                       gaslib::detail::air5_species_names,
+                (void)canary::make_gupta_yos_transport(pairs,
+                                                       canary::detail::air5_species_names,
                                                        air.species,
-                                                       gaslib::air5_rotational_degrees,
+                                                       canary::air5_rotational_degrees,
                                                        si_scales);
             });
             expect(message == c.message) << message;
         };
     }
     "mixture transport: the Gupta-Yos builder rejects a missing pair"_test = [&] {
-        std::array<gaslib::CollisionPairInput, 14> pairs {};
-        std::copy_n(gaslib::air5_collision_integrals.begin(), 14, pairs.begin());
+        std::array<canary::CollisionPairInput, 14> pairs {};
+        std::copy_n(canary::air5_collision_integrals.begin(), 14, pairs.begin());
         const std::string message = error_message([&] {
-            (void)gaslib::make_gupta_yos_transport(pairs,
-                                                   gaslib::detail::air5_species_names,
+            (void)canary::make_gupta_yos_transport(pairs,
+                                                   canary::detail::air5_species_names,
                                                    air.species,
-                                                   gaslib::air5_rotational_degrees,
+                                                   canary::air5_rotational_degrees,
                                                    si_scales);
         });
         expect(message == "no collision integrals for the pair (NO, NO)") << message;
@@ -1078,8 +1078,8 @@ void test_mixture_transport()
       [&] {
           for (const int d : {-1, 1, 4}) {
               const std::string message = error_message([&] {
-                  (void)gaslib::make_gupta_yos_transport(gaslib::air5_collision_integrals,
-                                                         gaslib::detail::air5_species_names,
+                  (void)canary::make_gupta_yos_transport(canary::air5_collision_integrals,
+                                                         canary::detail::air5_species_names,
                                                          air.species,
                                                          std::array {2, 2, d, 0, 2},
                                                          si_scales);
@@ -1094,25 +1094,25 @@ void test_mixture_transport()
         auto species = air.species;
         species.n = 4;
         expect(error_message([&] {
-                   (void)gaslib::make_air5_wilke_transport(species, si_scales);
+                   (void)canary::make_air5_wilke_transport(species, si_scales);
                }) == "species data must have 5 species, got 4");
         expect(error_message([&] {
-                   (void)gaslib::make_air5_gupta_yos_transport(species, si_scales);
+                   (void)canary::make_air5_gupta_yos_transport(species, si_scales);
                }) == "species data must have 5 species, got 4");
     };
     "mixture transport: the builders reject a species named twice"_test = [&] {
         const std::array<std::string_view, 5> names {"N2", "O2", "N", "N2", "NO"};
         expect(error_message([&] {
-                   (void)gaslib::make_wilke_transport(gaslib::air5_species_transport,
+                   (void)canary::make_wilke_transport(canary::air5_species_transport,
                                                       names,
                                                       air.species,
                                                       si_scales);
                }) == "species \"N2\" is named twice");
         expect(error_message([&] {
-                   (void)gaslib::make_gupta_yos_transport(gaslib::air5_collision_integrals,
+                   (void)canary::make_gupta_yos_transport(canary::air5_collision_integrals,
                                                           names,
                                                           air.species,
-                                                          gaslib::air5_rotational_degrees,
+                                                          canary::air5_rotational_degrees,
                                                           si_scales);
                }) == "species \"N2\" is named twice");
     };

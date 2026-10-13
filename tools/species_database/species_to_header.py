@@ -1,8 +1,8 @@
-"""Writes species of a gaslib species file (format gaslib-species-1) as a C++
+"""Writes species of a canary species file (format canary-species-1) as a C++
 header of host input records: with --thermo, the NASA-9 species
-(gaslib::Nasa9Species, see include/gaslib/models/thermally_perfect.hpp); with
---electronic, the electronic levels (gaslib::ElectronicLevelsInput, see
-include/gaslib/models/multi_temperature.hpp) of every species, zero levels for
+(canary::Nasa9Species, see include/canary/models/thermally_perfect.hpp); with
+--electronic, the electronic levels (canary::ElectronicLevelsInput, see
+include/canary/models/multi_temperature.hpp) of every species, zero levels for
 a species without any.
 
 Numbers are written with Python's repr, which gives the shortest decimal that
@@ -19,7 +19,7 @@ from pathlib import Path
 
 from reactions_to_header import comment, number, string
 
-FORMAT = "gaslib-species-1"
+FORMAT = "canary-species-1"
 
 
 def array(items):
@@ -85,12 +85,12 @@ def main():
         raise SystemExit(f"{args.species_file}: not a {FORMAT} file")
     species = data["species"]
     source = Path(args.species_file).name
-    guard = f"GASLIB_DATA_{Path(args.output).stem.upper()}_HPP"
+    guard = f"CANARY_DATA_{Path(args.output).stem.upper()}_HPP"
     includes = ["#include <array>"]
     blocks = []
     count = len(args.species)
     if args.thermo:
-        includes.append("#include <gaslib/models/thermally_perfect.hpp>")
+        includes.append("#include <canary/models/thermally_perfect.hpp>")
         blocks.append(f"""// NASA-9 data of {", ".join(args.species)}, in this order: molar masses in
 // kg/mol, charges in elementary charges, fits in SI (kelvin); entries past a
 // species' segment count are zero.
@@ -98,7 +98,7 @@ inline constexpr std::array<Nasa9Species<{args.segments}>, {count}> {args.name}_
 {chr(10).join(thermo_entry(n, species[n], args.segments) for n in args.species)}
 }},}};""")
     if args.electronic:
-        includes.append("#include <gaslib/models/multi_temperature.hpp>")
+        includes.append("#include <canary/models/multi_temperature.hpp>")
         blocks.append(f"""// Electronic levels of {", ".join(args.species)}, in this order: degeneracies
 // and level temperatures E_k / k_B in K; entries past a species' level count
 // are zero.
@@ -115,12 +115,12 @@ inline constexpr std::array<ElectronicLevelsInput<{args.levels}>, {count}> {args
 
 {chr(10).join(includes)}
 
-namespace gaslib
+namespace canary
 {{
 
 {(chr(10) * 2).join(blocks)}
 
-}}  // namespace gaslib
+}}  // namespace canary
 
 #endif  // {guard}
 """

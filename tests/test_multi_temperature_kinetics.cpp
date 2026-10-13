@@ -7,24 +7,24 @@
 #include <cmath>
 #include <concepts>
 #include <cstddef>
-#include <gaslib/build.hpp>
-#include <gaslib/data/air11.hpp>
-#include <gaslib/data/air11_kim_jo.hpp>
-#include <gaslib/data/air11_kim_jo_exchange.hpp>
-#include <gaslib/data/air11_species.hpp>
-#include <gaslib/data/air5.hpp>
-#include <gaslib/data/air5_park.hpp>
-#include <gaslib/energy_exchange.hpp>
-#include <gaslib/models/multi_temperature.hpp>
-#include <gaslib/models/thermally_perfect.hpp>
-#include <gaslib/models/two_temperature.hpp>
-#include <gaslib/quantity.hpp>
-#include <gaslib/reactions.hpp>
-#include <gaslib/scalar.hpp>
-#include <gaslib/species.hpp>
-#include <gaslib/state.hpp>
-#include <gaslib/thermo.hpp>
-#include <gaslib/units.hpp>
+#include <canary/build.hpp>
+#include <canary/data/air11.hpp>
+#include <canary/data/air11_kim_jo.hpp>
+#include <canary/data/air11_kim_jo_exchange.hpp>
+#include <canary/data/air11_species.hpp>
+#include <canary/data/air5.hpp>
+#include <canary/data/air5_park.hpp>
+#include <canary/energy_exchange.hpp>
+#include <canary/models/multi_temperature.hpp>
+#include <canary/models/thermally_perfect.hpp>
+#include <canary/models/two_temperature.hpp>
+#include <canary/quantity.hpp>
+#include <canary/reactions.hpp>
+#include <canary/scalar.hpp>
+#include <canary/species.hpp>
+#include <canary/state.hpp>
+#include <canary/thermo.hpp>
+#include <canary/units.hpp>
 #include <initializer_list>
 #include <limits>
 #include <mdspan/mdspan.hpp>
@@ -38,15 +38,15 @@
 namespace
 {
 
-using gaslib::scaled;
-using gaslib::si;
-using D = gaslib::test::Dual<double>;
-using Gas = gaslib::Air11ThreeTemperature<double, si>;
-using Mechanism = gaslib::Air11KimJo<double, si>;
-using Exchange = gaslib::Air11KimJoExchange<double, si>;
+using canary::scaled;
+using canary::si;
+using D = canary::test::Dual<double>;
+using Gas = canary::Air11ThreeTemperature<double, si>;
+using Mechanism = canary::Air11KimJo<double, si>;
+using Exchange = canary::Air11KimJoExchange<double, si>;
 using Extents = Kokkos::dextents<std::size_t, 1>;
-using Rho = gaslib::Density<double, si>;
-using Temp = gaslib::Temperature<double, si>;
+using Rho = canary::Density<double, si>;
+using Temp = canary::Temperature<double, si>;
 
 constexpr std::size_t species_count = 11;
 constexpr std::size_t reaction_count = 40;
@@ -57,12 +57,12 @@ using PerReaction = std::array<double, reaction_count>;
 using PerMode = std::array<double, mode_count>;
 
 constexpr double atmosphere = 101325.0;
-constexpr double avogadro = gaslib::constants::avogadro<double>;
-constexpr double boltzmann = gaslib::constants::boltzmann<double>;
+constexpr double avogadro = canary::constants::avogadro<double>;
+constexpr double boltzmann = canary::constants::boltzmann<double>;
 // Universal gas constant of the reference implementation [J/(mol K)].
 constexpr double reference_gas_constant = 8.31451;
 
-const gaslib::UnitScales<double, scaled> reference_scales {
+const canary::UnitScales<double, scaled> reference_scales {
   .mass = 4.65e-26,
   .density = 1.0e-3,
   .temperature = 1000.0,
@@ -71,7 +71,7 @@ const gaslib::UnitScales<double, scaled> reference_scales {
 
 template <typename T> auto fractions(const std::array<T, species_count>& y)
 {
-    return gaslib::as_kind<gaslib::kind::mass_fraction>(
+    return canary::as_kind<canary::kind::mass_fraction>(
       Kokkos::mdspan<const T, Extents>(y.data(), species_count));
 }
 
@@ -163,9 +163,9 @@ const std::array<ReferenceState, 4> reference_states {
 // clang-format on
 
 // Standard enthalpies over R_u, in K, by which the equilibrium constants of
-// the reference differ from those of gaslib, for the molecules N2, O2 and
+// the reference differ from those of canary, for the molecules N2, O2 and
 // NO and their ions, relative to the atoms, the atomic ions and e- (0): the
-// reference's ln K_c is that of gaslib minus sum_i dnu_i h_i / T at every
+// reference's ln K_c is that of canary minus sum_i dnu_i h_i / T at every
 // state. They are found from reactions 0, 10 and 22 of the first reference
 // state; with them, the equilibrium backward rates of every other reaction
 // at T_l in the four states agree to 1e-10.
@@ -194,11 +194,11 @@ auto cell_state(const G& gas, const std::array<T, species_count>& y, T rho, T te
 {
     using U = G::units;
     const std::array<T, mode_count> t_m {t_v, t_e};
-    return gaslib::thermo_state(gas,
-                                gaslib::mixture(gas, fractions(y)),
-                                gaslib::Density<T, U> {rho},
-                                gaslib::Temperature<T, U> {temp},
-                                gaslib::as_kind<gaslib::kind::mode_temperature, U>(
+    return canary::thermo_state(gas,
+                                canary::mixture(gas, fractions(y)),
+                                canary::Density<T, U> {rho},
+                                canary::Temperature<T, U> {temp},
+                                canary::as_kind<canary::kind::mode_temperature, U>(
                                   Kokkos::mdspan<const T, Extents>(t_m.data(), mode_count)))
       .state;
 }
@@ -240,7 +240,7 @@ double forward_log_rate(const Mechanism& mech, std::size_t k, double t_c)
 // formula k_f(t_eq) / K_c(t_eq), with the Gibbs energies of gas at t_eq.
 double equilibrium_backward_rate(const Mechanism& mech, const Gas& gas, std::size_t k, double t_eq)
 {
-    const auto props = gaslib::species_properties(gas, Temp {t_eq});
+    const auto props = canary::species_properties(gas, Temp {t_eq});
     double ln_k_c =
       mech.reactions[k].coefficient_change * std::log(atmosphere / (boltzmann * t_eq));
     for (std::size_t i = 0; i < species_count; ++i) {
@@ -250,7 +250,7 @@ double equilibrium_backward_rate(const Mechanism& mech, const Gas& gas, std::siz
     return std::exp(forward_log_rate(mech, k, t_eq) - ln_k_c);
 }
 
-// Rates of progress and the mode sources of gaslib in one cell, as plain
+// Rates of progress and the mode sources of canary in one cell, as plain
 // values: the sources of each exchange and the total of
 // multi_temperature_sources.
 struct Values {
@@ -269,18 +269,18 @@ template <typename M, typename X, typename G>
 Values evaluate(const M& mech, const X& exchange, const G& gas, const ReferenceState& s)
 {
     using U = M::units;
-    const auto mix = gaslib::mixture(gas, fractions(s.y));
+    const auto mix = canary::mixture(gas, fractions(s.y));
     const auto state = cell_state(gas, s.y, s.rho, s.temp, s.t_v, s.t_e);
     const auto q =
-      gaslib::rates_of_progress(mech, gas, mix, state.rho, state.temp, state.mode_temp);
-    const auto sources = gaslib::multi_temperature_sources(mech, exchange, gas, mix, state);
-    const auto vt = gaslib::vibration_translation_source(exchange, gas, mix, state);
-    const auto cv = gaslib::chemistry_vibration_source(exchange, mech, q, state);
-    const auto et = gaslib::electron_translation_source(exchange, mix, state);
-    const auto ve = gaslib::vibration_electron_source(exchange, gas, mix, state);
-    const auto ce = gaslib::electron_impact_ionisation_source(exchange, q);
+      canary::rates_of_progress(mech, gas, mix, state.rho, state.temp, state.mode_temp);
+    const auto sources = canary::multi_temperature_sources(mech, exchange, gas, mix, state);
+    const auto vt = canary::vibration_translation_source(exchange, gas, mix, state);
+    const auto cv = canary::chemistry_vibration_source(exchange, mech, q, state);
+    const auto et = canary::electron_translation_source(exchange, mix, state);
+    const auto ve = canary::vibration_electron_source(exchange, gas, mix, state);
+    const auto ce = canary::electron_impact_ionisation_source(exchange, q);
     static_assert(
-      std::same_as<typename decltype(sources.modes)::value_type, gaslib::PowerDensity<double, U>>);
+      std::same_as<typename decltype(sources.modes)::value_type, canary::PowerDensity<double, U>>);
     Values out {};
     for (std::size_t k = 0; k < reaction_count; ++k) {
         out.forward[k] = q.forward[k].value();
@@ -311,16 +311,16 @@ template <typename F> std::string error_message(const F& f)
 {
     try {
         f();
-    } catch (const gaslib::ParameterError& error) {
+    } catch (const canary::ParameterError& error) {
         return error.what();
     }
     return "no exception";
 }
 
 // Up to three species coefficients.
-gaslib::SpeciesCoefficients<3> coefficients(std::initializer_list<gaslib::SpeciesCoefficient> list)
+canary::SpeciesCoefficients<3> coefficients(std::initializer_list<canary::SpeciesCoefficient> list)
 {
-    gaslib::SpeciesCoefficients<3> out {};
+    canary::SpeciesCoefficients<3> out {};
     out.count = static_cast<int>(list.size());
     std::ranges::copy(list, out.entries.begin());
     return out;
@@ -328,14 +328,14 @@ gaslib::SpeciesCoefficients<3> coefficients(std::initializer_list<gaslib::Specie
 
 // A reaction without a third body, in SI per mole, for the mode resolution
 // tests.
-gaslib::ReactionInput<3> reaction(const char* equation,
-                                  gaslib::SpeciesCoefficients<3> reactants,
-                                  gaslib::SpeciesCoefficients<3> products,
-                                  gaslib::ArrheniusInput forward,
-                                  gaslib::BackwardRateModel backward_model,
-                                  gaslib::ArrheniusInput backward)
+canary::ReactionInput<3> reaction(const char* equation,
+                                  canary::SpeciesCoefficients<3> reactants,
+                                  canary::SpeciesCoefficients<3> products,
+                                  canary::ArrheniusInput forward,
+                                  canary::BackwardRateModel backward_model,
+                                  canary::ArrheniusInput backward)
 {
-    gaslib::ReactionInput<3> r {};
+    canary::ReactionInput<3> r {};
     r.equation = equation;
     r.reactants = reactants;
     r.products = products;
@@ -349,38 +349,38 @@ gaslib::ReactionInput<3> reaction(const char* equation,
 // The eleven species of air with three modes: the vibration of N2; the
 // vibration of O2 and NO; the electronic energy of the heavy species and
 // e-. The vibrations of the molecular ions are frozen.
-const std::array<gaslib::EnergyModeInput<11>, 3> split_modes {
+const std::array<canary::EnergyModeInput<11>, 3> split_modes {
   {
     {
       .count = 1,
-      .components = {{{.species = "N2", .component = gaslib::ModeComponent::vibration}}},
+      .components = {{{.species = "N2", .component = canary::ModeComponent::vibration}}},
     },
     {
       .count = 2,
       .components =
         {
           {
-            {.species = "O2", .component = gaslib::ModeComponent::vibration},
-            {.species = "NO", .component = gaslib::ModeComponent::vibration},
+            {.species = "O2", .component = canary::ModeComponent::vibration},
+            {.species = "NO", .component = canary::ModeComponent::vibration},
           },
         },
     },
-    gaslib::air11_three_temperature_modes[1],
+    canary::air11_three_temperature_modes[1],
   },
 };
 
 // One mode holding every component of the eleven species.
 constexpr auto single_mode = [] {
-    std::array<gaslib::EnergyModeInput<17>, 1> modes {};
+    std::array<canary::EnergyModeInput<17>, 1> modes {};
     std::size_t count = 0;
     for (const char* name : {"N2", "O2", "NO", "N2+", "O2+", "NO+"}) {
         modes[0].components[count++] = {
           .species = name,
-          .component = gaslib::ModeComponent::vibration,
+          .component = canary::ModeComponent::vibration,
         };
     }
     for (std::size_t c = 0; c < 11; ++c) {
-        modes[0].components[count++] = gaslib::air11_three_temperature_modes[1].components[c];
+        modes[0].components[count++] = canary::air11_three_temperature_modes[1].components[c];
     }
     modes[0].count = static_cast<int>(count);
     return modes;
@@ -388,33 +388,33 @@ constexpr auto single_mode = [] {
 
 }  // namespace
 
-static_assert(gaslib::HasEnergyModes<Gas>);
-static_assert(gaslib::HasEnergyModes<gaslib::Air5TwoTemperature<double, si>>);
-static_assert(!gaslib::HasEnergyModes<gaslib::Air11<double, si>>);
-static_assert(gaslib::HasModeEnergies<Gas, double, species_count>);
-static_assert(gaslib::HasModeEnergies<Gas, D, species_count>);
-static_assert(gaslib::HasModeEnergies<gaslib::Air5TwoTemperature<double, si>, double, 5>);
-static_assert(!gaslib::HasModeEnergies<Gas, double, 5>);
-static_assert(gaslib::ModeRelaxingModel<Gas, D, double, species_count>);
-static_assert(!gaslib::ModeRelaxingModel<gaslib::Air11<double, si>, double, double, species_count>);
-static_assert(Gas::mode_count == 2 && gaslib::Air5TwoTemperature<double, si>::mode_count == 1);
+static_assert(canary::HasEnergyModes<Gas>);
+static_assert(canary::HasEnergyModes<canary::Air5TwoTemperature<double, si>>);
+static_assert(!canary::HasEnergyModes<canary::Air11<double, si>>);
+static_assert(canary::HasModeEnergies<Gas, double, species_count>);
+static_assert(canary::HasModeEnergies<Gas, D, species_count>);
+static_assert(canary::HasModeEnergies<canary::Air5TwoTemperature<double, si>, double, 5>);
+static_assert(!canary::HasModeEnergies<Gas, double, 5>);
+static_assert(canary::ModeRelaxingModel<Gas, D, double, species_count>);
+static_assert(!canary::ModeRelaxingModel<canary::Air11<double, si>, double, double, species_count>);
+static_assert(Gas::mode_count == 2 && canary::Air5TwoTemperature<double, si>::mode_count == 1);
 static_assert(std::is_trivially_copyable_v<Exchange>);
-static_assert(std::is_trivially_copyable_v<gaslib::Air11KimJoExchange<float, scaled>>);
-static_assert(std::is_trivially_copyable_v<gaslib::MultiTemperatureSources<D, si, 11, 2>>);
+static_assert(std::is_trivially_copyable_v<canary::Air11KimJoExchange<float, scaled>>);
+static_assert(std::is_trivially_copyable_v<canary::MultiTemperatureSources<D, si, 11, 2>>);
 static_assert(Exchange::mode_count == 2);
 
 void test_multi_temperature_kinetics()
 {
     using namespace boost::ut;
-    const gaslib::UnitScales<double, si> si_scales {};
-    const auto built = gaslib::make_air11_three_temperature<double>(si_scales);
+    const canary::UnitScales<double, si> si_scales {};
+    const auto built = canary::make_air11_three_temperature<double>(si_scales);
     const Gas& gas = built.model;
-    const gaslib::Pressure<double, si> p0 {atmosphere};
-    const Mechanism mech = gaslib::make_air11_kim_jo(built.species, si_scales, p0, gas);
+    const canary::Pressure<double, si> p0 {atmosphere};
+    const Mechanism mech = canary::make_air11_kim_jo(built.species, si_scales, p0, gas);
     const Exchange exchange =
-      gaslib::make_air11_kim_jo_exchange(built.species, mech, gas, si_scales);
+      canary::make_air11_kim_jo_exchange(built.species, mech, gas, si_scales);
     const std::array<std::string_view, species_count> names =
-      gaslib::detail::air11_kim_jo_species_names;
+      canary::detail::air11_kim_jo_species_names;
 
     "multi-temperature kinetics: the builders resolve modes and electrons"_test = [&] {
         for (std::size_t k = 0; k < reaction_count; ++k) {
@@ -447,7 +447,7 @@ void test_multi_temperature_kinetics()
         expect(relative(ce.ionisation_energy, 1402330.360173364 / avogadro, 1.0e-15));
         // (2 pi / 9) C^2 and 9 / (4 pi C^3) with C = e^2 / (4 pi eps_0 k_B),
         // the exact e and k_B and CODATA 2018 eps_0; a few ulp.
-        const double e = gaslib::constants::elementary_charge<double>;
+        const double e = canary::constants::elementary_charge<double>;
         const double c = e * e / (4.0 * std::numbers::pi * 8.8541878128e-12 * boltzmann);
         expect(
           relative(exchange.coulomb_cross_section, 2.0 * std::numbers::pi / 9.0 * c * c, 1.0e-15));
@@ -456,23 +456,23 @@ void test_multi_temperature_kinetics()
                         1.0e-15));
         expect(exchange.minimum_electron_density == 1.0_d);
         expect(exchange.electron_translation[0].cross_section ==
-               gaslib::ElectronCrossSection::gnoffo_neutral);
+               canary::ElectronCrossSection::gnoffo_neutral);
         expect(exchange.electron_translation[5].cross_section ==
-               gaslib::ElectronCrossSection::coulomb);
+               canary::ElectronCrossSection::coulomb);
         // kim_2021 of N2-N2 with omega = 0.55.
         expect(relative(exchange.vibration_translation[0].correction_exponent, -1.05, 1.0e-15));
     };
 
     "multi-temperature kinetics: rates and mode sources equal the reference"_test = [&] {
         const double r_u =
-          gaslib::constants::universal_gas_constant<double> / reference_gas_constant;
+          canary::constants::universal_gas_constant<double> / reference_gas_constant;
         for (const ReferenceState& s : reference_states) {
             const Values got = evaluate(mech, exchange, gas, s);
             const Fractions n = number_densities(built.species, s.y, s.rho);
             const double t_l = std::clamp(s.temp, 300.0, 30000.0);
             // The reference rates in particles per volume and time, with
             // the reactions that differ in the reference replaced by the
-            // formulas at gaslib's temperatures.
+            // formulas at canary's temperatures.
             PerReaction forward {};
             PerReaction backward {};
             for (std::size_t k = 0; k < reaction_count; ++k) {
@@ -552,7 +552,7 @@ void test_multi_temperature_kinetics()
                 expect(std::abs(got.total[m] - (s.total[m] + got.ce[m])) <= 5.0e-5 * scale)
                   << s.name << m << got.total[m] << s.total[m] + got.ce[m];
             }
-            // Q_CE from its definition with gaslib's rates of progress.
+            // Q_CE from its definition with canary's rates of progress.
             double ce = 0;
             double ce_scale = 0;
             for (const auto& [k, energy] : {
@@ -569,14 +569,14 @@ void test_multi_temperature_kinetics()
     };
 
     "multi-temperature kinetics: one mode gives the two-temperature rates"_test = [&] {
-        const auto one = gaslib::make_multi_temperature_mixture(gaslib::air11_species,
-                                                                gaslib::air11_rotational_degrees,
-                                                                gaslib::air11_electronic_levels,
+        const auto one = canary::make_multi_temperature_mixture(canary::air11_species,
+                                                                canary::air11_rotational_degrees,
+                                                                canary::air11_electronic_levels,
                                                                 single_mode,
                                                                 si_scales);
         static_assert(decltype(one.model)::mode_count == 1);
-        const Mechanism with_gas = gaslib::make_air11_kim_jo(one.species, si_scales, p0, one.model);
-        const Mechanism without = gaslib::make_air11_kim_jo(one.species, si_scales, p0);
+        const Mechanism with_gas = canary::make_air11_kim_jo(one.species, si_scales, p0, one.model);
+        const Mechanism without = canary::make_air11_kim_jo(one.species, si_scales, p0);
         for (std::size_t k = 0; k < reaction_count; ++k) {
             expect(with_gas.reactions[k].forward.other_mode == 0_ul);
             expect(with_gas.reactions[k].backward.other_mode == 0_ul);
@@ -584,11 +584,11 @@ void test_multi_temperature_kinetics()
                    without.reactions[k].equilibrium_at_other_temperature);
         }
         for (const ReferenceState& s : reference_states) {
-            const auto mix = gaslib::mixture(one.model, fractions(s.y));
-            const std::array t_m {gaslib::ModeTemperature<double, si> {s.t_v}};
+            const auto mix = canary::mixture(one.model, fractions(s.y));
+            const std::array t_m {canary::ModeTemperature<double, si> {s.t_v}};
             const auto modes =
-              gaslib::rates_of_progress(with_gas, one.model, mix, Rho {s.rho}, Temp {s.temp}, t_m);
-            const auto two = gaslib::rates_of_progress(without,
+              canary::rates_of_progress(with_gas, one.model, mix, Rho {s.rho}, Temp {s.temp}, t_m);
+            const auto two = canary::rates_of_progress(without,
                                                        one.model,
                                                        mix,
                                                        Rho {s.rho},
@@ -596,11 +596,11 @@ void test_multi_temperature_kinetics()
                                                        Temp {s.t_v});
             // The three-temperature mechanism with both modes at T_v.
             const std::array same {
-              gaslib::ModeTemperature<double, si> {s.t_v},
-              gaslib::ModeTemperature<double, si> {s.t_v},
+              canary::ModeTemperature<double, si> {s.t_v},
+              canary::ModeTemperature<double, si> {s.t_v},
             };
             const auto three =
-              gaslib::rates_of_progress(mech, gas, mix, Rho {s.rho}, Temp {s.temp}, same);
+              canary::rates_of_progress(mech, gas, mix, Rho {s.rho}, Temp {s.temp}, same);
             for (std::size_t k = 0; k < reaction_count; ++k) {
                 expect(modes.forward[k] == two.forward[k] && modes.backward[k] == two.backward[k])
                   << s.name << k;
@@ -608,8 +608,8 @@ void test_multi_temperature_kinetics()
                   << s.name << k;
             }
             const auto omega_modes =
-              gaslib::production_rates(with_gas, one.model, mix, Rho {s.rho}, Temp {s.temp}, t_m);
-            const auto omega_two = gaslib::production_rates(without,
+              canary::production_rates(with_gas, one.model, mix, Rho {s.rho}, Temp {s.temp}, t_m);
+            const auto omega_two = canary::production_rates(without,
                                                             one.model,
                                                             mix,
                                                             Rho {s.rho},
@@ -622,14 +622,14 @@ void test_multi_temperature_kinetics()
     };
 
     "multi-temperature kinetics: other temperatures resolve to modes"_test = [&] {
-        using gaslib::BackwardRateModel;
-        const auto split = gaslib::make_multi_temperature_mixture(gaslib::air11_species,
-                                                                  gaslib::air11_rotational_degrees,
-                                                                  gaslib::air11_electronic_levels,
+        using canary::BackwardRateModel;
+        const auto split = canary::make_multi_temperature_mixture(canary::air11_species,
+                                                                  canary::air11_rotational_degrees,
+                                                                  canary::air11_electronic_levels,
                                                                   split_modes,
                                                                   si_scales);
         const auto rate = [](double s, const char* other) {
-            return gaslib::ArrheniusInput {
+            return canary::ArrheniusInput {
               .A = 1.0e15,
               .n = -1.0,
               .activation_temperature = 50000.0,
@@ -637,14 +637,14 @@ void test_multi_temperature_kinetics()
               .other_temperature = other,
             };
         };
-        const gaslib::ArrheniusInput none {};
-        const auto build = [&](const gaslib::ReactionInput<3>& r, const auto& model) {
-            const gaslib::MechanismInput<1, 3> input {
+        const canary::ArrheniusInput none {};
+        const auto build = [&](const canary::ReactionInput<3>& r, const auto& model) {
+            const canary::MechanismInput<1, 3> input {
               .temperature_lower = 300.0,
               .temperature_upper = 30000.0,
               .reactions = {r},
             };
-            return gaslib::make_reaction_mechanism(input,
+            return canary::make_reaction_mechanism(input,
                                                    names,
                                                    built.species,
                                                    si_scales,
@@ -652,9 +652,9 @@ void test_multi_temperature_kinetics()
                                                    model)
               .reactions[0];
         };
-        const auto o2 = [&](gaslib::ArrheniusInput f,
+        const auto o2 = [&](canary::ArrheniusInput f,
                             BackwardRateModel model = BackwardRateModel::equilibrium,
-                            gaslib::ArrheniusInput b = {}) {
+                            canary::ArrheniusInput b = {}) {
             return reaction(
               "O + O2 <=> O + O + O",
               coefficients({{.name = "O", .value = 1.0}, {.name = "O2", .value = 1.0}}),
@@ -663,7 +663,7 @@ void test_multi_temperature_kinetics()
               model,
               b);
         };
-        const auto ionise = [&](gaslib::ArrheniusInput f) {
+        const auto ionise = [&](canary::ArrheniusInput f) {
             return reaction(
               "N + O <=> NO+ + e-",
               coefficients({{.name = "N", .value = 1.0}, {.name = "O", .value = 1.0}}),
@@ -704,15 +704,15 @@ void test_multi_temperature_kinetics()
                at_electron.backward.other_mode == 2_ul);
         expect(!build(o2(rate(1.0, nullptr)), split.model).equilibrium_at_other_temperature);
         // One mode: every rate resolves to it.
-        const auto one = gaslib::make_multi_temperature_mixture(gaslib::air11_species,
-                                                                gaslib::air11_rotational_degrees,
-                                                                gaslib::air11_electronic_levels,
+        const auto one = canary::make_multi_temperature_mixture(canary::air11_species,
+                                                                canary::air11_rotational_degrees,
+                                                                canary::air11_electronic_levels,
                                                                 single_mode,
                                                                 si_scales);
         expect(build(ionise(rate(0.5, nullptr)), one.model).forward.other_mode == 0_ul);
         expect(build(o2(rate(0.5, "electron")), one.model).forward.other_mode == 0_ul);
 
-        const auto fails = [&](const gaslib::ReactionInput<3>& r, std::string_view message) {
+        const auto fails = [&](const canary::ReactionInput<3>& r, std::string_view message) {
             const std::string got = error_message([&] { (void)build(r, split.model); });
             expect(got == message) << got;
         };
@@ -735,10 +735,10 @@ void test_multi_temperature_kinetics()
 
         // The two-temperature model has one mode holding every species and
         // no free electrons.
-        const auto air5 = gaslib::make_air5_two_temperature<double>(si_scales);
+        const auto air5 = canary::make_air5_two_temperature<double>(si_scales);
         const auto air5_names = std::array<std::string_view, 5> {"N2", "O2", "N", "O", "NO"};
-        const auto build5 = [&](gaslib::ArrheniusInput f) {
-            const gaslib::MechanismInput<1, 3> input {
+        const auto build5 = [&](canary::ArrheniusInput f) {
+            const canary::MechanismInput<1, 3> input {
               .temperature_lower = 300.0,
               .temperature_upper = 30000.0,
               .reactions =
@@ -747,11 +747,11 @@ void test_multi_temperature_kinetics()
                            coefficients({{.name = "N", .value = 1.0}, {.name = "O", .value = 1.0}}),
                            coefficients({{.name = "NO", .value = 1.0}}),
                            f,
-                           gaslib::BackwardRateModel::equilibrium,
+                           canary::BackwardRateModel::equilibrium,
                            none),
                 },
             };
-            return gaslib::make_reaction_mechanism(input,
+            return canary::make_reaction_mechanism(input,
                                                    air5_names,
                                                    air5.species,
                                                    si_scales,
@@ -770,13 +770,13 @@ void test_multi_temperature_kinetics()
 
     "multi-temperature kinetics: equilibrium backward rates at T_e depend on T_e only"_test = [&] {
         const ReferenceState& s = reference_states[0];
-        const auto mix = gaslib::mixture(gas, fractions(s.y));
+        const auto mix = canary::mixture(gas, fractions(s.y));
         const auto rates = [&](double temp, double t_v, double t_e) {
             const std::array t_m {
-              gaslib::ModeTemperature<double, si> {t_v},
-              gaslib::ModeTemperature<double, si> {t_e},
+              canary::ModeTemperature<double, si> {t_v},
+              canary::ModeTemperature<double, si> {t_e},
             };
-            return gaslib::rates_of_progress(mech, gas, mix, Rho {s.rho}, Temp {temp}, t_m);
+            return canary::rates_of_progress(mech, gas, mix, Rho {s.rho}, Temp {temp}, t_m);
         };
         const auto a = rates(12000.0, 5000.0, 8000.0);
         for (const auto& [temp, t_v] : {
@@ -798,18 +798,18 @@ void test_multi_temperature_kinetics()
             for (std::size_t i = 0; i < species_count; ++i) { y[i] = D(s.y[i]); }
             return y;
         }();
-        const auto mix_d = gaslib::mixture(gas, fractions(y_d));
+        const auto mix_d = canary::mixture(gas, fractions(y_d));
         for (const std::size_t column : std::array<std::size_t, 3> {0, 1, 2}) {
             const std::array t_m {
-              gaslib::ModeTemperature<D, si> {D(5000.0, column == 1 ? 1.0 : 0.0)},
-              gaslib::ModeTemperature<D, si> {D(8000.0, column == 2 ? 1.0 : 0.0)},
+              canary::ModeTemperature<D, si> {D(5000.0, column == 1 ? 1.0 : 0.0)},
+              canary::ModeTemperature<D, si> {D(8000.0, column == 2 ? 1.0 : 0.0)},
             };
-            const auto q = gaslib::rates_of_progress(
+            const auto q = canary::rates_of_progress(
               mech,
               gas,
               mix_d,
-              gaslib::Density<D, si> {D(s.rho)},
-              gaslib::Temperature<D, si> {D(12000.0, column == 0 ? 1.0 : 0.0)},
+              canary::Density<D, si> {D(s.rho)},
+              canary::Temperature<D, si> {D(12000.0, column == 0 ? 1.0 : 0.0)},
               t_m);
             for (const std::size_t k : backward_at_electron) {
                 const double dual = q.backward[k].value().dual();
@@ -821,21 +821,21 @@ void test_multi_temperature_kinetics()
     "multi-temperature kinetics: exchanges vanish at equal temperatures and V-E is "
     "antisymmetric"_test = [&] {
         for (const ReferenceState& s : reference_states) {
-            const auto mix = gaslib::mixture(gas, fractions(s.y));
+            const auto mix = canary::mixture(gas, fractions(s.y));
             const auto at = [&](double temp, double t_v, double t_e) {
                 return cell_state(gas, s.y, s.rho, temp, t_v, t_e);
             };
             const auto et =
-              gaslib::electron_translation_source(exchange, mix, at(s.temp, s.t_v, s.temp));
+              canary::electron_translation_source(exchange, mix, at(s.temp, s.t_v, s.temp));
             expect(et[0].value() == 0.0_d && et[1].value() == 0.0_d) << s.name;
             const auto ve =
-              gaslib::vibration_electron_source(exchange, gas, mix, at(s.temp, s.t_v, s.t_v));
+              canary::vibration_electron_source(exchange, gas, mix, at(s.temp, s.t_v, s.t_v));
             expect(ve[0].value() == 0.0_d && ve[1].value() == 0.0_d) << s.name;
             const auto vt =
-              gaslib::vibration_translation_source(exchange, gas, mix, at(s.temp, s.temp, s.t_e));
+              canary::vibration_translation_source(exchange, gas, mix, at(s.temp, s.temp, s.t_e));
             expect(vt[0].value() == 0.0_d && vt[1].value() == 0.0_d) << s.name;
             const auto state = at(s.temp, s.t_v, s.t_e);
-            const auto ve_state = gaslib::vibration_electron_source(exchange, gas, mix, state);
+            const auto ve_state = canary::vibration_electron_source(exchange, gas, mix, state);
             expect(ve_state[0].value() == -ve_state[1].value()) << s.name;
             // The sum over the modes of the total is that of Q_VT + Q_CV +
             // Q_ET + Q_CE; the terms are summed in another order.
@@ -859,20 +859,20 @@ void test_multi_temperature_kinetics()
 
     "multi-temperature kinetics: cross-sections and the Candler fit follow their formulas"_test =
       [&] {
-          const gaslib::EnergyExchangeInput<0, 0> no_vibration {};
-          gaslib::ElectronExchangeInput<2, 0, 0> electrons {};
+          const canary::EnergyExchangeInput<0, 0> no_vibration {};
+          canary::ElectronExchangeInput<2, 0, 0> electrons {};
           electrons.electron_translation[0] =
-            gaslib::air11_kim_jo_exchange_electrons.electron_translation[0];
+            canary::air11_kim_jo_exchange_electrons.electron_translation[0];
           electrons.electron_translation[1] =
-            gaslib::air11_kim_jo_exchange_electrons.electron_translation[5];
-          const auto pairs = gaslib::make_multi_temperature_exchange(no_vibration,
+            canary::air11_kim_jo_exchange_electrons.electron_translation[5];
+          const auto pairs = canary::make_multi_temperature_exchange(no_vibration,
                                                                      electrons,
                                                                      names,
                                                                      built.species,
                                                                      mech,
                                                                      gas,
                                                                      si_scales);
-          const double e = gaslib::constants::elementary_charge<double>;
+          const double e = canary::constants::elementary_charge<double>;
           const double eps_0 = 8.8541878128e-12;
           const double m_e = built.species.mass[electron].value();
           for (const double y_e : {9.203080774345904e-07, 1.0e-40}) {
@@ -881,10 +881,10 @@ void test_multi_temperature_kinetics()
               const double rho = 1.0e-3;
               for (const double t_e : {8000.0, 45000.0}) {
                   const double temp = 12000.0;
-                  const auto mix = gaslib::mixture(gas, fractions(y));
+                  const auto mix = canary::mixture(gas, fractions(y));
                   const auto state = cell_state(gas, y, rho, temp, 5000.0, t_e);
                   const double got =
-                    gaslib::electron_translation_source(pairs, mix, state)[1].value();
+                    canary::electron_translation_source(pairs, mix, state)[1].value();
                   // The definitions, with the normalised fractions of mix.
                   Fractions y_n {};
                   for (std::size_t i = 0; i < species_count; ++i) {
@@ -912,7 +912,7 @@ void test_multi_temperature_kinetics()
           // fit is continuous at both ends.
           const auto& fit = exchange.vibration_electron[0].relaxation_time;
           const auto f = [&](double t) {
-              return gaslib::detail::candler_exponent(fit, std::log10(t), t);
+              return canary::detail::candler_exponent(fit, std::log10(t), t);
           };
           // The input fit in log10(p_e tau / (1 atm s)), and the model fit
           // in SI, in log10(p_e tau / (1 Pa s)).
@@ -940,26 +940,26 @@ void test_multi_temperature_kinetics()
           // V-E with p_e = 0: no free electrons give exactly zero.
           Fractions y = reference_states[0].y;
           y[electron] = 0.0;
-          const auto mix = gaslib::mixture(gas, fractions(y));
+          const auto mix = canary::mixture(gas, fractions(y));
           const auto ve =
-            gaslib::vibration_electron_source(exchange,
+            canary::vibration_electron_source(exchange,
                                               gas,
                                               mix,
                                               cell_state(gas, y, 1.0e-3, 12000.0, 5000.0, 8000.0));
           expect(ve[0].value() == 0.0_d && ve[1].value() == 0.0_d);
           // V-E of N2 from Candler's fit above the blend range.
           const ReferenceState& s = reference_states[0];
-          const auto mix_s = gaslib::mixture(gas, fractions(s.y));
+          const auto mix_s = canary::mixture(gas, fractions(s.y));
           const auto state = cell_state(gas, s.y, s.rho, s.temp, s.t_v, s.t_e);
           const double q =
-            gaslib::vibration_electron_source(exchange, gas, mix_s, state)[0].value();
+            canary::vibration_electron_source(exchange, gas, mix_s, state)[0].value();
           const double n_e =
             s.rho * mix_s.fractions[electron].value() / built.species.mass[electron].value();
           const double p_e = n_e * boltzmann * s.t_e;
           const double inverse_tau =
             (p_e / atmosphere) * std::pow(10.0, -quadratic(2.36, -17.9, 24.35, s.t_e));
-          const auto e_te = gaslib::species_mode_energy(gas, 0, Temp {s.t_e});
-          const auto e_tv = gaslib::species_mode_energy(gas, 0, Temp {s.t_v});
+          const auto e_te = canary::species_mode_energy(gas, 0, Temp {s.t_e});
+          const auto e_tv = canary::species_mode_energy(gas, 0, Temp {s.t_v});
           const double expected =
             s.rho * mix_s.fractions[0].value() * (e_te[0].value() - e_tv[0].value()) * inverse_tau;
           // 10^(-f) from exp(-f ln 10) with f of about -10: a few ulp.
@@ -972,13 +972,13 @@ void test_multi_temperature_kinetics()
         for (const std::size_t index : {std::size_t {0}, std::size_t {3}}) {
             const ReferenceState& s = reference_states[index];
             const double t_e = index == 0 ? 15000.0 : 3000.0;
-            const auto mix = gaslib::mixture(gas, fractions(s.y));
+            const auto mix = canary::mixture(gas, fractions(s.y));
             const auto state = cell_state(gas, s.y, s.rho, s.temp, s.t_v, t_e);
             const auto q =
-              gaslib::rates_of_progress(mech, gas, mix, state.rho, state.temp, state.mode_temp);
+              canary::rates_of_progress(mech, gas, mix, state.rho, state.temp, state.mode_temp);
             const double net = q.forward[38].value() - q.backward[38].value() +
                                q.forward[39].value() - q.backward[39].value();
-            const double ce = gaslib::electron_impact_ionisation_source(exchange, q)[1].value();
+            const double ce = canary::electron_impact_ionisation_source(exchange, q)[1].value();
             expect(index == 0 ? net > 0.0 : net < 0.0) << index << net;
             expect(index == 0 ? ce < 0.0 : ce > 0.0) << index << ce;
         }
@@ -987,12 +987,12 @@ void test_multi_temperature_kinetics()
     "multi-temperature kinetics: production rates conserve mass and charge"_test = [&] {
         const auto check =
           [&](const Fractions& y, double rho, double temp, double t_v, double t_e) {
-              const auto mix = gaslib::mixture(gas, fractions(y));
+              const auto mix = canary::mixture(gas, fractions(y));
               const auto state = cell_state(gas, y, rho, temp, t_v, t_e);
               const auto q =
-                gaslib::rates_of_progress(mech, gas, mix, state.rho, state.temp, state.mode_temp);
+                canary::rates_of_progress(mech, gas, mix, state.rho, state.temp, state.mode_temp);
               const auto omega =
-                gaslib::production_rates(mech, gas, mix, state.rho, state.temp, state.mode_temp);
+                canary::production_rates(mech, gas, mix, state.rho, state.temp, state.mode_temp);
               double mass = 0;
               double mass_scale = 0;
               double charge = 0;
@@ -1032,7 +1032,7 @@ void test_multi_temperature_kinetics()
                 total += v;
             }
             for (double& v : y) { v /= total; }
-            const auto neutral = gaslib::charge_neutral_fractions(gas, built.species, fractions(y));
+            const auto neutral = canary::charge_neutral_fractions(gas, built.species, fractions(y));
             for (std::size_t i = 0; i < species_count; ++i) { y[i] = neutral[i].value(); }
             check(y,
                   std::pow(10.0, -5.0 + (3.0 * unit(engine))),
@@ -1066,21 +1066,21 @@ void test_multi_temperature_kinetics()
         // (both), C-E (electron) and the totals at x = (T, T_v, T_e, y_e),
         // then the size of the terms each is summed from.
         const auto sources = [&]<typename T>(const Point& p, const std::array<T, 4>& x) {
-            using gaslib::ScalarTraits;
+            using canary::ScalarTraits;
             const auto magnitude = [](T v) { return v < T(0.0) ? T(-v) : v; };
             std::array<T, species_count> y {};
             for (std::size_t i = 0; i < species_count; ++i) { y[i] = T(p.y[i]); }
             y[electron] = x[3];
-            const auto mix = gaslib::mixture(gas, fractions(y));
+            const auto mix = canary::mixture(gas, fractions(y));
             const auto state = cell_state(gas, y, T(p.rho), x[0], x[1], x[2]);
             const auto q =
-              gaslib::rates_of_progress(mech, gas, mix, state.rho, state.temp, state.mode_temp);
-            const auto vt = gaslib::vibration_translation_source(exchange, gas, mix, state);
-            const auto cv = gaslib::chemistry_vibration_source(exchange, mech, q, state);
-            const auto et = gaslib::electron_translation_source(exchange, mix, state);
-            const auto ve = gaslib::vibration_electron_source(exchange, gas, mix, state);
-            const auto ce = gaslib::electron_impact_ionisation_source(exchange, q);
-            const auto total = gaslib::multi_temperature_sources(mech, exchange, gas, mix, state);
+              canary::rates_of_progress(mech, gas, mix, state.rho, state.temp, state.mode_temp);
+            const auto vt = canary::vibration_translation_source(exchange, gas, mix, state);
+            const auto cv = canary::chemistry_vibration_source(exchange, mech, q, state);
+            const auto et = canary::electron_translation_source(exchange, mix, state);
+            const auto ve = canary::vibration_electron_source(exchange, gas, mix, state);
+            const auto ce = canary::electron_impact_ionisation_source(exchange, q);
+            const auto total = canary::multi_temperature_sources(mech, exchange, gas, mix, state);
             std::array<T, 2 * outputs> out {
               vt[0].value(),
               cv[0].value(),
@@ -1143,34 +1143,34 @@ void test_multi_temperature_kinetics()
     };
 
     "multi-temperature kinetics: scaled units give the SI results after conversion"_test = [&] {
-        const auto built_s = gaslib::make_air11_three_temperature<double>(reference_scales);
+        const auto built_s = canary::make_air11_three_temperature<double>(reference_scales);
         const auto& gas_s = built_s.model;
-        const auto mech_s = gaslib::make_air11_kim_jo(built_s.species,
+        const auto mech_s = canary::make_air11_kim_jo(built_s.species,
                                                       reference_scales,
-                                                      gaslib::convert<scaled>(p0, reference_scales),
+                                                      canary::convert<scaled>(p0, reference_scales),
                                                       gas_s);
         const auto exchange_s =
-          gaslib::make_air11_kim_jo_exchange(built_s.species, mech_s, gas_s, reference_scales);
+          canary::make_air11_kim_jo_exchange(built_s.species, mech_s, gas_s, reference_scales);
         const auto to_si = [&](const auto& q) {
-            return gaslib::convert<si>(q, reference_scales).value();
+            return canary::convert<si>(q, reference_scales).value();
         };
         const auto in_scaled = [&](double t) {
-            return gaslib::convert<scaled>(Temp {t}, reference_scales).value();
+            return canary::convert<scaled>(Temp {t}, reference_scales).value();
         };
         for (const ReferenceState& s : reference_states) {
-            const auto mix = gaslib::mixture(gas, fractions(s.y));
-            const auto mix_s = gaslib::mixture(gas_s, fractions(s.y));
+            const auto mix = canary::mixture(gas, fractions(s.y));
+            const auto mix_s = canary::mixture(gas_s, fractions(s.y));
             const auto state = cell_state(gas, s.y, s.rho, s.temp, s.t_v, s.t_e);
             const auto state_s =
               cell_state(gas_s,
                          s.y,
-                         gaslib::convert<scaled>(Rho {s.rho}, reference_scales).value(),
+                         canary::convert<scaled>(Rho {s.rho}, reference_scales).value(),
                          in_scaled(s.temp),
                          in_scaled(s.t_v),
                          in_scaled(s.t_e));
             const auto q =
-              gaslib::rates_of_progress(mech, gas, mix, state.rho, state.temp, state.mode_temp);
-            const auto q_s = gaslib::rates_of_progress(mech_s,
+              canary::rates_of_progress(mech, gas, mix, state.rho, state.temp, state.mode_temp);
+            const auto q_s = canary::rates_of_progress(mech_s,
                                                        gas_s,
                                                        mix_s,
                                                        state_s.rho,
@@ -1186,16 +1186,16 @@ void test_multi_temperature_kinetics()
                   << s.name << k;
             }
             // The SI rates converted, so that only the exchange is compared.
-            gaslib::RatesOfProgress<double, scaled, reaction_count> q_converted {};
+            canary::RatesOfProgress<double, scaled, reaction_count> q_converted {};
             for (std::size_t k = 0; k < reaction_count; ++k) {
-                q_converted.forward[k] = gaslib::convert<scaled>(q.forward[k], reference_scales);
-                q_converted.backward[k] = gaslib::convert<scaled>(q.backward[k], reference_scales);
+                q_converted.forward[k] = canary::convert<scaled>(q.forward[k], reference_scales);
+                q_converted.backward[k] = canary::convert<scaled>(q.backward[k], reference_scales);
             }
-            const auto cv = gaslib::chemistry_vibration_source(exchange, mech, q, state);
+            const auto cv = canary::chemistry_vibration_source(exchange, mech, q, state);
             const auto cv_s =
-              gaslib::chemistry_vibration_source(exchange_s, mech_s, q_converted, state_s);
-            const auto ce = gaslib::electron_impact_ionisation_source(exchange, q);
-            const auto ce_s = gaslib::electron_impact_ionisation_source(exchange_s, q_converted);
+              canary::chemistry_vibration_source(exchange_s, mech_s, q_converted, state_s);
+            const auto ce = canary::electron_impact_ionisation_source(exchange, q);
+            const auto ce_s = canary::electron_impact_ionisation_source(exchange_s, q_converted);
             // Sums of terms of one sign, with constants converted in double.
             expect(relative(to_si(cv_s[0]), cv[0].value(), 1.0e-12)) << s.name;
             // The net rates q_f - q_b cancel by up to a factor 100 here.
@@ -1204,13 +1204,13 @@ void test_multi_temperature_kinetics()
             // temperatures are close; states where they differ by 1000 K or
             // more. The Candler fit of V-E is shifted by log10 of the scales
             // (up to about 170 times the coefficients' rounding).
-            const auto vt = gaslib::vibration_translation_source(exchange, gas, mix, state);
+            const auto vt = canary::vibration_translation_source(exchange, gas, mix, state);
             const auto vt_s =
-              gaslib::vibration_translation_source(exchange_s, gas_s, mix_s, state_s);
-            const auto et = gaslib::electron_translation_source(exchange, mix, state);
-            const auto et_s = gaslib::electron_translation_source(exchange_s, mix_s, state_s);
-            const auto ve = gaslib::vibration_electron_source(exchange, gas, mix, state);
-            const auto ve_s = gaslib::vibration_electron_source(exchange_s, gas_s, mix_s, state_s);
+              canary::vibration_translation_source(exchange_s, gas_s, mix_s, state_s);
+            const auto et = canary::electron_translation_source(exchange, mix, state);
+            const auto et_s = canary::electron_translation_source(exchange_s, mix_s, state_s);
+            const auto ve = canary::vibration_electron_source(exchange, gas, mix, state);
+            const auto ve_s = canary::vibration_electron_source(exchange_s, gas_s, mix_s, state_s);
             if (std::abs(s.temp - s.t_v) >= 1000.0) {
                 expect(relative(to_si(vt_s[0]), vt[0].value(), 1.0e-12)) << s.name;
             }
@@ -1225,10 +1225,10 @@ void test_multi_temperature_kinetics()
 
     "multi-temperature kinetics: the builder rejects invalid input with the entry in the "
     "message"_test = [&] {
-        using Input = std::remove_cvref_t<decltype(gaslib::air11_kim_jo_exchange)>;
-        using Electrons = std::remove_cvref_t<decltype(gaslib::air11_kim_jo_exchange_electrons)>;
+        using Input = std::remove_cvref_t<decltype(canary::air11_kim_jo_exchange)>;
+        using Electrons = std::remove_cvref_t<decltype(canary::air11_kim_jo_exchange_electrons)>;
         const auto build = [&](const Input& input, const Electrons& electrons) {
-            (void)gaslib::make_multi_temperature_exchange(input,
+            (void)canary::make_multi_temperature_exchange(input,
                                                           electrons,
                                                           names,
                                                           built.species,
@@ -1243,8 +1243,8 @@ void test_multi_temperature_kinetics()
           };
         const double nan = std::numeric_limits<double>::quiet_NaN();
         const double inf = std::numeric_limits<double>::infinity();
-        const Input base = gaslib::air11_kim_jo_exchange;
-        const Electrons electrons = gaslib::air11_kim_jo_exchange_electrons;
+        const Input base = canary::air11_kim_jo_exchange;
+        const Electrons electrons = canary::air11_kim_jo_exchange_electrons;
         build(base, electrons);
 
         Input input = base;
@@ -1277,7 +1277,7 @@ void test_multi_temperature_kinetics()
                "electron-translation pair 0 (N+): a gnoffo_neutral partner must be neutral");
         e = electrons;
         // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange): an invalid model
-        e.electron_translation[0].cross_section = static_cast<gaslib::ElectronCrossSection>(5);
+        e.electron_translation[0].cross_section = static_cast<canary::ElectronCrossSection>(5);
         starts(base, e, "electron-translation pair 0 (N2): unknown electron cross-section model");
         for (const double v : {nan, inf}) {
             e = electrons;
@@ -1359,17 +1359,17 @@ void test_multi_temperature_kinetics()
         auto species = built.species;
         species.n = 10;
         expect(error_message([&] {
-                   (void)gaslib::make_air11_kim_jo_exchange(species, mech, gas, si_scales);
+                   (void)canary::make_air11_kim_jo_exchange(species, mech, gas, si_scales);
                }).starts_with("species data"));
 
         // Five-species air has no free electrons.
-        const auto air5 = gaslib::make_air5_four_temperature<double>(si_scales);
-        const auto air5_mech = gaslib::make_air5_park(air5.species, si_scales, p0, air5.model);
+        const auto air5 = canary::make_air5_four_temperature<double>(si_scales);
+        const auto air5_mech = canary::make_air5_park(air5.species, si_scales, p0, air5.model);
         const std::array<std::string_view, 5> air5_names {"N2", "O2", "N", "O", "NO"};
-        const gaslib::EnergyExchangeInput<0, 0> nothing {};
+        const canary::EnergyExchangeInput<0, 0> nothing {};
         const auto without_electrons = [&](const auto& extra) {
             return error_message([&] {
-                (void)gaslib::make_multi_temperature_exchange(nothing,
+                (void)canary::make_multi_temperature_exchange(nothing,
                                                               extra,
                                                               air5_names,
                                                               air5.species,
@@ -1378,15 +1378,15 @@ void test_multi_temperature_kinetics()
                                                               si_scales);
             });
         };
-        gaslib::ElectronExchangeInput<1, 0, 0> pair {};
+        canary::ElectronExchangeInput<1, 0, 0> pair {};
         pair.electron_translation[0] = electrons.electron_translation[0];
         expect(without_electrons(pair) ==
                "electron-translation pair 0 (N2): the model has no free electrons");
-        gaslib::ElectronExchangeInput<0, 1, 0> relaxation {};
+        canary::ElectronExchangeInput<0, 1, 0> relaxation {};
         relaxation.vibration_electron[0] = electrons.vibration_electron[0];
         expect(without_electrons(relaxation) ==
                "vibration-electron exchange 0 (N2): the model has no free electrons");
-        gaslib::ElectronExchangeInput<0, 0, 1> ionisation {};
+        canary::ElectronExchangeInput<0, 0, 1> ionisation {};
         ionisation.electron_impact_ionisation[0] = {
           .reaction = 0,
           .species = "N",
@@ -1395,8 +1395,8 @@ void test_multi_temperature_kinetics()
         expect(without_electrons(ionisation) ==
                "electron-impact ionisation 0 (N): the model has no free electrons");
         // Without electron exchanges the model needs no free electrons.
-        const gaslib::ElectronExchangeInput<0, 0, 0> no_electrons {};
-        const auto vibration_only = gaslib::make_multi_temperature_exchange(nothing,
+        const canary::ElectronExchangeInput<0, 0, 0> no_electrons {};
+        const auto vibration_only = canary::make_multi_temperature_exchange(nothing,
                                                                             no_electrons,
                                                                             air5_names,
                                                                             air5.species,

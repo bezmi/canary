@@ -16,13 +16,13 @@
             "type": "object",
             "properties": {
                "backward": {
-                  "$ref": "#/$defs/gaslib::database::RateRecord"
+                  "$ref": "#/$defs/canary::database::RateRecord"
                },
                "equation": {
                   "type": "string"
                },
                "forward": {
-                  "$ref": "#/$defs/gaslib::database::RateRecord"
+                  "$ref": "#/$defs/canary::database::RateRecord"
                },
                "label": {
                   "type": [
@@ -127,12 +127,7 @@
    },
    "additionalProperties": false,
    "$defs": {
-      "double": {
-         "type": "number",
-         "minimum": -1.7976931348623157E308,
-         "maximum": 1.7976931348623157E308
-      },
-      "gaslib::database::RateRecord": {
+      "canary::database::RateRecord": {
          "type": "object",
          "properties": {
             "A": {
@@ -190,6 +185,11 @@
             "model"
          ]
       },
+      "double": {
+         "type": "number",
+         "minimum": -1.7976931348623157E308,
+         "maximum": 1.7976931348623157E308
+      },
       "std::map<std::string,double>": {
          "type": "object",
          "additionalProperties": {
@@ -203,5 +203,5 @@
       "temperature_limits",
       "reactions"
    ],
-   "title": "gaslib::database::ReactionsFile"
+   "title": "canary::database::ReactionsFile"
 }

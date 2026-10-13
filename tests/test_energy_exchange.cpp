@@ -6,19 +6,19 @@
 #include <boost/ut.hpp>
 #include <cmath>
 #include <cstddef>
-#include <gaslib/build.hpp>
-#include <gaslib/data/air5.hpp>
-#include <gaslib/data/air5_park.hpp>
-#include <gaslib/data/air5_park_exchange.hpp>
-#include <gaslib/energy_exchange.hpp>
-#include <gaslib/models/thermally_perfect.hpp>
-#include <gaslib/models/two_temperature.hpp>
-#include <gaslib/quantity.hpp>
-#include <gaslib/reactions.hpp>
-#include <gaslib/species.hpp>
-#include <gaslib/status.hpp>
-#include <gaslib/thermo.hpp>
-#include <gaslib/units.hpp>
+#include <canary/build.hpp>
+#include <canary/data/air5.hpp>
+#include <canary/data/air5_park.hpp>
+#include <canary/data/air5_park_exchange.hpp>
+#include <canary/energy_exchange.hpp>
+#include <canary/models/thermally_perfect.hpp>
+#include <canary/models/two_temperature.hpp>
+#include <canary/quantity.hpp>
+#include <canary/reactions.hpp>
+#include <canary/species.hpp>
+#include <canary/status.hpp>
+#include <canary/thermo.hpp>
+#include <canary/units.hpp>
 #include <limits>
 #include <mdspan/mdspan.hpp>
 #include <numbers>
@@ -30,16 +30,16 @@
 namespace
 {
 
-using gaslib::scaled;
-using gaslib::si;
-using D = gaslib::test::Dual<double>;
-using Air = gaslib::Air5TwoTemperature<double, si>;
-using AirScaled = gaslib::Air5TwoTemperature<double, scaled>;
-using AirSingle = gaslib::Air5<double, si>;
-using Mechanism = gaslib::Air5Park<double, si>;
-using Exchange = gaslib::Air5ParkExchange<double, si>;
-using Rho = gaslib::Density<double, si>;
-using Temp = gaslib::Temperature<double, si>;
+using canary::scaled;
+using canary::si;
+using D = canary::test::Dual<double>;
+using Air = canary::Air5TwoTemperature<double, si>;
+using AirScaled = canary::Air5TwoTemperature<double, scaled>;
+using AirSingle = canary::Air5<double, si>;
+using Mechanism = canary::Air5Park<double, si>;
+using Exchange = canary::Air5ParkExchange<double, si>;
+using Rho = canary::Density<double, si>;
+using Temp = canary::Temperature<double, si>;
 using Extents = Kokkos::dextents<std::size_t, 1>;
 
 constexpr std::size_t species_count = 5;
@@ -48,12 +48,12 @@ using Fractions = std::array<double, species_count>;
 using PerReaction = std::array<double, reaction_count>;
 
 constexpr double atmosphere = 101325.0;
-constexpr double avogadro = gaslib::constants::avogadro<double>;
-constexpr double boltzmann = gaslib::constants::boltzmann<double>;
+constexpr double avogadro = canary::constants::avogadro<double>;
+constexpr double boltzmann = canary::constants::boltzmann<double>;
 // Universal gas constant of the reference implementation [J/(mol K)].
 constexpr double reference_gas_constant = 8.31451;
 
-const gaslib::UnitScales<double, scaled> reference_scales {
+const canary::UnitScales<double, scaled> reference_scales {
   .mass = 4.65e-26,
   .density = 1.0e-3,
   .temperature = 1000.0,
@@ -62,7 +62,7 @@ const gaslib::UnitScales<double, scaled> reference_scales {
 
 template <typename T> auto fractions(const std::array<T, species_count>& y)
 {
-    return gaslib::as_kind<gaslib::kind::mass_fraction>(
+    return canary::as_kind<canary::kind::mass_fraction>(
       Kokkos::mdspan<const T, Extents>(y.data(), species_count));
 }
 
@@ -171,7 +171,7 @@ const std::array<ReferenceState, 8> reference_states {
 int coefficient_change(const Mechanism& mech, std::size_t k, std::size_t i)
 { return mech.reactions[k].products[i] - mech.reactions[k].reactants[i]; }
 
-// Rates of progress, mass production rates and energy sources of gaslib in
+// Rates of progress, mass production rates and energy sources of canary in
 // one cell, as plain values.
 struct Values {
     PerReaction forward;
@@ -192,13 +192,13 @@ Values evaluate(const M& mech,
                 double t_ve)
 {
     using U = M::units;
-    const auto mix = gaslib::mixture(gas, fractions(y));
-    const gaslib::Density<double, U> rho_q {rho};
-    const gaslib::Temperature<double, U> temp_q {temp};
-    const gaslib::Temperature<double, U> t_ve_q {t_ve};
-    const auto q = gaslib::rates_of_progress(mech, gas, mix, rho_q, temp_q, t_ve_q);
+    const auto mix = canary::mixture(gas, fractions(y));
+    const canary::Density<double, U> rho_q {rho};
+    const canary::Temperature<double, U> temp_q {temp};
+    const canary::Temperature<double, U> t_ve_q {t_ve};
+    const auto q = canary::rates_of_progress(mech, gas, mix, rho_q, temp_q, t_ve_q);
     const auto sources =
-      gaslib::two_temperature_sources(mech, exchange, gas, mix, rho_q, temp_q, t_ve_q);
+      canary::two_temperature_sources(mech, exchange, gas, mix, rho_q, temp_q, t_ve_q);
     Values out {};
     for (std::size_t k = 0; k < reaction_count; ++k) {
         out.forward[k] = q.forward[k].value();
@@ -209,8 +209,8 @@ Values evaluate(const M& mech,
     }
     out.total = sources.vibrational_electronic.value();
     out.vt =
-      gaslib::vibration_translation_source(exchange, gas, mix, rho_q, temp_q, t_ve_q).value();
-    out.cv = gaslib::chemistry_vibration_source(exchange, mech, q, temp_q, t_ve_q).value();
+      canary::vibration_translation_source(exchange, gas, mix, rho_q, temp_q, t_ve_q).value();
+    out.cv = canary::chemistry_vibration_source(exchange, mech, q, temp_q, t_ve_q).value();
     return out;
 }
 
@@ -249,7 +249,7 @@ template <typename F> std::string error_message(const F& f)
 {
     try {
         f();
-    } catch (const gaslib::ParameterError& error) {
+    } catch (const canary::ParameterError& error) {
         return error.what();
     }
     return "no exception";
@@ -258,36 +258,36 @@ template <typename F> std::string error_message(const F& f)
 }  // namespace
 
 static_assert(std::numeric_limits<long double>::digits >= 64);
-static_assert(gaslib::HasSpeciesProperties<Air, double, 5>);
-static_assert(gaslib::HasSpeciesProperties<Air, D, 5>);
-static_assert(gaslib::ReactingModel<Air, double, double, 5>);
-static_assert(gaslib::ReactingModel<AirScaled, D, double, 5>);
-static_assert(gaslib::HasVibrationalElectronicEnergy<Air, double, 5>);
-static_assert(gaslib::HasVibrationalElectronicEnergy<Air, float, 5>);
-static_assert(gaslib::HasVibrationalElectronicEnergy<AirScaled, D, 5>);
-static_assert(!gaslib::HasVibrationalElectronicEnergy<Air, double, 4>);
-static_assert(!gaslib::HasVibrationalElectronicEnergy<AirSingle, double, 5>);
-static_assert(gaslib::RelaxingModel<Air, double, double, 5>);
-static_assert(gaslib::RelaxingModel<Air, float, double, 5>);
-static_assert(gaslib::RelaxingModel<Air, D, double, 5>);
-static_assert(!gaslib::RelaxingModel<AirSingle, double, double, 5>);
+static_assert(canary::HasSpeciesProperties<Air, double, 5>);
+static_assert(canary::HasSpeciesProperties<Air, D, 5>);
+static_assert(canary::ReactingModel<Air, double, double, 5>);
+static_assert(canary::ReactingModel<AirScaled, D, double, 5>);
+static_assert(canary::HasVibrationalElectronicEnergy<Air, double, 5>);
+static_assert(canary::HasVibrationalElectronicEnergy<Air, float, 5>);
+static_assert(canary::HasVibrationalElectronicEnergy<AirScaled, D, 5>);
+static_assert(!canary::HasVibrationalElectronicEnergy<Air, double, 4>);
+static_assert(!canary::HasVibrationalElectronicEnergy<AirSingle, double, 5>);
+static_assert(canary::RelaxingModel<Air, double, double, 5>);
+static_assert(canary::RelaxingModel<Air, float, double, 5>);
+static_assert(canary::RelaxingModel<Air, D, double, 5>);
+static_assert(!canary::RelaxingModel<AirSingle, double, double, 5>);
 static_assert(std::is_trivially_copyable_v<Exchange>);
-static_assert(std::is_trivially_copyable_v<gaslib::Air5ParkExchange<float, scaled>>);
-static_assert(std::is_trivially_copyable_v<gaslib::EnergyExchange<double, si, 5, 0, 0>>);
-static_assert(std::is_trivially_copyable_v<gaslib::TwoTemperatureSources<D, si, 5>>);
-static_assert(gaslib::air5_park.reactions.size() == 5);
-static_assert(gaslib::air5_park_exchange.vibration_translation.size() == 15);
+static_assert(std::is_trivially_copyable_v<canary::Air5ParkExchange<float, scaled>>);
+static_assert(std::is_trivially_copyable_v<canary::EnergyExchange<double, si, 5, 0, 0>>);
+static_assert(std::is_trivially_copyable_v<canary::TwoTemperatureSources<D, si, 5>>);
+static_assert(canary::air5_park.reactions.size() == 5);
+static_assert(canary::air5_park_exchange.vibration_translation.size() == 15);
 
 void test_energy_exchange()
 {
     using namespace boost::ut;
-    const gaslib::UnitScales<double, si> si_scales {};
-    const auto built = gaslib::make_air5_two_temperature<double>(si_scales);
+    const canary::UnitScales<double, si> si_scales {};
+    const auto built = canary::make_air5_two_temperature<double>(si_scales);
     const Air& gas = built.model;
     const Mechanism mech =
-      gaslib::make_air5_park(built.species, si_scales, gaslib::Pressure<double, si> {atmosphere});
-    const Exchange exchange = gaslib::make_air5_park_exchange(built.species, mech, si_scales);
-    const double ru = gaslib::constants::universal_gas_constant<double>;
+      canary::make_air5_park(built.species, si_scales, canary::Pressure<double, si> {atmosphere});
+    const Exchange exchange = canary::make_air5_park_exchange(built.species, mech, si_scales);
+    const double ru = canary::constants::universal_gas_constant<double>;
 
     "energy exchange: the generated mechanism and exchange hold their constants"_test = [&] {
         expect(mech.reactions[0].forward.translational_exponent == 0.5_d);
@@ -382,10 +382,10 @@ void test_energy_exchange()
                  std::array {1500.0, 4000.0},
                  std::array {250.0, 250.0},
                }) {
-              const auto mix = gaslib::mixture(gas, fractions(mixed));
+              const auto mix = canary::mixture(gas, fractions(mixed));
               const double rho = 0.01;
               const auto q =
-                gaslib::rates_of_progress(mech, gas, mix, Rho {rho}, Temp {temp}, Temp {t_ve});
+                canary::rates_of_progress(mech, gas, mix, Rho {rho}, Temp {temp}, Temp {t_ve});
               // Below the lower limit T_l = 300 K; T_ve is not clamped.
               const double t_l = std::max(temp, 300.0);
               const double t_c = std::sqrt(t_l * t_ve);
@@ -415,14 +415,14 @@ void test_energy_exchange()
     "energy exchange: rates at T_ve = T equal the single-temperature rates"_test = [&] {
         for (const ReferenceState& s : reference_states) {
             if (s.temp < 300.0 || s.temp > 50000.0) { continue; }
-            const auto mix = gaslib::mixture(gas, fractions(s.y));
-            const auto one = gaslib::rates_of_progress(mech, gas, mix, Rho {s.rho}, Temp {s.temp});
+            const auto mix = canary::mixture(gas, fractions(s.y));
+            const auto one = canary::rates_of_progress(mech, gas, mix, Rho {s.rho}, Temp {s.temp});
             const auto two =
-              gaslib::rates_of_progress(mech, gas, mix, Rho {s.rho}, Temp {s.temp}, Temp {s.temp});
+              canary::rates_of_progress(mech, gas, mix, Rho {s.rho}, Temp {s.temp}, Temp {s.temp});
             const auto omega_one =
-              gaslib::production_rates(mech, gas, mix, Rho {s.rho}, Temp {s.temp});
+              canary::production_rates(mech, gas, mix, Rho {s.rho}, Temp {s.temp});
             const auto omega_two =
-              gaslib::production_rates(mech, gas, mix, Rho {s.rho}, Temp {s.temp}, Temp {s.temp});
+              canary::production_rates(mech, gas, mix, Rho {s.rho}, Temp {s.temp}, Temp {s.temp});
             for (std::size_t k = 0; k < reaction_count; ++k) {
                 expect(one.forward[k] == two.forward[k] && one.backward[k] == two.backward[k])
                   << s.temp << k;
@@ -435,13 +435,13 @@ void test_energy_exchange()
 
     "energy exchange: rates with s = 1 and equilibrium backward rates do not depend on T_ve"_test =
       [&] {
-          const auto mix = gaslib::mixture(gas, fractions(dissociated));
+          const auto mix = canary::mixture(gas, fractions(dissociated));
           const Rho rho {0.01};
           for (const double temp : {250.0, 1500.0, 8000.0, 60000.0}) {
               const auto a =
-                gaslib::rates_of_progress(mech, gas, mix, rho, Temp {temp}, Temp {1000.0});
+                canary::rates_of_progress(mech, gas, mix, rho, Temp {temp}, Temp {1000.0});
               const auto b =
-                gaslib::rates_of_progress(mech, gas, mix, rho, Temp {temp}, Temp {9000.0});
+                canary::rates_of_progress(mech, gas, mix, rho, Temp {temp}, Temp {9000.0});
               for (std::size_t k = 0; k < reaction_count; ++k) {
                   expect(a.backward[k] == b.backward[k]) << temp << k;
               }
@@ -449,12 +449,12 @@ void test_energy_exchange()
               expect(!(a.forward[0] == b.forward[0])) << temp;
               // Derivatives with respect to T_ve.
               const std::array<D, species_count> y_d {0.3, 0.1, 0.3, 0.25, 0.05};
-              const auto q = gaslib::rates_of_progress(mech,
+              const auto q = canary::rates_of_progress(mech,
                                                        gas,
-                                                       gaslib::mixture(gas, fractions(y_d)),
-                                                       gaslib::Density<D, si> {D(0.01)},
-                                                       gaslib::Temperature<D, si> {D(temp)},
-                                                       gaslib::Temperature<D, si> {D(3000.0, 1.0)});
+                                                       canary::mixture(gas, fractions(y_d)),
+                                                       canary::Density<D, si> {D(0.01)},
+                                                       canary::Temperature<D, si> {D(temp)},
+                                                       canary::Temperature<D, si> {D(3000.0, 1.0)});
               for (std::size_t k = 0; k < reaction_count; ++k) {
                   expect(q.backward[k].value().dual() == 0.0) << temp << k;
               }
@@ -464,13 +464,13 @@ void test_energy_exchange()
       };
 
     "energy exchange: below the lower limit T is the limit and T_ve is not clamped"_test = [&] {
-        const auto mix = gaslib::mixture(gas, fractions(dissociated));
+        const auto mix = canary::mixture(gas, fractions(dissociated));
         const Rho rho {0.1};
         for (const double t_ve : {250.0, 2000.0}) {
             const auto below =
-              gaslib::rates_of_progress(mech, gas, mix, rho, Temp {250.0}, Temp {t_ve});
+              canary::rates_of_progress(mech, gas, mix, rho, Temp {250.0}, Temp {t_ve});
             const auto limit =
-              gaslib::rates_of_progress(mech, gas, mix, rho, Temp {300.0}, Temp {t_ve});
+              canary::rates_of_progress(mech, gas, mix, rho, Temp {300.0}, Temp {t_ve});
             for (std::size_t k = 0; k < reaction_count; ++k) {
                 expect(below.forward[k] == limit.forward[k] &&
                        below.backward[k] == limit.backward[k])
@@ -478,9 +478,9 @@ void test_energy_exchange()
             }
         }
         const auto clamped =
-          gaslib::rates_of_progress(mech, gas, mix, rho, Temp {250.0}, Temp {300.0});
+          canary::rates_of_progress(mech, gas, mix, rho, Temp {250.0}, Temp {300.0});
         const auto unclamped =
-          gaslib::rates_of_progress(mech, gas, mix, rho, Temp {250.0}, Temp {250.0});
+          canary::rates_of_progress(mech, gas, mix, rho, Temp {250.0}, Temp {250.0});
         expect(unclamped.forward[0].value() < clamped.forward[0].value());
     };
 
@@ -517,10 +517,10 @@ void test_energy_exchange()
 
     "energy exchange: Q_VT is zero at T = T_ve and has the sign of T - T_ve"_test = [&] {
         for (const auto& y : {mixed, dissociated, cold_air}) {
-            const auto mix = gaslib::mixture(gas, fractions(y));
+            const auto mix = canary::mixture(gas, fractions(y));
             const Rho rho {0.01};
             for (const double temp : {500.0, 3000.0, 9000.0, 25000.0}) {
-                const auto same = gaslib::vibration_translation_source(exchange,
+                const auto same = canary::vibration_translation_source(exchange,
                                                                        gas,
                                                                        mix,
                                                                        rho,
@@ -529,7 +529,7 @@ void test_energy_exchange()
                 expect(same.value() == 0.0) << temp;
                 for (const double factor : {0.5, 0.99, 1.01, 2.0}) {
                     const double t_ve = factor * temp;
-                    const double q = gaslib::vibration_translation_source(exchange,
+                    const double q = canary::vibration_translation_source(exchange,
                                                                           gas,
                                                                           mix,
                                                                           rho,
@@ -546,15 +546,15 @@ void test_energy_exchange()
     "energy exchange: an absent partner contributes zero and an empty exchange gives zero"_test =
       [&] {
           // N2 relaxing with O only, in air without atoms.
-          gaslib::EnergyExchangeInput<1, 0> input {};
-          input.vibration_translation[0] = gaslib::air5_park_exchange.vibration_translation[1];
-          const auto absent = gaslib::make_energy_exchange(input,
-                                                           gaslib::detail::air5_park_species_names,
+          canary::EnergyExchangeInput<1, 0> input {};
+          input.vibration_translation[0] = canary::air5_park_exchange.vibration_translation[1];
+          const auto absent = canary::make_energy_exchange(input,
+                                                           canary::detail::air5_park_species_names,
                                                            built.species,
                                                            mech,
                                                            si_scales);
-          const auto mix = gaslib::mixture(gas, fractions(cold_air));
-          const double q = gaslib::vibration_translation_source(absent,
+          const auto mix = canary::mixture(gas, fractions(cold_air));
+          const double q = canary::vibration_translation_source(absent,
                                                                 gas,
                                                                 mix,
                                                                 Rho {0.1},
@@ -563,13 +563,13 @@ void test_energy_exchange()
                              .value();
           expect(q == 0.0) << q;
 
-          const gaslib::EnergyExchangeInput<0, 0> nothing {};
-          const auto empty = gaslib::make_energy_exchange(nothing,
-                                                          gaslib::detail::air5_park_species_names,
+          const canary::EnergyExchangeInput<0, 0> nothing {};
+          const auto empty = canary::make_energy_exchange(nothing,
+                                                          canary::detail::air5_park_species_names,
                                                           built.species,
                                                           mech,
                                                           si_scales);
-          const auto sources = gaslib::two_temperature_sources(mech,
+          const auto sources = canary::two_temperature_sources(mech,
                                                                empty,
                                                                gas,
                                                                mix,
@@ -583,20 +583,20 @@ void test_energy_exchange()
     "energy exchange: Q_VT of pure N2 is the Landau-Teller rate with tau of the N2-N2 pair"_test =
       [&] {
           const Fractions y {1.0, 0.0, 0.0, 0.0, 0.0};
-          const auto mix = gaslib::mixture(gas, fractions(y));
+          const auto mix = canary::mixture(gas, fractions(y));
           const double m = built.species.mass[0].value();
           for (const double rho : {1.0e-3, 0.1}) {
               for (const double temp : {2000.0, 6000.0, 15000.0}) {
                   const double t_ve = temp * (1.0 - 1.0e-4);
-                  const double q = gaslib::vibration_translation_source(exchange,
+                  const double q = canary::vibration_translation_source(exchange,
                                                                         gas,
                                                                         mix,
                                                                         Rho {rho},
                                                                         Temp {temp},
                                                                         Temp {t_ve})
                                      .value();
-                  const auto e_t = gaslib::species_vibrational_electronic_energy(gas, Temp {temp});
-                  const auto e_ve = gaslib::species_vibrational_electronic_energy(gas, Temp {t_ve});
+                  const auto e_t = canary::species_vibrational_electronic_energy(gas, Temp {temp});
+                  const auto e_ve = canary::species_vibrational_electronic_energy(gas, Temp {t_ve});
                   const double rate = q / (rho * (e_t[0].value() - e_ve[0].value()));
                   // tau from the formulas, with x_q = 1 and p = n k_B T.
                   const double n = rho / m;
@@ -616,13 +616,13 @@ void test_energy_exchange()
       };
 
     "energy exchange: each relaxation-time correction adds 1 / (sigma c n_q) to tau"_test = [&] {
-        using gaslib::RelaxationCorrection;
+        using canary::RelaxationCorrection;
         const Fractions y {1.0, 0.0, 0.0, 0.0, 0.0};
-        const auto mix = gaslib::mixture(gas, fractions(y));
+        const auto mix = canary::mixture(gas, fractions(y));
         const double m = built.species.mass[0].value();
         // sigma_0, T_ref and omega of each model; a negative Millikan-White a
         // with the last.
-        const std::array<gaslib::RelaxationCorrectionInput, 4> corrections {
+        const std::array<canary::RelaxationCorrectionInput, 4> corrections {
           {
             {
               .model = RelaxationCorrection::none,
@@ -653,7 +653,7 @@ void test_energy_exchange()
         for (std::size_t c = 0; c < corrections.size(); ++c) {
             const double a = c == 3 ? -27.32 : 221.0;
             const double b = c == 3 ? 0.1465 : 0.029;
-            gaslib::EnergyExchangeInput<1, 0> input {};
+            canary::EnergyExchangeInput<1, 0> input {};
             input.vibration_translation[0] = {
               .species = "N2",
               .partner = "N2",
@@ -661,28 +661,28 @@ void test_energy_exchange()
               .correction = corrections[c],
             };
             const auto single =
-              gaslib::make_energy_exchange(input,
-                                           gaslib::detail::air5_park_species_names,
+              canary::make_energy_exchange(input,
+                                           canary::detail::air5_park_species_names,
                                            built.species,
                                            mech,
                                            si_scales);
             for (const double temp : {2000.0, 6000.0, 15000.0}) {
                 const double rho = 0.01;
                 const double t_ve = temp * (1.0 - 1.0e-4);
-                const double q = gaslib::vibration_translation_source(single,
+                const double q = canary::vibration_translation_source(single,
                                                                       gas,
                                                                       mix,
                                                                       Rho {rho},
                                                                       Temp {temp},
                                                                       Temp {t_ve})
                                    .value();
-                const auto e_t = gaslib::species_vibrational_electronic_energy(gas, Temp {temp});
-                const auto e_ve = gaslib::species_vibrational_electronic_energy(gas, Temp {t_ve});
+                const auto e_t = canary::species_vibrational_electronic_energy(gas, Temp {temp});
+                const auto e_ve = canary::species_vibrational_electronic_energy(gas, Temp {t_ve});
                 const double rate = q / (rho * (e_t[0].value() - e_ve[0].value()));
                 const double n = rho / m;
                 const double tau_mw = (atmosphere / (n * boltzmann * temp)) *
                                       std::exp((a * (std::cbrt(1.0 / temp) - b)) - 18.42);
-                const gaslib::RelaxationCorrectionInput& k = corrections[c];
+                const canary::RelaxationCorrectionInput& k = corrections[c];
                 double sigma = 0.0;
                 if (k.model == RelaxationCorrection::park_1985) { sigma = k.cross_section; }
                 if (k.model == RelaxationCorrection::park_1993) {
@@ -704,19 +704,19 @@ void test_energy_exchange()
 
     "energy exchange: relaxation at fixed energy reaches the equilibrium temperature"_test = [&] {
         const Fractions y {1.0, 0.0, 0.0, 0.0, 0.0};
-        const auto mix = gaslib::mixture(gas, fractions(y));
+        const auto mix = canary::mixture(gas, fractions(y));
         const double rho = 0.01;
         const std::array t_ve_start {1000.0};
         const auto start =
-          gaslib::thermo_state(gas,
+          canary::thermo_state(gas,
                                mix,
                                Rho {rho},
                                Temp {8000.0},
-                               gaslib::as_kind<gaslib::kind::mode_temperature, si>(
+                               canary::as_kind<canary::kind::mode_temperature, si>(
                                  Kokkos::mdspan<const double, Extents>(t_ve_start.data(), 1)));
         const double rho_e = rho * start.state.e.value();
         const auto equilibrium =
-          gaslib::thermo_state(gas, mix, Rho {rho}, gaslib::EnergyDensity<double, si> {rho_e});
+          canary::thermo_state(gas, mix, Rho {rho}, canary::EnergyDensity<double, si> {rho_e});
         const double t_eq = equilibrium.state.temp.value();
         std::array rho_e_ve {rho * start.state.mode_e[0].value()};
         double temp = 8000.0;
@@ -728,25 +728,25 @@ void test_energy_exchange()
         // rho (e_ve(T) - e_ve(T_ve)) / Q_VT, until T - T_ve < 1e-6 T; T and
         // T_ve from the closure of (rho, rho e, rho e_ve).
         while (temp - t_ve > 1.0e-6 * temp && steps < 100000) {
-            const double q = gaslib::vibration_translation_source(exchange,
+            const double q = canary::vibration_translation_source(exchange,
                                                                   gas,
                                                                   mix,
                                                                   Rho {rho},
                                                                   Temp {temp},
                                                                   Temp {t_ve})
                                .value();
-            const auto e_t = gaslib::species_vibrational_electronic_energy(gas, Temp {temp});
-            const auto e_ve = gaslib::species_vibrational_electronic_energy(gas, Temp {t_ve});
+            const auto e_t = canary::species_vibrational_electronic_energy(gas, Temp {temp});
+            const auto e_ve = canary::species_vibrational_electronic_energy(gas, Temp {t_ve});
             const double tau = rho * (e_t[0].value() - e_ve[0].value()) / q;
             rho_e_ve[0] += 0.01 * tau * q;
             const auto next =
-              gaslib::thermo_state(gas,
+              canary::thermo_state(gas,
                                    mix,
                                    Rho {rho},
-                                   gaslib::EnergyDensity<double, si> {rho_e},
-                                   gaslib::as_kind<gaslib::kind::mode_energy_density, si>(
+                                   canary::EnergyDensity<double, si> {rho_e},
+                                   canary::as_kind<canary::kind::mode_energy_density, si>(
                                      Kokkos::mdspan<const double, Extents>(rho_e_ve.data(), 1)));
-            converged = converged && next.status == gaslib::Status::Valid;
+            converged = converged && next.status == canary::Status::Valid;
             const double next_temp = next.state.temp.value();
             const double next_t_ve = next.state.mode_temp[0].value();
             monotonic =
@@ -787,11 +787,11 @@ void test_energy_exchange()
             for (std::size_t j = 0; j < total; ++j) {
                 const double x = xs[j];
                 const double g =
-                  gaslib::detail::truncated_oscillator_energy(theta_v, theta_d, x).value;
+                  canary::detail::truncated_oscillator_energy(theta_v, theta_d, x).value;
                 const auto precise = static_cast<double>(precise_g(theta_v, theta_d, x));
                 expect(relative(g, precise, 1.0e-12)) << theta_d << x << g << precise;
             }
-            const auto g0 = gaslib::detail::truncated_oscillator_energy(theta_v, theta_d, 0.0);
+            const auto g0 = canary::detail::truncated_oscillator_energy(theta_v, theta_d, 0.0);
             expect(g0.value == (theta_d - theta_v) / 2.0);
         }
     };
@@ -799,15 +799,15 @@ void test_energy_exchange()
     "energy exchange: G_vanish equals G_appear at T = T_ve and Q_CV < 0 without products"_test =
       [&] {
           for (const ReferenceState& s : reference_states) {
-              const auto mix = gaslib::mixture(gas, fractions(s.y));
-              const auto q = gaslib::rates_of_progress(mech,
+              const auto mix = canary::mixture(gas, fractions(s.y));
+              const auto q = canary::rates_of_progress(mech,
                                                        gas,
                                                        mix,
                                                        Rho {s.rho},
                                                        Temp {s.temp},
                                                        Temp {s.temp});
               const double cv =
-                gaslib::chemistry_vibration_source(exchange, mech, q, Temp {s.temp}, Temp {s.temp})
+                canary::chemistry_vibration_source(exchange, mech, q, Temp {s.temp}, Temp {s.temp})
                   .value();
               // With G_vanish = G_appear = k_B (theta_D - theta_v) / 2,
               // Q_CV = sum_c dnu (q_f - q_b) G_appear.
@@ -825,62 +825,62 @@ void test_energy_exchange()
               }
               expect(std::abs(cv - expected) <= 1.0e-14 * scale) << s.temp << cv << expected;
           }
-          const auto mix = gaslib::mixture(gas, fractions(cold_air));
+          const auto mix = canary::mixture(gas, fractions(cold_air));
           for (const auto& [temp, t_ve] : {
                  std::array {5000.0, 1000.0},
                  std::array {3000.0, 3000.0},
                  std::array {2000.0, 9000.0},
                }) {
               const auto q =
-                gaslib::rates_of_progress(mech, gas, mix, Rho {0.1}, Temp {temp}, Temp {t_ve});
+                canary::rates_of_progress(mech, gas, mix, Rho {0.1}, Temp {temp}, Temp {t_ve});
               expect(q.backward[0].value() == 0.0 && q.backward[1].value() == 0.0);
               const double cv =
-                gaslib::chemistry_vibration_source(exchange, mech, q, Temp {temp}, Temp {t_ve})
+                canary::chemistry_vibration_source(exchange, mech, q, Temp {temp}, Temp {t_ve})
                   .value();
               expect(cv < 0.0) << temp << t_ve << cv;
           }
       };
 
     "energy exchange: scaled units give the SI results after conversion"_test = [&] {
-        const auto built_s = gaslib::make_air5_two_temperature<double>(reference_scales);
-        const auto mech_s = gaslib::make_air5_park(
+        const auto built_s = canary::make_air5_two_temperature<double>(reference_scales);
+        const auto mech_s = canary::make_air5_park(
           built_s.species,
           reference_scales,
-          gaslib::convert<scaled>(gaslib::Pressure<double, si> {atmosphere}, reference_scales));
+          canary::convert<scaled>(canary::Pressure<double, si> {atmosphere}, reference_scales));
         const auto exchange_s =
-          gaslib::make_air5_park_exchange(built_s.species, mech_s, reference_scales);
+          canary::make_air5_park_exchange(built_s.species, mech_s, reference_scales);
         for (const ReferenceState& s : reference_states) {
-            const auto mix = gaslib::mixture(gas, fractions(s.y));
-            const auto mix_s = gaslib::mixture(built_s.model, fractions(s.y));
+            const auto mix = canary::mixture(gas, fractions(s.y));
+            const auto mix_s = canary::mixture(built_s.model, fractions(s.y));
             const Rho rho {s.rho};
             const Temp temp {s.temp};
             const Temp t_ve {s.t_ve};
-            const auto rho_s = gaslib::convert<scaled>(rho, reference_scales);
-            const auto temp_s = gaslib::convert<scaled>(temp, reference_scales);
-            const auto t_ve_s = gaslib::convert<scaled>(t_ve, reference_scales);
-            const auto q = gaslib::rates_of_progress(mech, gas, mix, rho, temp, t_ve);
+            const auto rho_s = canary::convert<scaled>(rho, reference_scales);
+            const auto temp_s = canary::convert<scaled>(temp, reference_scales);
+            const auto t_ve_s = canary::convert<scaled>(t_ve, reference_scales);
+            const auto q = canary::rates_of_progress(mech, gas, mix, rho, temp, t_ve);
             const auto q_s =
-              gaslib::rates_of_progress(mech_s, built_s.model, mix_s, rho_s, temp_s, t_ve_s);
+              canary::rates_of_progress(mech_s, built_s.model, mix_s, rho_s, temp_s, t_ve_s);
             // As for one temperature: the Gibbs energies of the scaled thermo
             // model differ from the SI ones by up to 6e-13 relative, times
             // m / (k_B T) in K_c.
             for (std::size_t k = 0; k < reaction_count; ++k) {
-                const double f = gaslib::convert<si>(q_s.forward[k], reference_scales).value();
-                const double b = gaslib::convert<si>(q_s.backward[k], reference_scales).value();
+                const double f = canary::convert<si>(q_s.forward[k], reference_scales).value();
+                const double b = canary::convert<si>(q_s.backward[k], reference_scales).value();
                 expect(relative(f, q.forward[k].value(), 1.0e-12)) << s.temp << k;
                 expect(relative(b, q.backward[k].value(), 1.0e-10)) << s.temp << k;
             }
             // The SI rates converted, so that only the exchange is compared.
-            gaslib::RatesOfProgress<double, scaled, reaction_count> q_converted {};
+            canary::RatesOfProgress<double, scaled, reaction_count> q_converted {};
             for (std::size_t k = 0; k < reaction_count; ++k) {
-                q_converted.forward[k] = gaslib::convert<scaled>(q.forward[k], reference_scales);
-                q_converted.backward[k] = gaslib::convert<scaled>(q.backward[k], reference_scales);
+                q_converted.forward[k] = canary::convert<scaled>(q.forward[k], reference_scales);
+                q_converted.backward[k] = canary::convert<scaled>(q.backward[k], reference_scales);
             }
             const double cv =
-              gaslib::chemistry_vibration_source(exchange, mech, q, temp, t_ve).value();
+              canary::chemistry_vibration_source(exchange, mech, q, temp, t_ve).value();
             const double cv_s =
-              gaslib::convert<si>(
-                gaslib::chemistry_vibration_source(exchange_s, mech_s, q_converted, temp_s, t_ve_s),
+              canary::convert<si>(
+                canary::chemistry_vibration_source(exchange_s, mech_s, q_converted, temp_s, t_ve_s),
                 reference_scales)
                 .value();
             expect(relative(cv_s, cv, 1.0e-12)) << s.temp << cv_s << cv;
@@ -888,9 +888,9 @@ void test_energy_exchange()
             // close to T; states with |T - T_ve| >= 1000 K.
             if (std::abs(s.temp - s.t_ve) < 1000.0) { continue; }
             const double vt =
-              gaslib::vibration_translation_source(exchange, gas, mix, rho, temp, t_ve).value();
+              canary::vibration_translation_source(exchange, gas, mix, rho, temp, t_ve).value();
             const double vt_s =
-              gaslib::convert<si>(gaslib::vibration_translation_source(exchange_s,
+              canary::convert<si>(canary::vibration_translation_source(exchange_s,
                                                                        built_s.model,
                                                                        mix_s,
                                                                        rho_s,
@@ -908,20 +908,20 @@ void test_energy_exchange()
             const auto sources = [&]<typename T>(T temp, T t_ve) {
                 std::array<T, species_count> y {};
                 for (std::size_t i = 0; i < species_count; ++i) { y[i] = T(s.y[i]); }
-                const auto mix = gaslib::mixture(gas, fractions(y));
-                const gaslib::Density<T, si> rho {T(s.rho)};
-                const gaslib::Temperature<T, si> t {temp};
-                const gaslib::Temperature<T, si> tv {t_ve};
-                const auto q = gaslib::rates_of_progress(mech, gas, mix, rho, t, tv);
+                const auto mix = canary::mixture(gas, fractions(y));
+                const canary::Density<T, si> rho {T(s.rho)};
+                const canary::Temperature<T, si> t {temp};
+                const canary::Temperature<T, si> tv {t_ve};
+                const auto q = canary::rates_of_progress(mech, gas, mix, rho, t, tv);
                 // The sources, then the size of the terms each is summed
                 // from.
                 std::array<T, 2 * (species_count + 2)> out {};
-                const auto omega = gaslib::production_rates(mech, gas, mix, rho, t, tv);
+                const auto omega = canary::production_rates(mech, gas, mix, rho, t, tv);
                 for (std::size_t i = 0; i < species_count; ++i) { out[i] = omega[i].value(); }
                 out[species_count] =
-                  gaslib::vibration_translation_source(exchange, gas, mix, rho, t, tv).value();
+                  canary::vibration_translation_source(exchange, gas, mix, rho, t, tv).value();
                 out[species_count + 1] =
-                  gaslib::chemistry_vibration_source(exchange, mech, q, t, tv).value();
+                  canary::chemistry_vibration_source(exchange, mech, q, t, tv).value();
                 const std::size_t scales = species_count + 2;
                 for (std::size_t k = 0; k < reaction_count; ++k) {
                     const T both = q.forward[k].value() + q.backward[k].value();
@@ -967,10 +967,10 @@ void test_energy_exchange()
     };
 
     "energy exchange: the builder rejects invalid input with the entry in the message"_test = [&] {
-        using Input = gaslib::EnergyExchangeInput<15, 3>;
+        using Input = canary::EnergyExchangeInput<15, 3>;
         const auto build = [&](const Input& input) {
-            (void)gaslib::make_energy_exchange(input,
-                                               gaslib::detail::air5_park_species_names,
+            (void)canary::make_energy_exchange(input,
+                                               canary::detail::air5_park_species_names,
                                                built.species,
                                                mech,
                                                si_scales);
@@ -983,39 +983,39 @@ void test_energy_exchange()
         const double nan = std::numeric_limits<double>::quiet_NaN();
         const double inf = std::numeric_limits<double>::infinity();
 
-        Input input = gaslib::air5_park_exchange;
+        Input input = canary::air5_park_exchange;
         input.vibration_translation[3].species = "Ar";
         starts(input, "vibration-translation pair 3 (Ar, O2): unknown species \"Ar\"");
-        input = gaslib::air5_park_exchange;
+        input = canary::air5_park_exchange;
         input.vibration_translation[3].partner = "Ar";
         starts(input, "vibration-translation pair 3 (N2, Ar): unknown partner \"Ar\"");
-        input = gaslib::air5_park_exchange;
+        input = canary::air5_park_exchange;
         input.vibration_translation[3].partner = nullptr;
         starts(input, "vibration-translation pair 3 (N2, ): partner has no name");
 
         for (const double a : {nan, inf}) {
-            input = gaslib::air5_park_exchange;
+            input = canary::air5_park_exchange;
             input.vibration_translation[4].millikan_white.a = a;
             starts(input, "vibration-translation pair 4 (N2, NO): Millikan-White a must be finite");
         }
         // Any finite a is accepted.
         for (const double a : {0.0, -27.32}) {
-            input = gaslib::air5_park_exchange;
+            input = canary::air5_park_exchange;
             input.vibration_translation[4].millikan_white.a = a;
             build(input);
         }
-        input = gaslib::air5_park_exchange;
+        input = canary::air5_park_exchange;
         input.vibration_translation[4].millikan_white.b = inf;
         starts(input, "vibration-translation pair 4 (N2, NO): Millikan-White b must be finite");
 
-        using gaslib::RelaxationCorrection;
+        using canary::RelaxationCorrection;
         for (const RelaxationCorrection model : {
                RelaxationCorrection::park_1985,
                RelaxationCorrection::park_1993,
                RelaxationCorrection::kim_2021,
              }) {
             for (const double sigma : {nan, inf, 0.0, -1.0e-21}) {
-                input = gaslib::air5_park_exchange;
+                input = canary::air5_park_exchange;
                 input.vibration_translation[5].correction.model = model;
                 input.vibration_translation[5].correction.cross_section = sigma;
                 starts(input,
@@ -1023,26 +1023,26 @@ void test_energy_exchange()
             }
         }
         for (const double t_ref : {nan, inf, 0.0, -5.0e4}) {
-            input = gaslib::air5_park_exchange;
+            input = canary::air5_park_exchange;
             input.vibration_translation[5].correction.reference_temperature = t_ref;
             starts(
               input,
               "vibration-translation pair 5 (O2, N): correction reference temperature must be");
         }
         for (const double exponent : {nan, inf}) {
-            input = gaslib::air5_park_exchange;
+            input = canary::air5_park_exchange;
             input.vibration_translation[5].correction.model = RelaxationCorrection::kim_2021;
             input.vibration_translation[5].correction.exponent = exponent;
             starts(input,
                    "vibration-translation pair 5 (O2, N): correction exponent must be finite");
         }
-        input = gaslib::air5_park_exchange;
+        input = canary::air5_park_exchange;
         // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange): an invalid model
         input.vibration_translation[5].correction.model = static_cast<RelaxationCorrection>(9);
         starts(input,
                "vibration-translation pair 5 (O2, N): unknown relaxation-time correction model");
         // A model ignores the constants it does not use.
-        input = gaslib::air5_park_exchange;
+        input = canary::air5_park_exchange;
         input.vibration_translation[5].correction = {
           .model = RelaxationCorrection::none,
           .cross_section = nan,
@@ -1058,27 +1058,27 @@ void test_energy_exchange()
         build(input);
 
         for (const int reaction : {-1, 5}) {
-            input = gaslib::air5_park_exchange;
+            input = canary::air5_park_exchange;
             input.chemistry_vibration[1].reaction = reaction;
             starts(input,
                    "chemistry-vibration coupling 1 (O2): reaction index must be between 0 and 4");
         }
-        input = gaslib::air5_park_exchange;
+        input = canary::air5_park_exchange;
         input.chemistry_vibration[1].species = "Ar";
         starts(input, "chemistry-vibration coupling 1 (Ar): unknown species \"Ar\"");
         // N2 takes no part in NO + O <=> O2 + N.
-        input = gaslib::air5_park_exchange;
+        input = canary::air5_park_exchange;
         input.chemistry_vibration[0].reaction = 3;
         starts(
           input,
           "chemistry-vibration coupling 0 (N2): species \"N2\" has no net change in reaction 3");
         for (const double d : {nan, inf, 0.0, -1.0}) {
-            input = gaslib::air5_park_exchange;
+            input = canary::air5_park_exchange;
             input.chemistry_vibration[2].dissociation_energy = d;
             starts(input, "chemistry-vibration coupling 2 (NO): dissociation energy must be");
         }
         for (const double theta : {nan, inf, 0.0, -1.0}) {
-            input = gaslib::air5_park_exchange;
+            input = canary::air5_park_exchange;
             input.chemistry_vibration[2].vibrational_temperature = theta;
             starts(input, "chemistry-vibration coupling 2 (NO): vibrational temperature must be");
         }
@@ -1086,11 +1086,11 @@ void test_energy_exchange()
         auto species = built.species;
         species.n = 4;
         expect(error_message([&] {
-                   (void)gaslib::make_air5_park_exchange(species, mech, si_scales);
+                   (void)canary::make_air5_park_exchange(species, mech, si_scales);
                }).starts_with("species data"));
         expect(error_message([&] {
-                   (void)gaslib::make_energy_exchange(
-                     gaslib::air5_park_exchange,
+                   (void)canary::make_energy_exchange(
+                     canary::air5_park_exchange,
                      std::array<std::string_view, 5> {"N2", "O2", "N", "N2", "NO"},
                      built.species,
                      mech,

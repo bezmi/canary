@@ -1,14 +1,14 @@
 cmake_minimum_required(VERSION 3.29)
 
 project(
-  gaslib
+  canary
   DESCRIPTION "Header-only gas thermodynamics, transport and rate functions for one cell"
   LANGUAGES CXX)
 
-option(GASLIB_BUILD_TESTS "Build the gaslib tests" ${PROJECT_IS_TOP_LEVEL})
-option(GASLIB_BUILD_BENCHMARKS "Build the gaslib benchmarks" ${PROJECT_IS_TOP_LEVEL})
-option(GASLIB_BUILD_DATABASE "Build the species database library (C++23, glaze)" ${PROJECT_IS_TOP_LEVEL})
-option(GASLIB_FIND_MDSPAN "Use an installed mdspan found with find_package instead of fetching it" OFF)
+option(CANARY_BUILD_TESTS "Build the canary tests" ${PROJECT_IS_TOP_LEVEL})
+option(CANARY_BUILD_BENCHMARKS "Build the canary benchmarks" ${PROJECT_IS_TOP_LEVEL})
+option(CANARY_BUILD_DATABASE "Build the species database library (C++23, glaze)" ${PROJECT_IS_TOP_LEVEL})
+option(CANARY_FIND_MDSPAN "Use an installed mdspan found with find_package instead of fetching it" OFF)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/cmake)
 
@@ -21,29 +21,29 @@ include(CPM)
 
 if(PROJECT_IS_TOP_LEVEL)
   set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-  # gaslib has no C++ modules.
+  # canary has no C++ modules.
   set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 endif()
 
-include(GaslibSetupMdspan)
+include(CanarySetupMdspan)
 
-add_library(gaslib INTERFACE)
-add_library(gaslib::gaslib ALIAS gaslib)
-target_include_directories(gaslib INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/include>)
-target_compile_features(gaslib INTERFACE cxx_std_20)
-target_link_libraries(gaslib INTERFACE mdspan::mdspan)
+add_library(canary INTERFACE)
+add_library(canary::canary ALIAS canary)
+target_include_directories(canary INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/include>)
+target_compile_features(canary INTERFACE cxx_std_20)
+target_link_libraries(canary INTERFACE mdspan::mdspan)
 
-if(GASLIB_BUILD_DATABASE)
-  include(GaslibSetupGlaze)
+if(CANARY_BUILD_DATABASE)
+  include(CanarySetupGlaze)
   add_subdirectory(database)
 endif()
 
-if(GASLIB_BUILD_TESTS)
+if(CANARY_BUILD_TESTS)
   enable_testing()
-  include(GaslibSetupBoostUT)
+  include(CanarySetupBoostUT)
   add_subdirectory(tests)
 endif()
 
-if(GASLIB_BUILD_BENCHMARKS)
+if(CANARY_BUILD_BENCHMARKS)
   add_subdirectory(benchmarks)
 endif()

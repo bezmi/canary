@@ -1,5 +1,5 @@
 {
-   "format": "gaslib-collision-integrals-1",
+   "format": "canary-collision-integrals-1",
    "units": {
       "temperature": "K",
       "area": "m^2"

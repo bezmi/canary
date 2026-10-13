@@ -1,19 +1,19 @@
 // A model whose closure requires an extra input cannot close without it.
 #include "test_models.hpp"
 
-#include <gaslib/thermo.hpp>
+#include <canary/thermo.hpp>
 
 namespace
 {
-constexpr gaslib::test::GuessRequiredGas gas {
-  {gaslib::SpecificGasConstant<double, gaslib::si> {287.0},
-   gaslib::SpecificHeat<double, gaslib::si> {717.5}}};
-constexpr gaslib::Density<double, gaslib::si> rho {1.2};
-constexpr gaslib::SpecificEnergy<double, gaslib::si> e {2.15e5};
+constexpr canary::test::GuessRequiredGas gas {
+  {canary::SpecificGasConstant<double, canary::si> {287.0},
+   canary::SpecificHeat<double, canary::si> {717.5}}};
+constexpr canary::Density<double, canary::si> rho {1.2};
+constexpr canary::SpecificEnergy<double, canary::si> e {2.15e5};
 }  // namespace
 
-#ifdef GASLIB_COMPILE_FAIL
-auto bad = gaslib::thermo_state(gas, rho, e);
+#ifdef CANARY_COMPILE_FAIL
+auto bad = canary::thermo_state(gas, rho, e);
 #endif
-auto good = gaslib::thermo_state(
-  gas, rho, e, gaslib::test::TemperatureGuess {gaslib::Temperature<double, gaslib::si> {300.0}});
+auto good = canary::thermo_state(
+  gas, rho, e, canary::test::TemperatureGuess {canary::Temperature<double, canary::si> {300.0}});

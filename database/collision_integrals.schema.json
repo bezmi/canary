@@ -22,10 +22,10 @@
                   ]
                },
                "pi_omega_11": {
-                  "$ref": "#/$defs/gaslib::database::CollisionFitRecord"
+                  "$ref": "#/$defs/canary::database::CollisionFitRecord"
                },
                "pi_omega_22": {
-                  "$ref": "#/$defs/gaslib::database::CollisionFitRecord"
+                  "$ref": "#/$defs/canary::database::CollisionFitRecord"
                },
                "reference": {
                   "type": [
@@ -74,12 +74,7 @@
    },
    "additionalProperties": false,
    "$defs": {
-      "double": {
-         "type": "number",
-         "minimum": -1.7976931348623157E308,
-         "maximum": 1.7976931348623157E308
-      },
-      "gaslib::database::CollisionFitRecord": {
+      "canary::database::CollisionFitRecord": {
          "type": "object",
          "properties": {
             "A": {
@@ -102,6 +97,11 @@
             "C",
             "D"
          ]
+      },
+      "double": {
+         "type": "number",
+         "minimum": -1.7976931348623157E308,
+         "maximum": 1.7976931348623157E308
       }
    },
    "required": [
@@ -109,5 +109,5 @@
       "units",
       "pairs"
    ],
-   "title": "gaslib::database::CollisionIntegralsFile"
+   "title": "canary::database::CollisionIntegralsFile"
 }

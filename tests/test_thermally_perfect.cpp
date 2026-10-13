@@ -5,15 +5,15 @@
 #include <boost/ut.hpp>
 #include <cmath>
 #include <cstddef>
-#include <gaslib/build.hpp>
-#include <gaslib/data/air5.hpp>
-#include <gaslib/models/thermally_perfect.hpp>
-#include <gaslib/quantity.hpp>
-#include <gaslib/species.hpp>
-#include <gaslib/state.hpp>
-#include <gaslib/status.hpp>
-#include <gaslib/thermo.hpp>
-#include <gaslib/units.hpp>
+#include <canary/build.hpp>
+#include <canary/data/air5.hpp>
+#include <canary/models/thermally_perfect.hpp>
+#include <canary/quantity.hpp>
+#include <canary/species.hpp>
+#include <canary/state.hpp>
+#include <canary/status.hpp>
+#include <canary/thermo.hpp>
+#include <canary/units.hpp>
 #include <limits>
 #include <mdspan/mdspan.hpp>
 #include <string>
@@ -22,25 +22,25 @@
 namespace
 {
 
-using gaslib::scaled;
-using gaslib::si;
-using gaslib::Status;
-using D = gaslib::test::Dual<double>;
-using Rho = gaslib::Density<double, si>;
-using E = gaslib::SpecificEnergy<double, si>;
-using RhoE = gaslib::EnergyDensity<double, si>;
-using P = gaslib::Pressure<double, si>;
-using Temp = gaslib::Temperature<double, si>;
-using Guess = gaslib::TemperatureGuess<double, si>;
+using canary::scaled;
+using canary::si;
+using canary::Status;
+using D = canary::test::Dual<double>;
+using Rho = canary::Density<double, si>;
+using E = canary::SpecificEnergy<double, si>;
+using RhoE = canary::EnergyDensity<double, si>;
+using P = canary::Pressure<double, si>;
+using Temp = canary::Temperature<double, si>;
+using Guess = canary::TemperatureGuess<double, si>;
 using Extents = Kokkos::dextents<std::size_t, 1>;
-using Air = gaslib::Air5<double, si>;
-using AirScaled = gaslib::Air5<double, scaled>;
+using Air = canary::Air5<double, si>;
+using AirScaled = canary::Air5<double, scaled>;
 
 constexpr double eps = std::numeric_limits<double>::epsilon();
 // Relative tolerance of the temperature solve (the model default).
 constexpr double solve_tolerance = 1.0e-10;
 
-const gaslib::UnitScales<double, scaled> reference_scales {
+const canary::UnitScales<double, scaled> reference_scales {
   .mass = 4.65e-26,
   .density = 1.0e-3,
   .temperature = 1000.0,
@@ -49,7 +49,7 @@ const gaslib::UnitScales<double, scaled> reference_scales {
 
 template <typename T> auto fractions(const std::array<T, 5>& y)
 {
-    return gaslib::as_kind<gaslib::kind::mass_fraction>(
+    return canary::as_kind<canary::kind::mass_fraction>(
       Kokkos::mdspan<const T, Extents>(y.data(), 5));
 }
 
@@ -61,39 +61,39 @@ constexpr std::array<double, 5> nitrogen {1.0, 0.0, 0.0, 0.0, 0.0};
 
 }  // namespace
 
-static_assert(gaslib::GasModel<Air, double>);
-static_assert(gaslib::MixtureGasModel<Air, double>);
-static_assert(gaslib::MixtureGasModel<Air, float>);
-static_assert(gaslib::MixtureGasModel<Air, D>);
-static_assert(gaslib::MixtureGasModel<AirScaled, double>);
-static_assert(gaslib::MixtureGasModel<AirScaled, float>);
-static_assert(gaslib::MixtureGasModel<AirScaled, D>);
-static_assert(gaslib::AcceptsInput<Air, gaslib::TemperatureGuess<double, si>>);
-static_assert(gaslib::AcceptsInput<AirScaled, gaslib::TemperatureGuess<double, scaled>>);
-static_assert(!gaslib::AcceptsInput<AirScaled, gaslib::TemperatureGuess<double, si>>);
+static_assert(canary::GasModel<Air, double>);
+static_assert(canary::MixtureGasModel<Air, double>);
+static_assert(canary::MixtureGasModel<Air, float>);
+static_assert(canary::MixtureGasModel<Air, D>);
+static_assert(canary::MixtureGasModel<AirScaled, double>);
+static_assert(canary::MixtureGasModel<AirScaled, float>);
+static_assert(canary::MixtureGasModel<AirScaled, D>);
+static_assert(canary::AcceptsInput<Air, canary::TemperatureGuess<double, si>>);
+static_assert(canary::AcceptsInput<AirScaled, canary::TemperatureGuess<double, scaled>>);
+static_assert(!canary::AcceptsInput<AirScaled, canary::TemperatureGuess<double, si>>);
 static_assert(std::is_trivially_copyable_v<Air>);
 static_assert(std::is_trivially_copyable_v<AirScaled>);
 static_assert(std::is_trivially_copyable_v<Air::Mixture<double>>);
 static_assert(std::is_trivially_copyable_v<Air::Mixture<D>>);
-static_assert(std::is_trivially_copyable_v<gaslib::SpeciesProperties<double, si, 5>>);
+static_assert(std::is_trivially_copyable_v<canary::SpeciesProperties<double, si, 5>>);
 
 void test_thermally_perfect()
 {
     using namespace boost::ut;
-    using gaslib::mixture;
-    using gaslib::thermo_state;
-    const auto built = gaslib::make_air5<double>(gaslib::UnitScales<double, si> {});
+    using canary::mixture;
+    using canary::thermo_state;
+    const auto built = canary::make_air5<double>(canary::UnitScales<double, si> {});
     const Air& gas = built.model;
 
     "the builder derives gas constants, species data and settings"_test = [&] {
-        const double r_u = gaslib::constants::universal_gas_constant<double>;
+        const double r_u = canary::constants::universal_gas_constant<double>;
         expect(gas.n == 5_i);
         expect(built.species.n == 5_i);
         for (std::size_t i = 0; i < 5; ++i) {
-            const auto& sp = gaslib::air5_species[i];
+            const auto& sp = canary::air5_species[i];
             expect(relative(gas.gas_constant[i].value(), r_u / sp.molar_mass, 2.0 * eps));
             expect(relative(built.species.mass[i].value(),
-                            sp.molar_mass / gaslib::constants::avogadro<double>,
+                            sp.molar_mass / canary::constants::avogadro<double>,
                             2.0 * eps));
             expect(built.species.charge[i].value() == 0.0);
         }
@@ -105,20 +105,20 @@ void test_thermally_perfect()
     };
 
     "the builder names the species of an invalid parameter"_test = [] {
-        auto species = gaslib::air5_species;
+        auto species = canary::air5_species;
         species[3].molar_mass = -1.0;
         try {
-            gaslib::make_thermally_perfect_mixture(species, gaslib::UnitScales<double, si> {});
+            canary::make_thermally_perfect_mixture(species, canary::UnitScales<double, si> {});
             expect(false) << "no exception";
-        } catch (const gaslib::ParameterError& error) {
+        } catch (const canary::ParameterError& error) {
             expect(std::string(error.what()).starts_with("species O: molar mass")) << error.what();
         }
-        species = gaslib::air5_species;
+        species = canary::air5_species;
         species[1].fit.blends[0] = -1.0;
         try {
-            gaslib::make_thermally_perfect_mixture(species, gaslib::UnitScales<double, si> {});
+            canary::make_thermally_perfect_mixture(species, canary::UnitScales<double, si> {});
             expect(false) << "no exception";
-        } catch (const gaslib::ParameterError& error) {
+        } catch (const canary::ParameterError& error) {
             expect(std::string(error.what()).starts_with("species O2: blending width"))
               << error.what();
         }
@@ -151,9 +151,9 @@ void test_thermally_perfect()
                     expect(from_pt.status == Status::Valid);
 
                     // (rho, rho e) is (rho, e) with e = rho_e / rho.
-                    const RhoE rho_e {gaslib::energy_density(rho, from_t.state.e)};
+                    const RhoE rho_e {canary::energy_density(rho, from_t.state.e)};
                     const auto a = thermo_state(gas, mix, rho, rho_e);
-                    const auto b = thermo_state(gas, mix, rho, gaslib::specific_energy(rho_e, rho));
+                    const auto b = thermo_state(gas, mix, rho, canary::specific_energy(rho_e, rho));
                     expect(a.state.temp == b.state.temp && a.state.e == b.state.e &&
                            a.state.p == b.state.p && a.status == b.status);
                 }
@@ -165,7 +165,7 @@ void test_thermally_perfect()
         const Rho rho {2.0};
         std::array<double, 5> rho_i {};
         for (std::size_t i = 0; i < 5; ++i) { rho_i[i] = rho.value() * dissociated[i]; }
-        const auto view = gaslib::as_kind<gaslib::kind::density, si>(
+        const auto view = canary::as_kind<canary::kind::density, si>(
           Kokkos::mdspan<const double, Extents>(rho_i.data(), 5));
         const E e = thermo_state(gas, fractions(dissociated), rho, Temp {3000.0}).state.e;
         const auto a = thermo_state(gas, view, rho, e);
@@ -177,7 +177,7 @@ void test_thermally_perfect()
     "nitrogen at 300 K has gamma 1.4 within 0.1 percent"_test = [&] {
         const auto mix = mixture(gas, fractions(nitrogen));
         const auto c = thermo_state(gas, mix, Rho {1.0}, Temp {300.0});
-        const auto props = gaslib::properties(gas, mix, c.state);
+        const auto props = canary::properties(gas, mix, c.state);
         expect(relative(props.gamma.value(), 1.4, 1.0e-3)) << props.gamma.value();
         expect(relative(props.cp.value() - props.cv.value(), mix.gas_constant.value(), 1.0e-12));
         expect(relative(props.sound_speed.value(),
@@ -193,9 +193,9 @@ void test_thermally_perfect()
             const auto c =
               thermo_state(gas,
                            mix_d,
-                           gaslib::Density<D, si> {D(1.0)},
-                           gaslib::SpecificEnergy<D, si> {D(ref.state.e.value(), 1.0)});
-            const auto props = gaslib::properties(gas, mix, ref.state);
+                           canary::Density<D, si> {D(1.0)},
+                           canary::SpecificEnergy<D, si> {D(ref.state.e.value(), 1.0)});
+            const auto props = canary::properties(gas, mix, ref.state);
             expect(relative(c.state.temp.value().dual(), 1.0 / props.cv.value(), 1.0e-9))
               << t << c.state.temp.value().dual() << 1.0 / props.cv.value();
         }
@@ -210,10 +210,10 @@ void test_thermally_perfect()
             const auto ref = thermo_state(gas, mix, Rho {1.0}, Temp {t});
             const auto c = thermo_state(gas,
                                         fractions(y),
-                                        gaslib::Density<D, si> {D(1.0)},
-                                        gaslib::SpecificEnergy<D, si> {D(ref.state.e.value())});
-            const auto sp = gaslib::species_properties(gas, ref.state.temp);
-            const double cv = gaslib::properties(gas, mix, ref.state).cv.value();
+                                        canary::Density<D, si> {D(1.0)},
+                                        canary::SpecificEnergy<D, si> {D(ref.state.e.value())});
+            const auto sp = canary::species_properties(gas, ref.state.temp);
+            const double cv = canary::properties(gas, mix, ref.state).cv.value();
             const double expected = -(sp.energy[0].value() - sp.energy[1].value()) / cv;
             expect(relative(c.state.temp.value().dual(), expected, 1.0e-9))
               << t << c.state.temp.value().dual() << expected;
@@ -221,7 +221,7 @@ void test_thermally_perfect()
     };
 
     "a scaled model gives the SI state after conversion"_test = [&] {
-        const auto scaled_built = gaslib::make_air5<double>(reference_scales);
+        const auto scaled_built = canary::make_air5<double>(reference_scales);
         const AirScaled& gas_s = scaled_built.model;
         for (const auto& y : {air, dissociated}) {
             const auto mix = mixture(gas, fractions(y));
@@ -233,12 +233,12 @@ void test_thermally_perfect()
                     const auto a = thermo_state(gas, mix, rho, e);
                     const auto b = thermo_state(gas_s,
                                                 mix_s,
-                                                gaslib::convert<scaled>(rho, reference_scales),
-                                                gaslib::convert<scaled>(e, reference_scales));
+                                                canary::convert<scaled>(rho, reference_scales),
+                                                canary::convert<scaled>(e, reference_scales));
                     expect(b.status == Status::Valid);
-                    const auto temp = gaslib::convert<si>(b.state.temp, reference_scales);
-                    const auto p = gaslib::convert<si>(b.state.p, reference_scales);
-                    const auto e_si = gaslib::convert<si>(b.state.e, reference_scales);
+                    const auto temp = canary::convert<si>(b.state.temp, reference_scales);
+                    const auto p = canary::convert<si>(b.state.p, reference_scales);
+                    const auto e_si = canary::convert<si>(b.state.e, reference_scales);
                     expect(relative(temp.value(), a.state.temp.value(), 1.0e-12))
                       << rho_value << t << temp.value() << a.state.temp.value();
                     expect(relative(p.value(), a.state.p.value(), 1.0e-12));
@@ -283,7 +283,7 @@ void test_thermally_perfect()
                 // Through the front end, from a composition view and rho e.
                 const auto front = thermo_state(gas,
                                                 fractions(y),
-                                                RhoE {gaslib::energy_density(rho, e)},
+                                                RhoE {canary::energy_density(rho, e)},
                                                 rho,
                                                 Guess {Temp {0.99 * t}});
                 expect(relative(front.state.temp.value(), t, 2.0 * solve_tolerance));
@@ -298,7 +298,7 @@ void test_thermally_perfect()
 
     "species properties are consistent with each other and the closure"_test = [&] {
         for (const double t : {250.0, 1000.0, 5000.0, 30000.0}) {
-            const auto sp = gaslib::species_properties(gas, Temp {t});
+            const auto sp = canary::species_properties(gas, Temp {t});
             expect(sp.n == 5_i);
             double e_mix = 0;
             double cv_mix = 0;
@@ -319,7 +319,7 @@ void test_thermally_perfect()
             const auto c = thermo_state(gas, mix, Rho {1.0}, Temp {t});
             expect(std::abs(c.state.e.value() - e_mix) <= 16.0 * eps * e_scale)
               << t << c.state.e.value() << e_mix;
-            expect(relative(gaslib::properties(gas, mix, c.state).cv.value(), cv_mix, 1.0e-14));
+            expect(relative(canary::properties(gas, mix, c.state).cv.value(), cv_mix, 1.0e-14));
         }
     };
 
@@ -328,9 +328,9 @@ void test_thermally_perfect()
         const auto mix = mixture(gas, fractions(y));
         const auto c = thermo_state(gas,
                                     mix,
-                                    gaslib::Density<float, si> {1.0F},
-                                    gaslib::Temperature<float, si> {2000.0F});
-        const auto back = thermo_state(gas, mix, gaslib::Density<float, si> {1.0F}, c.state.e);
+                                    canary::Density<float, si> {1.0F},
+                                    canary::Temperature<float, si> {2000.0F});
+        const auto back = thermo_state(gas, mix, canary::Density<float, si> {1.0F}, c.state.e);
         expect(back.status == Status::Valid);
         expect(std::abs(back.state.temp.value() - 2000.0F) <= 1.0e-5F * 2000.0F);
     };

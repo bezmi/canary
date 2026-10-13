@@ -1,18 +1,18 @@
-#ifndef GASLIB_TESTS_TEST_MODELS_HPP
-#define GASLIB_TESTS_TEST_MODELS_HPP
+#ifndef CANARY_TESTS_TEST_MODELS_HPP
+#define CANARY_TESTS_TEST_MODELS_HPP
 
 // Minimal gas models for tests of the closure front end and the model
 // concepts. Each is an ideal gas with constant cv, in SI units, with values
 // of type double for parameters.
 
 #include <concepts>
-#include <gaslib/quantity.hpp>
-#include <gaslib/scalar.hpp>
-#include <gaslib/species.hpp>
-#include <gaslib/state.hpp>
-#include <gaslib/status.hpp>
+#include <canary/quantity.hpp>
+#include <canary/scalar.hpp>
+#include <canary/species.hpp>
+#include <canary/state.hpp>
+#include <canary/status.hpp>
 
-namespace gaslib::test
+namespace canary::test
 {
 
 // Parameters shared by the test models.
@@ -290,6 +290,6 @@ Properties<T, si> properties(const TwoSpeciesGas& /*g*/,
                              const ThermoState<T, si>& s)
 { return ideal_properties(as_parameters(m), s); }
 
-}  // namespace gaslib::test
+}  // namespace canary::test
 
-#endif  // GASLIB_TESTS_TEST_MODELS_HPP
+#endif  // CANARY_TESTS_TEST_MODELS_HPP

@@ -5,7 +5,7 @@ five-species air file (with its transport data for the GDTk layout).
 Converts the GDTk-layout reaction-mechanism, energy-exchange and
 collision-integral samples and checks the converted values.
 
-Usage: test_converters.py <gaslib source directory>
+Usage: test_converters.py <canary source directory>
 """
 
 import json
@@ -35,7 +35,7 @@ with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "out.json"
         subprocess.run([sys.executable, *map(str, command), "--source", "test", "-o", str(out)], check=True)
         converted = json.loads(out.read_text())
-        assert converted["format"] == "gaslib-species-1"
+        assert converted["format"] == "canary-species-1"
         for name, record in converted["species"].items():
             expected = shipped[name]
             for key in ("molar_mass", "charge"):
@@ -82,7 +82,7 @@ with tempfile.TemporaryDirectory() as tmp:
                     "--source", "test", "-o", str(out)], check=True)
     mechanism = json.loads(out.read_text())
     checks = [
-        (mechanism["format"], "gaslib-reactions-1"),
+        (mechanism["format"], "canary-reactions-1"),
         (mechanism["temperature_limits"], {"lower": 300.0, "upper": 30000.0}),
         (len(mechanism["reactions"]), 5),
         (mechanism["reactions"][0]["reactants"], {"N2": 2.0}),
@@ -121,7 +121,7 @@ with tempfile.TemporaryDirectory() as tmp:
                     "--source", "test", "-o", str(out)], check=True)
     exchange = json.loads(out.read_text())
     checks = [
-        (exchange["format"], "gaslib-energy-exchange-1"),
+        (exchange["format"], "canary-energy-exchange-1"),
         (exchange["units"], {"energy": "J/mol", "temperature": "K", "area": "m^2"}),
         (exchange["vibration_translation"], [
             {"species": "N2", "partner": "N", "model": "landau_teller",
@@ -172,7 +172,7 @@ with tempfile.TemporaryDirectory() as tmp:
     converted = json.loads(out.read_text())
     shipped_pairs = json.loads((root / "database" / "data" / "air5_collision_integrals.json").read_text())["pairs"]
     checks = [
-        (converted["format"], "gaslib-collision-integrals-1"),
+        (converted["format"], "canary-collision-integrals-1"),
         (converted["units"], {"temperature": "K", "area": "m^2"}),
         ([p["species"] for p in converted["pairs"]], [["N2", "N2"], ["O2", "N2"], ["O2", "O2"]]),
         (converted["pairs"], shipped_pairs[:3]),

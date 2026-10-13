@@ -6,9 +6,9 @@
 #include <cmath>
 #include <concepts>
 #include <cstddef>
-#include <gaslib/quantity.hpp>
-#include <gaslib/species.hpp>
-#include <gaslib/status.hpp>
+#include <canary/quantity.hpp>
+#include <canary/species.hpp>
+#include <canary/status.hpp>
 #include <limits>
 #include <mdspan/mdspan.hpp>
 #include <type_traits>
@@ -18,9 +18,9 @@
 namespace
 {
 
-using gaslib::scaled;
-using gaslib::Status;
-namespace kind = gaslib::kind;
+using canary::scaled;
+using canary::Status;
+namespace kind = canary::kind;
 
 using Extents = Kokkos::dextents<std::size_t, 1>;
 using View = Kokkos::mdspan<const double, Extents>;
@@ -34,43 +34,43 @@ bool within_ulp(double a, double b, double ulps)
 template <std::size_t N> View view_of(const std::array<double, N>& values)
 { return View(values.data(), N); }
 
-auto fractions(const View& v) { return gaslib::as_kind<kind::mass_fraction>(v); }
-auto densities(const View& v) { return gaslib::as_kind<kind::density, scaled>(v); }
+auto fractions(const View& v) { return canary::as_kind<kind::mass_fraction>(v); }
+auto densities(const View& v) { return canary::as_kind<kind::density, scaled>(v); }
 
-using Species2 = gaslib::SpeciesData<double, scaled, 2>;
+using Species2 = canary::SpeciesData<double, scaled, 2>;
 
 // Scaled particle masses (proton mass units) and charge numbers.
 constexpr Species2 two_species {
   .n = 2,
-  .mass = {gaslib::ParticleMass<double, scaled> {1.0}, gaslib::ParticleMass<double, scaled> {16.0}},
-  .charge = {gaslib::Charge<double, scaled> {1.0}, gaslib::Charge<double, scaled> {-1.0}},
+  .mass = {canary::ParticleMass<double, scaled> {1.0}, canary::ParticleMass<double, scaled> {16.0}},
+  .charge = {canary::Charge<double, scaled> {1.0}, canary::Charge<double, scaled> {-1.0}},
 };
 
 }  // namespace
 
 static_assert(std::is_trivially_copyable_v<Species2>);
 static_assert(
-  gaslib::SpeciesRangeOf<decltype(fractions(std::declval<View>())), kind::mass_fraction>);
-static_assert(!gaslib::SpeciesRangeOf<decltype(fractions(std::declval<View>())), kind::density>);
-static_assert(gaslib::SpeciesRangeOf<decltype(densities(std::declval<View>())), kind::density>);
-static_assert(!gaslib::SpeciesRangeOf<View, kind::mass_fraction>);
+  canary::SpeciesRangeOf<decltype(fractions(std::declval<View>())), kind::mass_fraction>);
+static_assert(!canary::SpeciesRangeOf<decltype(fractions(std::declval<View>())), kind::density>);
+static_assert(canary::SpeciesRangeOf<decltype(densities(std::declval<View>())), kind::density>);
+static_assert(!canary::SpeciesRangeOf<View, kind::mass_fraction>);
 static_assert(
   std::same_as<decltype(fractions(std::declval<View>()))::layout_type, Kokkos::layout_right>);
-static_assert(std::same_as<decltype(gaslib::as_kind<kind::mass_fraction>(
+static_assert(std::same_as<decltype(canary::as_kind<kind::mass_fraction>(
                              std::declval<StridedView>()))::layout_type,
                            Kokkos::layout_stride>);
 
 void test_species()
 {
     using namespace boost::ut;
-    using gaslib::composition_status;
-    using gaslib::mean_charge;
-    using gaslib::mean_particle_mass;
+    using canary::composition_status;
+    using canary::mean_charge;
+    using canary::mean_particle_mass;
 
     "as_kind reads each element as the requested kind with the same extents"_test = [] {
         const std::array values {0.25, 0.75};
         const auto y = fractions(view_of(values));
-        static_assert(std::same_as<decltype(y[0]), gaslib::MassFraction<double>>);
+        static_assert(std::same_as<decltype(y[0]), canary::MassFraction<double>>);
         expect(y.extent(0) == 2_u);
         expect(y[1].value() == 0.75_d);
         expect(y.data_handle() == values.data());
@@ -93,12 +93,12 @@ void test_species()
         const std::array valid {0.5, 1.5};
         const std::array over {0.5, 1.5 + 1.0e-9};
         expect(composition_status(densities(view_of(valid)),
-                                  gaslib::Density<double, scaled> {2.0}) == Status::Valid);
+                                  canary::Density<double, scaled> {2.0}) == Status::Valid);
         expect(
-          composition_status(densities(view_of(over)), gaslib::Density<double, scaled> {2.0}) ==
+          composition_status(densities(view_of(over)), canary::Density<double, scaled> {2.0}) ==
           Status::CompositionViolation);
         expect(composition_status(densities(view_of(valid)),
-                                  gaslib::Density<double, scaled> {0.0}) == Status::Invalid);
+                                  canary::Density<double, scaled> {0.0}) == Status::Invalid);
     };
 
     "mean mass and charge follow the number-weighted definitions"_test = [] {
@@ -106,7 +106,7 @@ void test_species()
         const double number = (0.25 / 1.0) + (0.75 / 16.0);
         const auto m = mean_particle_mass(two_species, fractions(view_of(y)));
         const auto q = mean_charge(two_species, fractions(view_of(y)));
-        static_assert(std::same_as<decltype(m), const gaslib::ParticleMass<double, scaled>>);
+        static_assert(std::same_as<decltype(m), const canary::ParticleMass<double, scaled>>);
         expect(m.value() == (0.25 + 0.75) / number);
         expect(q.value() == (((0.25 / 1.0) * 1.0) + ((0.75 / 16.0) * -1.0)) / number);
     };
@@ -114,7 +114,7 @@ void test_species()
     "partial densities give the same results as the equivalent fractions"_test = [] {
         const std::array y {0.25, 0.75};
         const std::array rho_i {0.5, 1.5};
-        const gaslib::Density<double, scaled> rho {2.0};
+        const canary::Density<double, scaled> rho {2.0};
         expect(mean_particle_mass(two_species, densities(view_of(rho_i)), rho).value() ==
                mean_particle_mass(two_species, fractions(view_of(y))).value());
         expect(mean_charge(two_species, densities(view_of(rho_i)), rho).value() ==
@@ -133,7 +133,7 @@ void test_species()
     };
 
     "results do not change when the species are permuted"_test = [] {
-        using Species3 = gaslib::SpeciesData<double, scaled, 3>;
+        using Species3 = canary::SpeciesData<double, scaled, 3>;
         const std::array<double, 3> masses {1.0, 4.0, 16.0};
         const std::array<double, 3> charges {1.0, 2.0, -1.0};
         const std::array<double, 3> y {0.2, 0.3, 0.5};
@@ -147,8 +147,8 @@ void test_species()
             s.n = 3;
             std::array<double, 3> yp {};
             for (std::size_t i = 0; i < 3; ++i) {
-                s.mass[i] = gaslib::ParticleMass<double, scaled> {masses[order[i]]};
-                s.charge[i] = gaslib::Charge<double, scaled> {charges[order[i]]};
+                s.mass[i] = canary::ParticleMass<double, scaled> {masses[order[i]]};
+                s.charge[i] = canary::Charge<double, scaled> {charges[order[i]]};
                 yp[i] = y[order[i]];
             }
             const double m = mean_particle_mass(s, fractions(view_of(yp))).value();
@@ -162,12 +162,12 @@ void test_species()
     };
 
     "identical species give that species' mass and charge"_test = [] {
-        using Species5 = gaslib::SpeciesData<double, scaled, 5>;
+        using Species5 = canary::SpeciesData<double, scaled, 5>;
         Species5 s {};
         s.n = 5;
         for (std::size_t i = 0; i < 5; ++i) {
-            s.mass[i] = gaslib::ParticleMass<double, scaled> {2.5};
-            s.charge[i] = gaslib::Charge<double, scaled> {-1.0};
+            s.mass[i] = canary::ParticleMass<double, scaled> {2.5};
+            s.charge[i] = canary::Charge<double, scaled> {-1.0};
         }
         const std::array y {0.1, 0.3, 0.05, 0.25, 0.3};
         expect(within_ulp(mean_particle_mass(s, fractions(view_of(y))).value(), 2.5, 4.0));
@@ -182,7 +182,7 @@ void test_species()
         const StridedView strided(
           storage.data(),
           Kokkos::layout_stride::mapping<Extents>(Extents(2), std::array<std::size_t, 1> {7}));
-        const auto ys = gaslib::as_kind<kind::mass_fraction>(strided);
+        const auto ys = canary::as_kind<kind::mass_fraction>(strided);
         expect(ys[1].value() == 0.75_d);
         expect(mean_particle_mass(two_species, ys).value() ==
                mean_particle_mass(two_species, fractions(view_of(y))).value());
@@ -193,11 +193,11 @@ void test_species()
 
     "dual-number fractions carry the derivative of the mean mass"_test = [] {
         // Y1 = 0.25 + t, Y2 = 0.75 - t: d m / d t = -m^2 (1/m1 - 1/m2) since sum(Y) = 1.
-        using D = gaslib::test::Dual<double>;
+        using D = canary::test::Dual<double>;
         const std::array<D, 2> y {D(0.25, 1.0), D(0.75, -1.0)};
         const Kokkos::mdspan<const D, Extents> v(y.data(), 2);
         const auto m =
-          mean_particle_mass(two_species, gaslib::as_kind<kind::mass_fraction>(v)).value();
+          mean_particle_mass(two_species, canary::as_kind<kind::mass_fraction>(v)).value();
         const double expected = -m.real() * m.real() * (1.0 - (1.0 / 16.0));
         expect(within_ulp(m.dual(), expected, 8.0)) << m.dual() << expected;
     };

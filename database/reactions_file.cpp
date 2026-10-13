@@ -5,12 +5,12 @@
 
 #include <filesystem>
 #include <format>
-#include <gaslib/database.hpp>
+#include <canary/database.hpp>
 #include <glaze/glaze.hpp>
 #include <string>
 #include <string_view>
 
-namespace gaslib::database
+namespace canary::database
 {
 
 namespace
@@ -82,4 +82,4 @@ std::string reactions_schema()
     return *schema + '\n';
 }
 
-}  // namespace gaslib::database
+}  // namespace canary::database

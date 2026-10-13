@@ -1,5 +1,5 @@
 -- Test input in the layout of GDTk energy-exchange files as written by
--- prep-kinetics, written for gaslib's converter test. Millikan-White a, b:
+-- prep-kinetics, written for canary's converter test. Millikan-White a, b:
 -- Park (1993), Table 1; dissociation energy and vibrational temperature of
 -- N2 as GDTk's prep-kinetics derives them.
 

@@ -1,10 +1,10 @@
 // Writes the JSON Schema of species files to standard output.
 
 #include <cstdio>
-#include <gaslib/database.hpp>
+#include <canary/database.hpp>
 
 int main()
 {
-    const auto schema = gaslib::database::species_schema();
+    const auto schema = canary::database::species_schema();
     std::fputs(schema.c_str(), stdout);
 }

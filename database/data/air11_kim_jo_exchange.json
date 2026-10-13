@@ -1,5 +1,5 @@
 {
-   "format": "gaslib-energy-exchange-1",
+   "format": "canary-energy-exchange-1",
    "units": {
       "energy": "J/mol",
       "temperature": "K",

@@ -4,18 +4,18 @@
 #include <algorithm>
 #include <boost/ut.hpp>
 #include <cmath>
-#include <gaslib/detail/solve.hpp>
-#include <gaslib/status.hpp>
+#include <canary/detail/solve.hpp>
+#include <canary/status.hpp>
 #include <limits>
 
 namespace
 {
 
-using gaslib::Status;
-using gaslib::detail::Bracket;
-using gaslib::detail::Residual;
-using gaslib::detail::SolveSettings;
-using D = gaslib::test::Dual<double>;
+using canary::Status;
+using canary::detail::Bracket;
+using canary::detail::Residual;
+using canary::detail::SolveSettings;
+using D = canary::test::Dual<double>;
 
 constexpr double eps = std::numeric_limits<double>::epsilon();
 constexpr SolveSettings<double> settings {.relative_tolerance = 1.0e-14, .max_iterations = 50};
@@ -38,7 +38,7 @@ Residual<double> rational(double x)
 void test_solve()
 {
     using namespace boost::ut;
-    using gaslib::detail::solve;
+    using canary::detail::solve;
 
     "the root of a cubic is found within the tolerance"_test = [] {
         const auto f = [](double x) { return cubic(x, 10.0); };

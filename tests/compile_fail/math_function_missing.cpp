@@ -2,7 +2,7 @@
 // provides only sqrt.
 #include "scalar_types.hpp"
 
-#ifdef GASLIB_COMPILE_FAIL
-gaslib::test::OnlySqrt bad = gaslib::math::exp(gaslib::test::OnlySqrt {1.0});
+#ifdef CANARY_COMPILE_FAIL
+canary::test::OnlySqrt bad = canary::math::exp(canary::test::OnlySqrt {1.0});
 #endif
-gaslib::test::OnlySqrt good = gaslib::math::sqrt(gaslib::test::OnlySqrt {1.0});
+canary::test::OnlySqrt good = canary::math::sqrt(canary::test::OnlySqrt {1.0});

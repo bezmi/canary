@@ -11,23 +11,23 @@
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
-#include <gaslib/build.hpp>
-#include <gaslib/data/air11_kim_jo.hpp>
-#include <gaslib/data/air11_kim_jo_exchange.hpp>
-#include <gaslib/data/air11_species.hpp>
-#include <gaslib/data/air5.hpp>
-#include <gaslib/data/air5_electronic.hpp>
-#include <gaslib/data/air5_kim_jo.hpp>
-#include <gaslib/data/air5_park.hpp>
-#include <gaslib/data/air5_park_exchange.hpp>
-#include <gaslib/data/air5_transport.hpp>
-#include <gaslib/database.hpp>
-#include <gaslib/energy_exchange.hpp>
-#include <gaslib/nasa9.hpp>
-#include <gaslib/quantity.hpp>
-#include <gaslib/reactions.hpp>
-#include <gaslib/transport/mixture.hpp>
-#include <gaslib/units.hpp>
+#include <canary/build.hpp>
+#include <canary/data/air11_kim_jo.hpp>
+#include <canary/data/air11_kim_jo_exchange.hpp>
+#include <canary/data/air11_species.hpp>
+#include <canary/data/air5.hpp>
+#include <canary/data/air5_electronic.hpp>
+#include <canary/data/air5_kim_jo.hpp>
+#include <canary/data/air5_park.hpp>
+#include <canary/data/air5_park_exchange.hpp>
+#include <canary/data/air5_transport.hpp>
+#include <canary/database.hpp>
+#include <canary/energy_exchange.hpp>
+#include <canary/nasa9.hpp>
+#include <canary/quantity.hpp>
+#include <canary/reactions.hpp>
+#include <canary/transport/mixture.hpp>
+#include <canary/units.hpp>
 #include <ios>
 #include <iterator>
 #include <map>
@@ -38,10 +38,10 @@
 namespace
 {
 
-namespace db = gaslib::database;
+namespace db = canary::database;
 
 std::filesystem::path source_path(std::string_view relative)
-{ return std::filesystem::path(GASLIB_SOURCE_DIR) / relative; }
+{ return std::filesystem::path(CANARY_SOURCE_DIR) / relative; }
 
 std::filesystem::path air5_path() { return source_path("database/data/air5.json"); }
 
@@ -88,8 +88,8 @@ std::string kim_jo_with(std::string_view from, std::string_view to)
 
 // The same species coefficients in any order.
 template <std::size_t K>
-bool same_coefficients(const gaslib::SpeciesCoefficients<K>& a,
-                       const gaslib::SpeciesCoefficients<K>& b)
+bool same_coefficients(const canary::SpeciesCoefficients<K>& a,
+                       const canary::SpeciesCoefficients<K>& b)
 {
     if (a.count != b.count) { return false; }
     for (std::size_t i = 0; i < static_cast<std::size_t>(a.count); ++i) {
@@ -104,7 +104,7 @@ bool same_coefficients(const gaslib::SpeciesCoefficients<K>& a,
 }
 
 // The same other temperature (both absent, or the same name).
-bool same_other(const gaslib::ArrheniusInput& a, const gaslib::ArrheniusInput& b)
+bool same_other(const canary::ArrheniusInput& a, const canary::ArrheniusInput& b)
 {
     if (a.other_temperature == nullptr || b.other_temperature == nullptr) {
         return a.other_temperature == b.other_temperature;
@@ -112,14 +112,14 @@ bool same_other(const gaslib::ArrheniusInput& a, const gaslib::ArrheniusInput& b
     return std::string_view(a.other_temperature) == b.other_temperature;
 }
 
-bool same_correction(const gaslib::RelaxationCorrectionInput& a,
-                     const gaslib::RelaxationCorrectionInput& b)
+bool same_correction(const canary::RelaxationCorrectionInput& a,
+                     const canary::RelaxationCorrectionInput& b)
 {
     return a.model == b.model && a.cross_section == b.cross_section &&
            a.reference_temperature == b.reference_temperature && a.exponent == b.exponent;
 }
 
-bool same_rate(const gaslib::ArrheniusInput& a, const gaslib::ArrheniusInput& b)
+bool same_rate(const canary::ArrheniusInput& a, const canary::ArrheniusInput& b)
 {
     return a.A == b.A && a.n == b.n && a.activation_temperature == b.activation_temperature &&
            a.translational_exponent == b.translational_exponent;
@@ -157,7 +157,7 @@ template <typename F> bool throws_parameter_error(const F& f)
 {
     try {
         f();
-    } catch (const gaslib::ParameterError&) {
+    } catch (const canary::ParameterError&) {
         return true;
     }
     return false;
@@ -178,8 +178,8 @@ constexpr std::array<std::string_view, 11> air11_names {
   "e-",
 };
 
-double cp_over_r(const gaslib::Nasa9Curve<double, 4>& curve, double t)
-{ return gaslib::nasa9_cp_h(curve, t, std::log(t)).cp_over_r; }
+double cp_over_r(const canary::Nasa9Curve<double, 4>& curve, double t)
+{ return canary::nasa9_cp_h(curve, t, std::log(t)).cp_over_r; }
 
 }  // namespace
 
@@ -208,7 +208,7 @@ int main()
 
     "writing to a file and reading it back gives the same data"_test = [] {
         const db::SpeciesFile file = db::read_species_file(air5_path());
-        const auto path = std::filesystem::temp_directory_path() / "gaslib_test_species.json";
+        const auto path = std::filesystem::temp_directory_path() / "canary_test_species.json";
         db::write_species_file(path, file);
         expect(db::read_species_file(path) == file);
         std::filesystem::remove(path);
@@ -237,7 +237,7 @@ int main()
 
     "another format, other units, invalid JSON or a missing file are errors"_test = [] {
         expect(throws_database_error(
-          [] { db::parse_species(air5_with("gaslib-species-1", "gaslib-species-2")); }));
+          [] { db::parse_species(air5_with("canary-species-1", "canary-species-2")); }));
         expect(
           throws_database_error([] { db::parse_species(air5_with("\"kg/mol\"", "\"g/mol\"")); }));
         expect(throws_database_error([] { db::parse_species(air5_with("\"K\"", "\"degC\"")); }));
@@ -255,7 +255,7 @@ int main()
         const auto from_file = db::nasa9_species<4>(file, air5_names);
         for (std::size_t i = 0; i < 5; ++i) {
             const auto& a = from_file[i];
-            const auto& b = gaslib::air5_species[i];
+            const auto& b = canary::air5_species[i];
             expect(std::string_view(a.name) == std::string_view(b.name));
             expect(a.molar_mass == b.molar_mass && a.charge == b.charge) << b.name;
             expect(a.fit.segments == b.fit.segments) << b.name;
@@ -306,7 +306,7 @@ int main()
           },
         };
         for (std::size_t s = 0; s < 2; ++s) {
-            const auto curve = gaslib::make_nasa9_curve(species[s].fit, 1.0);
+            const auto curve = canary::make_nasa9_curve(species[s].fit, 1.0);
             for (std::size_t k = 0; k < temps.size(); ++k) {
                 const double cp = cp_over_r(curve, temps[k]);
                 expect(std::abs(cp - gdtk[s][k]) <= 1e-12 * gdtk[s][k])
@@ -328,9 +328,9 @@ int main()
             {29.385, 34.870, 42.675, 44.387},
           },
         };
-        const double r_u = gaslib::constants::universal_gas_constant<double>;
+        const double r_u = canary::constants::universal_gas_constant<double>;
         for (std::size_t s = 0; s < 2; ++s) {
-            const auto curve = gaslib::make_nasa9_curve(species[s].fit, 1.0);
+            const auto curve = canary::make_nasa9_curve(species[s].fit, 1.0);
             for (std::size_t k = 0; k < temps.size(); ++k) {
                 const double cp = r_u * cp_over_r(curve, temps[k]);
                 expect(std::abs(cp - janaf[s][k]) <= 1.5e-2 * janaf[s][k])
@@ -358,7 +358,7 @@ int main()
         const db::ReactionsFile again = db::parse_reactions(text);
         expect(again == file);
         expect(db::write_reactions(again) == text);
-        const auto path = std::filesystem::temp_directory_path() / "gaslib_test_reactions.json";
+        const auto path = std::filesystem::temp_directory_path() / "canary_test_reactions.json";
         db::write_reactions_file(path, file);
         expect(db::read_reactions_file(path) == file);
         std::filesystem::remove(path);
@@ -388,7 +388,7 @@ int main()
 
     "another reactions format, other units, or a missing file are errors"_test = [] {
         expect(throws_database_error(
-          [] { db::parse_reactions(kim_jo_with("gaslib-reactions-1", "gaslib-reactions-2")); }));
+          [] { db::parse_reactions(kim_jo_with("canary-reactions-1", "canary-reactions-2")); }));
         expect(throws_database_error([] {
             db::parse_reactions(kim_jo_with(R"("quantity": "mol")", R"("quantity": "kmol")"));
         }));
@@ -411,7 +411,7 @@ int main()
     "model inputs from the Kim-Jo file equal the compiled data"_test = [] {
         const db::ReactionsFile file = db::read_reactions_file(kim_jo_path());
         const auto input = db::mechanism_input<13, 5>(file);
-        const auto& compiled = gaslib::air5_kim_jo;
+        const auto& compiled = canary::air5_kim_jo;
         expect(input.temperature_lower == compiled.temperature_lower);
         expect(input.temperature_upper == compiled.temperature_upper);
         for (std::size_t k = 0; k < 13; ++k) {
@@ -427,11 +427,11 @@ int main()
             expect(same_coefficients(a.efficiencies, b.efficiencies)) << k;
         }
         // The mechanism built from the file is the compiled one.
-        const gaslib::UnitScales<double, gaslib::si> scales {};
-        const auto built = gaslib::make_air5<double>(scales);
+        const canary::UnitScales<double, canary::si> scales {};
+        const auto built = canary::make_air5<double>(scales);
         const auto from_file =
-          gaslib::make_reaction_mechanism(input, air5_names, built.species, scales);
-        const auto from_header = gaslib::make_air5_kim_jo(built.species, scales);
+          canary::make_reaction_mechanism(input, air5_names, built.species, scales);
+        const auto from_header = canary::make_air5_kim_jo(built.species, scales);
         for (std::size_t k = 0; k < 13; ++k) {
             const auto& a = from_file.reactions[k];
             const auto& b = from_header.reactions[k];
@@ -454,7 +454,7 @@ int main()
         const auto message = [](const db::ReactionsFile& f) -> std::string {
             try {
                 (void)db::mechanism_input<13, 5>(f);
-            } catch (const gaslib::ParameterError& error) {
+            } catch (const canary::ParameterError& error) {
                 return error.what();
             }
             return "no exception";
@@ -477,16 +477,16 @@ int main()
         changed = file;
         changed.reactions[8].reactants = {{"N2", 1.0}, {"Ar", 1.0}};
         const auto input = db::mechanism_input<13, 5>(changed);
-        const gaslib::UnitScales<double, gaslib::si> scales {};
-        const auto built = gaslib::make_air5<double>(scales);
+        const canary::UnitScales<double, canary::si> scales {};
+        const auto built = canary::make_air5<double>(scales);
         expect(throws_parameter_error([&] {
-            (void)gaslib::make_reaction_mechanism(input, air5_names, built.species, scales);
+            (void)canary::make_reaction_mechanism(input, air5_names, built.species, scales);
         }));
         changed = file;
         changed.reactions[8].forward.A = -1.0;
         const auto negative = db::mechanism_input<13, 5>(changed);
         expect(throws_parameter_error([&] {
-            (void)gaslib::make_reaction_mechanism(negative, air5_names, built.species, scales);
+            (void)canary::make_reaction_mechanism(negative, air5_names, built.species, scales);
         }));
     };
 
@@ -496,7 +496,7 @@ int main()
           expect(file.reactions[0].forward.translational_exponent == 0.5);
           expect(!file.reactions[3].forward.translational_exponent.has_value());
           const auto input = db::mechanism_input<5, 5>(file);
-          const auto& compiled = gaslib::air5_park;
+          const auto& compiled = canary::air5_park;
           expect(input.temperature_lower == compiled.temperature_lower);
           expect(input.temperature_upper == compiled.temperature_upper);
           for (std::size_t k = 0; k < 5; ++k) {
@@ -546,7 +546,7 @@ int main()
         const db::EnergyExchangeFile again = db::parse_energy_exchange(text);
         expect(again == file);
         expect(db::write_energy_exchange(again) == text);
-        const auto path = std::filesystem::temp_directory_path() / "gaslib_test_exchange.json";
+        const auto path = std::filesystem::temp_directory_path() / "canary_test_exchange.json";
         db::write_energy_exchange_file(path, file);
         expect(db::read_energy_exchange_file(path) == file);
         std::filesystem::remove(path);
@@ -565,7 +565,7 @@ int main()
             [] { db::parse_energy_exchange(exchange_with(R"("reaction": 0,)", "")); }));
           expect(throws_database_error([] {
               db::parse_energy_exchange(
-                exchange_with("gaslib-energy-exchange-1", "gaslib-energy-exchange-2"));
+                exchange_with("canary-energy-exchange-1", "canary-energy-exchange-2"));
           }));
           expect(throws_database_error([] {
               db::parse_energy_exchange(
@@ -591,7 +591,7 @@ int main()
     "model inputs from the energy-exchange file equal the compiled data"_test = [] {
         const db::EnergyExchangeFile file = db::read_energy_exchange_file(exchange_path());
         const auto input = db::energy_exchange_input<15, 3>(file);
-        const auto& compiled = gaslib::air5_park_exchange;
+        const auto& compiled = canary::air5_park_exchange;
         for (std::size_t k = 0; k < 15; ++k) {
             const auto& a = input.vibration_translation[k];
             const auto& b = compiled.vibration_translation[k];
@@ -612,11 +612,11 @@ int main()
               << k;
         }
         // The energy exchange built from the file builds like the compiled one.
-        const gaslib::UnitScales<double, gaslib::si> scales {};
-        const auto built = gaslib::make_air5<double>(scales);
-        const auto mechanism = gaslib::make_air5_park(built.species, scales);
-        (void)gaslib::make_energy_exchange(input, air5_names, built.species, mechanism, scales);
-        (void)gaslib::make_air5_park_exchange(built.species, mechanism, scales);
+        const canary::UnitScales<double, canary::si> scales {};
+        const auto built = canary::make_air5<double>(scales);
+        const auto mechanism = canary::make_air5_park(built.species, scales);
+        (void)canary::make_energy_exchange(input, air5_names, built.species, mechanism, scales);
+        (void)canary::make_air5_park_exchange(built.species, mechanism, scales);
     };
 
     "energy-exchange conversion errors name the entry and the problem"_test = [] {
@@ -626,7 +626,7 @@ int main()
         const auto message = [](const db::EnergyExchangeFile& f) -> std::string {
             try {
                 (void)db::energy_exchange_input<15, 3>(f);
-            } catch (const gaslib::ParameterError& error) {
+            } catch (const canary::ParameterError& error) {
                 return error.what();
             }
             return "no exception";
@@ -691,7 +691,7 @@ int main()
         const auto input = db::species_transport<3>(file, air5_names);
         for (std::size_t i = 0; i < 5; ++i) {
             const auto& a = input[i];
-            const auto& b = gaslib::air5_species_transport[i];
+            const auto& b = canary::air5_species_transport[i];
             expect(std::string_view(a.name) == b.name) << i;
             expect(a.viscosity.segments == b.viscosity.segments &&
                    a.viscosity.breaks == b.viscosity.breaks &&
@@ -712,7 +712,7 @@ int main()
         const auto message = [](const db::SpeciesFile& f) -> std::string {
             try {
                 (void)db::species_transport<3>(f, air5_names);
-            } catch (const gaslib::ParameterError& error) {
+            } catch (const canary::ParameterError& error) {
                 return error.what();
             }
             return "no exception";
@@ -750,7 +750,7 @@ int main()
         const db::CollisionIntegralsFile again = db::parse_collision_integrals(text);
         expect(again == file);
         expect(db::write_collision_integrals(again) == text);
-        const auto path = std::filesystem::temp_directory_path() / "gaslib_test_collisions.json";
+        const auto path = std::filesystem::temp_directory_path() / "canary_test_collisions.json";
         db::write_collision_integrals_file(path, file);
         expect(db::read_collision_integrals_file(path) == file);
         std::filesystem::remove(path);
@@ -769,7 +769,7 @@ int main()
             [] { db::parse_collision_integrals(collision_with(R"("A": 0.0,)", "")); }));
           expect(throws_database_error([] {
               db::parse_collision_integrals(
-                collision_with("gaslib-collision-integrals-1", "gaslib-collision-integrals-2"));
+                collision_with("canary-collision-integrals-1", "canary-collision-integrals-2"));
           }));
           expect(throws_database_error([] {
               db::parse_collision_integrals(collision_with(R"("area": "m^2")", R"("area": "A^2")"));
@@ -788,13 +788,13 @@ int main()
     "collision-pair inputs from the file equal the compiled data"_test = [] {
         const db::CollisionIntegralsFile file = db::read_collision_integrals_file(collision_path());
         const auto input = db::collision_integral_pairs<15>(file);
-        const auto same = [](const gaslib::CollisionFitInput& a,
-                             const gaslib::CollisionFitInput& b) {
+        const auto same = [](const canary::CollisionFitInput& a,
+                             const canary::CollisionFitInput& b) {
             return a.A == b.A && a.B == b.B && a.C == b.C && a.D == b.D;
         };
         for (std::size_t k = 0; k < 15; ++k) {
             const auto& a = input[k];
-            const auto& b = gaslib::air5_collision_integrals[k];
+            const auto& b = canary::air5_collision_integrals[k];
             expect(std::string_view(a.first) == b.first && std::string_view(a.second) == b.second)
               << k;
             expect(same(a.pi_omega_11, b.pi_omega_11) && same(a.pi_omega_22, b.pi_omega_22)) << k;
@@ -825,17 +825,17 @@ int main()
         const db::SpeciesFile air5 = db::read_species_file(air5_path());
         const auto input5 = db::electronic_levels<8>(air5, air5_names);
         for (std::size_t i = 0; i < 5; ++i) {
-            expect(same(input5[i], gaslib::air5_electronic_levels[i])) << i;
+            expect(same(input5[i], canary::air5_electronic_levels[i])) << i;
         }
         const db::SpeciesFile air11 = db::read_species_file(air11_path());
         const auto input11 = db::electronic_levels<8>(air11, air11_names);
         for (std::size_t i = 0; i < 11; ++i) {
-            expect(same(input11[i], gaslib::air11_electronic_levels[i])) << i;
+            expect(same(input11[i], canary::air11_electronic_levels[i])) << i;
         }
         const auto species11 = db::nasa9_species<4>(air11, air11_names);
         for (std::size_t i = 0; i < 11; ++i) {
             const auto& a = species11[i];
-            const auto& b = gaslib::air11_species[i];
+            const auto& b = canary::air11_species[i];
             expect(std::string_view(a.name) == b.name && a.molar_mass == b.molar_mass &&
                    a.charge == b.charge && a.fit.segments == b.fit.segments &&
                    a.fit.breaks == b.fit.breaks && a.fit.blends == b.fit.blends &&
@@ -864,7 +864,7 @@ int main()
         const auto input = db::mechanism_input<40, 11>(file);
         for (std::size_t k = 0; k < 40; ++k) {
             const auto& a = input.reactions[k];
-            const auto& b = gaslib::air11_kim_jo.reactions[k];
+            const auto& b = canary::air11_kim_jo.reactions[k];
             expect(std::string_view(a.equation) == b.equation) << k;
             expect(same_rate(a.forward, b.forward)) << k;
             expect(same_other(a.forward, b.forward) && same_other(a.backward, b.backward)) << k;
@@ -883,7 +883,7 @@ int main()
         const db::SpeciesFile species = db::read_species_file(air11_path());
         expect(species.species.at("N").ionisation_energy.has_value());
         const auto electrons = db::electron_exchange_input<10, 1, 2>(file, species);
-        const auto& compiled = gaslib::air11_kim_jo_exchange_electrons;
+        const auto& compiled = canary::air11_kim_jo_exchange_electrons;
         for (std::size_t k = 0; k < 10; ++k) {
             const auto& a = electrons.electron_translation[k];
             const auto& b = compiled.electron_translation[k];
@@ -905,7 +905,7 @@ int main()
         const auto input = db::energy_exchange_input<30, 21>(file);
         for (std::size_t k = 0; k < 30; ++k) {
             const auto& a = input.vibration_translation[k];
-            const auto& b = gaslib::air11_kim_jo_exchange.vibration_translation[k];
+            const auto& b = canary::air11_kim_jo_exchange.vibration_translation[k];
             expect(same_correction(a.correction, b.correction) &&
                    a.millikan_white.a == b.millikan_white.a)
               << k;

@@ -5,51 +5,51 @@
 #include <boost/ut.hpp>
 #include <cmath>
 #include <concepts>
-#include <gaslib/scalar.hpp>
+#include <canary/scalar.hpp>
 #include <limits>
 #include <numbers>
 
 namespace
 {
 
-using gaslib::test::Dual;
+using canary::test::Dual;
 using D = Dual<double>;
 
-using gaslib::test::NoTraits;
-using gaslib::test::OnlySqrt;
+using canary::test::NoTraits;
+using canary::test::OnlySqrt;
 
 }  // namespace
 
-static_assert(gaslib::Scalar<double>);
-static_assert(gaslib::Scalar<float>);
-static_assert(gaslib::Scalar<D>);
-static_assert(gaslib::Scalar<OnlySqrt>);
-static_assert(!gaslib::Scalar<int>);
-static_assert(!gaslib::Scalar<int*>);
-static_assert(!gaslib::Scalar<NoTraits>);
+static_assert(canary::Scalar<double>);
+static_assert(canary::Scalar<float>);
+static_assert(canary::Scalar<D>);
+static_assert(canary::Scalar<OnlySqrt>);
+static_assert(!canary::Scalar<int>);
+static_assert(!canary::Scalar<int*>);
+static_assert(!canary::Scalar<NoTraits>);
 
-static_assert(gaslib::ScalarWith<double, float>);
-static_assert(gaslib::ScalarWith<D, double>);
-static_assert(gaslib::ScalarWith<D, float>);
-static_assert(gaslib::ScalarWith<float, float>);
-static_assert(gaslib::ScalarWith<float, double>);
-static_assert(!gaslib::ScalarWith<double, int>);
-static_assert(!gaslib::ScalarWith<OnlySqrt, double>);
+static_assert(canary::ScalarWith<double, float>);
+static_assert(canary::ScalarWith<D, double>);
+static_assert(canary::ScalarWith<D, float>);
+static_assert(canary::ScalarWith<float, float>);
+static_assert(canary::ScalarWith<float, double>);
+static_assert(!canary::ScalarWith<double, int>);
+static_assert(!canary::ScalarWith<OnlySqrt, double>);
 
-static_assert(gaslib::HasSqrt<D> && gaslib::HasPow<D> && gaslib::HasExp<D> && gaslib::HasLog<D>);
-static_assert(gaslib::HasAbs<D> && gaslib::HasMin<D> && gaslib::HasMax<D>);
-static_assert(gaslib::HasSqrt<OnlySqrt>);
-static_assert(!gaslib::HasPow<OnlySqrt> && !gaslib::HasExp<OnlySqrt> && !gaslib::HasLog<OnlySqrt>);
-static_assert(!gaslib::HasAbs<OnlySqrt> && !gaslib::HasMin<OnlySqrt> && !gaslib::HasMax<OnlySqrt>);
+static_assert(canary::HasSqrt<D> && canary::HasPow<D> && canary::HasExp<D> && canary::HasLog<D>);
+static_assert(canary::HasAbs<D> && canary::HasMin<D> && canary::HasMax<D>);
+static_assert(canary::HasSqrt<OnlySqrt>);
+static_assert(!canary::HasPow<OnlySqrt> && !canary::HasExp<OnlySqrt> && !canary::HasLog<OnlySqrt>);
+static_assert(!canary::HasAbs<OnlySqrt> && !canary::HasMin<OnlySqrt> && !canary::HasMax<OnlySqrt>);
 
-static_assert(std::same_as<decltype(gaslib::math::sqrt(4.0F)), float>);
-static_assert(std::same_as<decltype(gaslib::math::pow(2.0F, 3.0F)), float>);
-static_assert(std::same_as<decltype(gaslib::math::sqrt(D(4.0))), D>);
+static_assert(std::same_as<decltype(canary::math::sqrt(4.0F)), float>);
+static_assert(std::same_as<decltype(canary::math::pow(2.0F, 3.0F)), float>);
+static_assert(std::same_as<decltype(canary::math::sqrt(D(4.0))), D>);
 
 void test_scalar()
 {
     using namespace boost::ut;
-    namespace math = gaslib::math;
+    namespace math = canary::math;
 
     // Each case seeds the derivative of x with 1, so dual() is d f / d x. The
     // dual-number formulas evaluate the analytic derivative, so the results

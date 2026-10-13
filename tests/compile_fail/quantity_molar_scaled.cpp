@@ -1,7 +1,7 @@
 // Kinds with an amount of substance exist only in SI.
-#include <gaslib/quantity.hpp>
+#include <canary/quantity.hpp>
 
-#ifdef GASLIB_COMPILE_FAIL
-gaslib::Quantity<gaslib::kind::molar_mass, double, gaslib::scaled> bad {0.029};
+#ifdef CANARY_COMPILE_FAIL
+canary::Quantity<canary::kind::molar_mass, double, canary::scaled> bad {0.029};
 #endif
-gaslib::MolarMass<double> good {0.029};
+canary::MolarMass<double> good {0.029};

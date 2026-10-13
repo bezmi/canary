@@ -1,12 +1,12 @@
-#ifndef GASLIB_TESTS_SCALAR_TYPES_HPP
-#define GASLIB_TESTS_SCALAR_TYPES_HPP
+#ifndef CANARY_TESTS_SCALAR_TYPES_HPP
+#define CANARY_TESTS_SCALAR_TYPES_HPP
 
 // Minimal scalar types for concept tests.
 
 #include <cmath>
-#include <gaslib/scalar.hpp>
+#include <canary/scalar.hpp>
 
-namespace gaslib::test
+namespace canary::test
 {
 
 // Arithmetic, ScalarTraits and sqrt, but no pow, exp, log, abs, min or max.
@@ -32,12 +32,12 @@ struct NoTraits {
     friend bool operator<(NoTraits a, NoTraits b) { return a.v < b.v; }
 };
 
-}  // namespace gaslib::test
+}  // namespace canary::test
 
-template <> struct gaslib::ScalarTraits<gaslib::test::OnlySqrt> {
+template <> struct canary::ScalarTraits<canary::test::OnlySqrt> {
     using value_type = double;
 
-    static constexpr double value(gaslib::test::OnlySqrt x) { return x.v; }
+    static constexpr double value(canary::test::OnlySqrt x) { return x.v; }
 };
 
-#endif  // GASLIB_TESTS_SCALAR_TYPES_HPP
+#endif  // CANARY_TESTS_SCALAR_TYPES_HPP

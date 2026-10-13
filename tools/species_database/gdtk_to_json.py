@@ -1,4 +1,4 @@
-"""Converts species from GDTk species-database Lua files to a gaslib species file.
+"""Converts species from GDTk species-database Lua files to a canary species file.
 
 Reads db.<name>.M, db.<name>.charge and db.<name>.ceaThermoCoeffs (NASA-9
 segments, break points and blend ranges) from <database>/<name>.lua. With
@@ -76,7 +76,7 @@ def quoted(body, key):
 
 
 def cea_curve(text, name, key, unit_scale):
-    """db.<name>.<key> CEA transport fit as a gaslib transport curve in SI."""
+    """db.<name>.<key> CEA transport fit as a canary transport curve in SI."""
     body = table(text, name, key)
     segments = int(re.search(r"nsegments\s*=\s*(\d+)", body).group(1))
     ranges, coefficients = [], []
