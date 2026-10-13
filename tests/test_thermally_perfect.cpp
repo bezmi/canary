@@ -296,6 +296,23 @@ void test_thermally_perfect()
         }
     };
 
+    "energy inversion rejects temperatures above the configured maximum"_test = [&] {
+        Air limited = gas;
+        limited.temperature_max = Temp {1000.0};
+        for (const auto& y : {air, dissociated}) {
+            const auto mix = mixture(limited, fractions(y));
+            for (const double t : {1001.0, 1250.0}) {
+                const E e = thermo_state(gas, mix, Rho {1.0}, Temp {t}).state.e;
+                for (const double guess : {1000.0, 2000.0}) {
+                    const auto c = thermo_state(limited, mix, Rho {1.0}, e, Guess {Temp {guess}});
+                    expect(c.status == Status::Invalid);
+                    expect(c.state.temp.value() >= limited.temperature_min.value());
+                    expect(c.state.temp.value() <= limited.temperature_max.value());
+                }
+            }
+        }
+    };
+
     "species properties are consistent with each other and the closure"_test = [&] {
         for (const double t : {250.0, 1000.0, 5000.0, 30000.0}) {
             const auto sp = canary::species_properties(gas, Temp {t});

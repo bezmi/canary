@@ -1,6 +1,7 @@
 #ifndef CANARY_MODELS_THERMALLY_PERFECT_HPP
 #define CANARY_MODELS_THERMALLY_PERFECT_HPP
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <concepts>
@@ -262,8 +263,9 @@ CANARY_HOST_DEVICE V default_temperature_guess(const ThermallyPerfectMixture<P, 
 // detail::solve, with the model's limits and solve settings. The guess
 // (value part) is clamped to [temperature_min, temperature_max]; a guess
 // that is not a number becomes temperature_min. The first bracket is
-// [lower, lower + bracket_width] with lower = max(guess - bracket_width / 2,
-// temperature_min); when it has no sign change, the solve is repeated on
+// [lower, upper], where lower = guess - bracket_width / 2 and
+// upper = lower + bracket_width, each clamped to the configured limits.
+// When it has no sign change, the solve is repeated on
 // [temperature_min, temperature_max].
 template <Scalar T,
           std::floating_point P,
@@ -285,16 +287,14 @@ CANARY_HOST_DEVICE SolveResult<T> solve_temperature(const ThermallyPerfectMixtur
     const auto width = static_cast<V>(gas.bracket_width.value());
     V start = guess > t_max ? t_max : guess;
     if (!(start >= t_min)) { start = t_min; }
-    const V lower = start - (width / V(2)) > t_min ? start - (width / V(2)) : t_min;
+    const V lower = std::clamp(start - (width / V(2)), t_min, t_max);
+    const V upper = std::clamp(lower + width, t_min, t_max);
     const SolveSettings<V> settings {
       .relative_tolerance = static_cast<V>(gas.relative_tolerance),
       .max_iterations = gas.max_iterations,
     };
-    SolveResult<T> r = solve<T>(f_value,
-                                f_full,
-                                Bracket<V> {.lower = lower, .upper = lower + width},
-                                start,
-                                settings);
+    SolveResult<T> r =
+      solve<T>(f_value, f_full, Bracket<V> {.lower = lower, .upper = upper}, start, settings);
     if (r.status == Status::Invalid) {
         r = solve<T>(f_value, f_full, Bracket<V> {.lower = t_min, .upper = t_max}, start, settings);
     }
