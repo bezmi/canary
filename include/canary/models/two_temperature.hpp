@@ -69,7 +69,8 @@ struct TwoTemperatureMixture {
 // make_thermally_perfect_mixture, with its temperature limits and solve
 // settings. Throws ParameterError, with the species name in the message,
 // when a species is named e-, a number of rotational degrees of freedom is
-// not 0, 2 or 3, or make_thermally_perfect_mixture rejects a species.
+// not 0, 2 or 3, or make_thermally_perfect_mixture rejects a species. A null
+// or empty species name throws ParameterError with the species index.
 template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
     requires(N > 0 && S > 0)
 Built<TwoTemperatureMixture<P, U, N, S>, SpeciesData<P, U, N>>
@@ -78,6 +79,9 @@ Built<TwoTemperatureMixture<P, U, N, S>, SpeciesData<P, U, N>>
                                const UnitScales<P, U>& scales)
 {
     for (std::size_t i = 0; i < N; ++i) {
+        if (species[i].name == nullptr || species[i].name[0] == '\0') {
+            throw ParameterError(std::format("species {}: name must not be null or empty", i));
+        }
         if (std::string_view(species[i].name) == "e-") {
             throw ParameterError(
               std::format("species {}: free electrons are not supported", species[i].name));

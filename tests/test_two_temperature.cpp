@@ -202,6 +202,23 @@ void test_two_temperature()
           expect(gas.thermally_perfect.max_iterations == 30_i);
       };
 
+    "two-temperature: the builder rejects null or empty species names"_test = [] {
+        for (const char* name : std::array<const char*, 2> {nullptr, ""}) {
+            auto species = canary::air5_species;
+            species[1].name = name;
+            try {
+                canary::make_two_temperature_mixture(species,
+                                                     canary::air5_rotational_degrees,
+                                                     canary::UnitScales<double, si> {});
+                expect(false) << "no exception";
+            } catch (const canary::ParameterError& error) {
+                expect(std::string(error.what())
+                         .starts_with("species 1: name must not be null or empty"))
+                  << error.what();
+            }
+        }
+    };
+
     "two-temperature: the builder rejects rotational degrees other than 0, 2 and 3 and free electrons"_test =
       [] {
           for (const int d : {1, 4, -2}) {

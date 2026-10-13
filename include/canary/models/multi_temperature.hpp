@@ -878,6 +878,7 @@ void fill_mode_components(MultiTemperatureMixture<P, U, N, M, S, L>& model,
 // converted to the temperature unit of U in double precision and then
 // rounded to P. Throws ParameterError, naming the species, the levels entry
 // or the mode and component, when:
+// - a species name is null or empty (the error gives the species index);
 // - two species have the same name; a species named e- does not have
 //   charge -1 or has rotational degrees of freedom other than 0; a number
 //   of rotational degrees of freedom is not 0, 2 or 3;
@@ -908,7 +909,12 @@ Built<MultiTemperatureMixture<P, U, N, M, S, L>, SpeciesData<P, U, N>>
                                  const UnitScales<P, U>& scales)
 {
     std::array<std::string_view, N> names {};
-    for (std::size_t i = 0; i < N; ++i) { names[i] = species[i].name; }
+    for (std::size_t i = 0; i < N; ++i) {
+        if (species[i].name == nullptr || species[i].name[0] == '\0') {
+            throw ParameterError(std::format("species {}: name must not be null or empty", i));
+        }
+        names[i] = species[i].name;
+    }
     detail::check_multi_temperature_species(species, names, rotational_degrees);
     const auto single = make_thermally_perfect_mixture(species, scales);
 

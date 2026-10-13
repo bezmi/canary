@@ -630,6 +630,18 @@ void test_multi_temperature()
           expect(!canary::detail::holds_any(air4.mode_components[1][0]));
       };
 
+    "multi-temperature: the builder rejects null or empty species names"_test = [] {
+        for (const char* name : std::array<const char*, 2> {nullptr, ""}) {
+            auto species = canary::air11_species;
+            species[1].name = name;
+            const std::string error = air11_error(species,
+                                                  canary::air11_rotational_degrees,
+                                                  canary::air11_electronic_levels,
+                                                  canary::air11_three_temperature_modes);
+            expect(error.starts_with("species 1: name must not be null or empty")) << error;
+        }
+    };
+
     "multi-temperature: the builder rejects an unknown species in a mode"_test = [] {
         auto modes = canary::air11_three_temperature_modes;
         modes[0].components[2].species = "Ar";
