@@ -10,6 +10,7 @@
 #include <canary/config.hpp>
 #include <canary/scalar.hpp>
 #include <canary/status.hpp>
+#include <numeric>
 #include <type_traits>
 
 namespace canary::detail
@@ -47,7 +48,8 @@ template <Scalar T> struct SolveResult {
 // The iteration runs on value parts with f_value. When the Newton step
 // f(x) / f'(x) is at most relative_tolerance * |x|, it takes that step and
 // stops; otherwise it takes the Newton step, replaced by bisection when the
-// step leaves the bracket, and also stops when that step is at most
+// step leaves the bracket or the derivative is zero or nonfinite, and also
+// stops when that step is at most
 // relative_tolerance * |x|. The bracket shrinks to the side where f changes sign. After
 // max_iterations it stops with status NotConverged.
 //
@@ -94,17 +96,20 @@ CANARY_HOST_DEVICE SolveResult<T> solve(const FValue& f_value,
         }
         const V low = negative_side < positive_side ? negative_side : positive_side;
         const V high = negative_side < positive_side ? positive_side : negative_side;
-        // A Newton step below the tolerance is taken without the bracket
-        // test and ends the iteration, also when it rounds to x itself,
-        // which the bracket test would reject.
-        const V newton = r.value / r.derivative;
-        if (std::abs(newton) <= settings.relative_tolerance * std::abs(x)) {
-            x -= newton;
-            status = Status::Valid;
-            break;
+        V next = std::midpoint(low, high);
+        if (std::isfinite(r.derivative) && r.derivative != V(0)) {
+            // A Newton step below the tolerance is taken without the bracket
+            // test and ends the iteration, also when it rounds to x itself,
+            // which the bracket test would reject.
+            const V newton = r.value / r.derivative;
+            if (std::abs(newton) <= settings.relative_tolerance * std::abs(x)) {
+                x -= newton;
+                status = Status::Valid;
+                break;
+            }
+            const V candidate = x - newton;
+            if (candidate > low && candidate < high) { next = candidate; }
         }
-        V next = x - newton;
-        if (!(next > low && next < high)) { next = V(0.5) * (low + high); }
         const V step = next - x;
         x = next;
         if (std::abs(step) <= settings.relative_tolerance * std::abs(x)) {

@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <boost/ut.hpp>
 #include <cmath>
+#include <concepts>
 #include <canary/detail/solve.hpp>
 #include <canary/status.hpp>
 #include <limits>
@@ -78,6 +79,40 @@ void test_solve()
                                      settings);
         expect(r.status == Status::Valid);
         expect(std::abs(r.root - 1.0) <= 4.0 * eps) << r.root;
+    };
+
+    "bisection locates a root with a zero or nonfinite derivative"_test = [] {
+        const auto check = []<std::floating_point V>() {
+            const SolveSettings<V> limits {
+              .relative_tolerance = static_cast<V>(settings.relative_tolerance),
+              .max_iterations = settings.max_iterations,
+            };
+            for (const V derivative : {V(0),
+                                       std::numeric_limits<V>::quiet_NaN(),
+                                       std::numeric_limits<V>::infinity(),
+                                       -std::numeric_limits<V>::infinity()}) {
+                const auto f = [derivative](V x) {
+                    return Residual<V> {.value = x - V(1), .derivative = derivative};
+                };
+                const auto r =
+                  solve<V>(f, f, Bracket<V> {.lower = V(0), .upper = V(2)}, V(0.5), limits);
+                expect(r.status == Status::Valid);
+                expect(r.root >= V(0) && r.root <= V(2));
+                expect(std::abs(f(r.root).value) <= limits.relative_tolerance * std::abs(r.root));
+
+                const auto first =
+                  solve<V>(f,
+                           f,
+                           Bracket<V> {.lower = V(0), .upper = V(2)},
+                           V(0.5),
+                           SolveSettings<V> {.relative_tolerance = limits.relative_tolerance,
+                                             .max_iterations = 1});
+                expect(first.status == Status::NotConverged);
+                expect(first.root == V(1.25));
+            }
+        };
+        check.template operator()<float>();
+        check.template operator()<double>();
     };
 
     "a solve that converges from one side ends Valid"_test = [] {
