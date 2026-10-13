@@ -1,7 +1,8 @@
 #ifndef CANARY_CANARY_HPP
 #define CANARY_CANARY_HPP
 
-// All public canary headers, including generated data and host builders.
+// Thermodynamics, transport, reaction and exchange headers, generated data
+// and host builders.
 // A thermally perfect device kernel can include
 // <canary/models/thermally_perfect.hpp> for close and properties; add
 // <canary/thermo.hpp> for the thermo_state front end. The corresponding
