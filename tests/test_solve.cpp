@@ -204,6 +204,86 @@ void test_solve()
         check.template operator()<double>();
     };
 
+    "an exact endpoint root is accepted before iteration in either orientation"_test = [] {
+        const auto check = []<std::floating_point V>() {
+            using Dual = canary::test::Dual<V>;
+            const Bracket<V> bracket {.lower = V(0), .upper = V(2)};
+            const SolveSettings<V> limits {.relative_tolerance = V(0.1), .max_iterations = 0};
+            for (const V endpoint : {bracket.lower, bracket.upper}) {
+                for (const V slope : {V(-1), V(1)}) {
+                    for (const V guess : {V(-1), V(0), V(0.5), V(1), V(2), V(3)}) {
+                        int value_calls = 0;
+                        int full_calls = 0;
+                        const auto f_value = [&](V x) {
+                            ++value_calls;
+                            return Residual<V> {.value = slope * (x - endpoint),
+                                                .derivative = slope};
+                        };
+                        const auto plain_full = [&](V x) {
+                            ++full_calls;
+                            return Residual<V> {.value = slope * (x - endpoint),
+                                                .derivative = slope};
+                        };
+                        const auto plain = solve<V>(f_value, plain_full, bracket, guess, limits);
+                        expect(plain.status == Status::Valid);
+                        expect(plain.root == endpoint);
+                        expect(value_calls == 2_i);
+                        expect(full_calls == 0_i);
+                        value_calls = 0;
+                        const auto f_full = [&](Dual x) {
+                            ++full_calls;
+                            return Residual<Dual> {.value = slope * (x - Dual(endpoint, V(1))),
+                                                   .derivative = Dual(slope)};
+                        };
+                        const auto dual = solve<Dual>(f_value, f_full, bracket, guess, limits);
+                        expect(dual.status == Status::Valid);
+                        expect(dual.root.real() == endpoint);
+                        expect(dual.root.dual() == V(1));
+                        expect(value_calls == 2_i);
+                        expect(full_calls == 1_i);
+                    }
+                }
+            }
+        };
+        check.template operator()<float>();
+        check.template operator()<double>();
+    };
+
+    "two exact endpoint roots select the nearest endpoint with a lower tie"_test = [] {
+        const auto check = []<std::floating_point V>() {
+            using Dual = canary::test::Dual<V>;
+            const Bracket<V> bracket {.lower = V(0), .upper = V(1)};
+            const SolveSettings<V> limits {.relative_tolerance = V(0.1), .max_iterations = 0};
+            for (const V guess : {V(-1), V(0), V(0.25), V(0.5), V(0.75), V(1), V(2)}) {
+                int value_calls = 0;
+                int full_calls = 0;
+                const auto f_value = [&](V x) {
+                    ++value_calls;
+                    return Residual<V> {.value = x * (x - V(1)), .derivative = V(2) * x - V(1)};
+                };
+                const auto plain = solve<V>(f_value, f_value, bracket, guess, limits);
+                const V expected = guess <= V(0.5) ? bracket.lower : bracket.upper;
+                expect(plain.status == Status::Valid);
+                expect(plain.root == expected);
+                expect(value_calls == 2_i);
+                value_calls = 0;
+                const auto f_full = [&](Dual x) {
+                    ++full_calls;
+                    return Residual<Dual> {.value = x * (x - V(1)) - Dual(V(0), V(1)),
+                                           .derivative = V(2) * x - V(1)};
+                };
+                const auto dual = solve<Dual>(f_value, f_full, bracket, guess, limits);
+                expect(dual.status == Status::Valid);
+                expect(dual.root.real() == expected);
+                expect(dual.root.dual() == V(1) / (V(2) * expected - V(1)));
+                expect(value_calls == 2_i);
+                expect(full_calls == 1_i);
+            }
+        };
+        check.template operator()<float>();
+        check.template operator()<double>();
+    };
+
     "a start at the bracket edge converges"_test = [] {
         const auto f = [](double x) { return cubic(x, 10.0); };
         for (const double guess : {0.0, 5.0, -1.0, 9.0}) {

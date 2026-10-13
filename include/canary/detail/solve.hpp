@@ -27,7 +27,7 @@ template <typename F, typename X>
 concept ResidualFunction = Scalar<X> && std::regular_invocable<const F&, X> &&
                            std::same_as<std::invoke_result_t<const F&, X>, Residual<X>>;
 
-// Interval known to contain the root: f(lower) and f(upper) differ in sign.
+// Interval containing a root: an endpoint residual is zero, or the residuals differ in sign.
 template <std::floating_point V> struct Bracket {
     V lower;
     V upper;
@@ -44,6 +44,9 @@ template <Scalar T> struct SolveResult {
 };
 
 // Root of f in the bracket, starting from guess (clamped into the bracket).
+// Exact endpoint roots are accepted before iteration. If both endpoints are
+// roots, select the one nearest the clamped guess, with the lower endpoint
+// selected on a tie.
 //
 // The iteration runs on value parts with f_value. When the Newton step
 // f(x) / f'(x) is at most relative_tolerance * |x|, it takes that step and
@@ -76,48 +79,59 @@ CANARY_HOST_DEVICE SolveResult<T> solve(const FValue& f_value,
     V upper = bracket.upper;
     const V f_lower = f_value(lower).value;
     const V f_upper = f_value(upper).value;
-    if (!std::isfinite(f_lower) || !std::isfinite(f_upper) ||
-        (f_lower > V(0)) == (f_upper > V(0))) {
+    if (!std::isfinite(f_lower) || !std::isfinite(f_upper)) {
         return {.root = T(guess), .status = Status::Invalid};
     }
-    // Orient the bracket so that f(negative_side) <= 0 <= f(positive_side).
-    V negative_side = f_lower > V(0) ? upper : lower;
-    V positive_side = f_lower > V(0) ? lower : upper;
-
     V x = std::clamp(guess, lower, upper);
     Status status = Status::NotConverged;
-    for (int i = 0; i < settings.max_iterations; ++i) {
-        const Residual<V> r = f_value(x);
-        if (r.value == V(0)) {
-            status = Status::Valid;
-            break;
-        }
-        if (r.value < V(0)) {
-            negative_side = x;
+    if (f_lower == V(0) || f_upper == V(0)) {
+        if (f_lower == V(0) && f_upper == V(0)) {
+            x = x <= std::midpoint(lower, upper) ? lower : upper;
         } else {
-            positive_side = x;
+            x = f_lower == V(0) ? lower : upper;
         }
-        const V low = negative_side < positive_side ? negative_side : positive_side;
-        const V high = negative_side < positive_side ? positive_side : negative_side;
-        V next = std::midpoint(low, high);
-        if (std::isfinite(r.derivative) && r.derivative != V(0)) {
-            // A Newton step below the tolerance is taken without the bracket
-            // test and ends the iteration, also when it rounds to x itself,
-            // which the bracket test would reject.
-            const V newton = r.value / r.derivative;
-            if (std::abs(newton) <= settings.relative_tolerance * std::abs(x)) {
-                x -= newton;
+        status = Status::Valid;
+    } else {
+        if ((f_lower > V(0)) == (f_upper > V(0))) {
+            return {.root = T(guess), .status = Status::Invalid};
+        }
+        // Orient the bracket so that f(negative_side) <= 0 <= f(positive_side).
+        V negative_side = f_lower > V(0) ? upper : lower;
+        V positive_side = f_lower > V(0) ? lower : upper;
+
+        for (int i = 0; i < settings.max_iterations; ++i) {
+            const Residual<V> r = f_value(x);
+            if (r.value == V(0)) {
                 status = Status::Valid;
                 break;
             }
-            const V candidate = x - newton;
-            if (candidate > low && candidate < high) { next = candidate; }
-        }
-        const V step = next - x;
-        x = next;
-        if (std::abs(step) <= settings.relative_tolerance * std::abs(x)) {
-            status = Status::Valid;
-            break;
+            if (r.value < V(0)) {
+                negative_side = x;
+            } else {
+                positive_side = x;
+            }
+            const V low = negative_side < positive_side ? negative_side : positive_side;
+            const V high = negative_side < positive_side ? positive_side : negative_side;
+            V next = std::midpoint(low, high);
+            if (std::isfinite(r.derivative) && r.derivative != V(0)) {
+                // A Newton step below the tolerance is taken without the bracket
+                // test and ends the iteration, also when it rounds to x itself,
+                // which the bracket test would reject.
+                const V newton = r.value / r.derivative;
+                if (std::abs(newton) <= settings.relative_tolerance * std::abs(x)) {
+                    x -= newton;
+                    status = Status::Valid;
+                    break;
+                }
+                const V candidate = x - newton;
+                if (candidate > low && candidate < high) { next = candidate; }
+            }
+            const V step = next - x;
+            x = next;
+            if (std::abs(step) <= settings.relative_tolerance * std::abs(x)) {
+                status = Status::Valid;
+                break;
+            }
         }
     }
 
