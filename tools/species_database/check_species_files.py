@@ -24,8 +24,16 @@ def groups(arguments):
     yield group
 
 
+argument_groups = list(groups(sys.argv[1:]))
+if any(len(group) < 2 for group in argument_groups):
+    raise SystemExit(
+        "usage: check_species_files.py <schema.json> <file>... "
+        "[-- <schema.json> <file>...]...\n"
+        "each group requires a schema and at least one input file"
+    )
+
 failures = 0
-for schema_path, *paths in groups(sys.argv[1:]):
+for schema_path, *paths in argument_groups:
     schema = json.loads(open(schema_path, encoding="utf-8").read())
     jsonschema.Draft202012Validator.check_schema(schema)
     for path in paths:
