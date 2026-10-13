@@ -217,9 +217,11 @@ CANARY_HOST_DEVICE constexpr Status composition_status(const V& weights, T total
 
 // Mean particle mass of a mixture, sum(w) / sum(w / m_i), with each weight
 // clamped to [0, total] (total 1 for mass fractions, rho for partial
-// densities). Dividing by the sum of the clamped weights rather than by the
-// total keeps the result a weighted mean when the weights do not sum to the
-// total.
+// densities). Normalising by the sum of the clamped weights keeps the
+// result a weighted mean when the weights do not sum to the total. Check
+// composition_status(fractions) before calling and reject Status::Invalid.
+// For example, all-zero fractions or a nonfinite fraction are Invalid and
+// must not reach this division. The arithmetic does not report a status.
 template <std::floating_point P, UnitSystem U, std::size_t Capacity, typename V>
     requires SpeciesWeights<V, kind::mass_fraction, unitless, P>
 CANARY_HOST_DEVICE constexpr auto mean_particle_mass(const SpeciesData<P, U, Capacity>& species,
@@ -232,6 +234,8 @@ CANARY_HOST_DEVICE constexpr auto mean_particle_mass(const SpeciesData<P, U, Cap
     return ParticleMass<std::remove_const_t<decltype(m)>, U> {m};
 }
 
+// Check composition_status(partial_densities, rho) before calling and reject
+// Status::Invalid, including zero total density and all-zero partial densities.
 template <std::floating_point P, UnitSystem U, std::size_t Capacity, typename V, Scalar T>
     requires SpeciesWeights<V, kind::density, U, P> &&
              std::same_as<typename range_quantity_t<V>::value_type, T>
@@ -245,7 +249,9 @@ CANARY_HOST_DEVICE constexpr auto mean_particle_mass(const SpeciesData<P, U, Cap
 }
 
 // Mean particle charge, sum((w / m_i) q_i) / sum(w / m_i), with the same
-// clamped weights.
+// clamped weights. Check composition_status(fractions) before calling and
+// reject Status::Invalid. All-zero or nonfinite fractions must not reach
+// this division. The arithmetic does not report a status.
 template <std::floating_point P, UnitSystem U, std::size_t Capacity, typename V>
     requires SpeciesWeights<V, kind::mass_fraction, unitless, P>
 CANARY_HOST_DEVICE constexpr auto mean_charge(const SpeciesData<P, U, Capacity>& species,
@@ -258,6 +264,8 @@ CANARY_HOST_DEVICE constexpr auto mean_charge(const SpeciesData<P, U, Capacity>&
     return Charge<std::remove_const_t<decltype(q)>, U> {q};
 }
 
+// Check composition_status(partial_densities, rho) before calling and reject
+// Status::Invalid, including zero total density and all-zero partial densities.
 template <std::floating_point P, UnitSystem U, std::size_t Capacity, typename V, Scalar T>
     requires SpeciesWeights<V, kind::density, U, P> &&
              std::same_as<typename range_quantity_t<V>::value_type, T>

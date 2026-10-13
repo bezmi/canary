@@ -9,7 +9,8 @@
 namespace canary
 {
 
-// Viscosity independent of temperature.
+// Viscosity independent of temperature. mu must be finite and non-negative;
+// evaluation does not validate it. The temperature argument is unused.
 template <std::floating_point P, UnitSystem U> struct ConstantViscosity {
     DynamicViscosity<P, U> mu;
 };

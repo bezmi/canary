@@ -10,6 +10,9 @@ namespace canary
 {
 
 // Sutherland's law: mu = mu_0 (T / T_0)^(3/2) (T_0 + S) / (T + S).
+// mu_0 must be finite and non-negative, t_0 finite and positive, and s finite
+// with t_0 + s > 0. Evaluation requires finite positive temperature within
+// the fit range and temp + s > 0. Inputs and arithmetic overflow are unchecked.
 template <std::floating_point P, UnitSystem U> struct Sutherland {
     DynamicViscosity<P, U> mu_0;
     Temperature<P, U> t_0;

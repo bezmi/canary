@@ -2,6 +2,10 @@
 #define CANARY_CONFIG_HPP
 
 // Build settings a consumer may define before including any canary header.
+// CUDA 13.4 numerical device calls were compiled with C++20 and
+// --expt-relaxed-constexpr, required for the standard-library and mdspan
+// constexpr functions called by device code. HIP numerical compilation has
+// not been verified.
 
 // Annotation for every function that per-cell code calls, so that it can run
 // on a GPU. Define it as the consumer's host-and-device annotation, for

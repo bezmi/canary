@@ -9,7 +9,10 @@
 namespace canary
 {
 
-// Power law: mu = mu_0 (T / T_0)^n.
+// Power law: mu = mu_0 (T / T_0)^n. mu_0 must be finite and non-negative,
+// t_0 finite and positive, and exponent finite. Evaluation requires finite
+// positive temperature within the fit range and does not validate inputs
+// or detect arithmetic overflow.
 template <std::floating_point P, UnitSystem U> struct PowerLaw {
     DynamicViscosity<P, U> mu_0;
     Temperature<P, U> t_0;

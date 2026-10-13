@@ -11,6 +11,9 @@ namespace canary
 {
 
 // Thermal conductivity at a constant Prandtl number: k = mu cp / Pr.
+// prandtl must be finite and positive. Evaluation requires finite
+// non-negative viscosity and finite positive properties.cp; inputs and
+// arithmetic overflow are unchecked.
 template <std::floating_point P> struct ConstantPrandtl {
     PrandtlNumber<P> prandtl;
 };
