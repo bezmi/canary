@@ -1,7 +1,13 @@
 #ifndef CANARY_CANARY_HPP
 #define CANARY_CANARY_HPP
 
-// All public canary headers.
+// All public canary headers, including generated data and host builders.
+// A thermally perfect device kernel can include
+// <canary/models/thermally_perfect.hpp> for close and properties; add
+// <canary/thermo.hpp> for the thermo_state front end. The corresponding
+// model headers provide two-temperature and multi-temperature calls.
+// Construct models on the host and pass them to kernels. Consumer GPU
+// annotations and tested CUDA compiler options are documented in config.hpp.
 
 #include <canary/build.hpp>                       // IWYU pragma: export
 #include <canary/config.hpp>                      // IWYU pragma: export

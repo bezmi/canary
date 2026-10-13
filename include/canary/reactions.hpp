@@ -458,6 +458,9 @@ ReactionMechanism<P, U, N, R> build_mechanism(const MechanismInput<R, K>& input,
 //   not finite, an activation temperature is negative or not finite, or a
 //   translational exponent is not finite or outside [0, 1] (the backward
 //   rate is checked only with BackwardRateModel::arrhenius).
+// names, species and the thermodynamic model used during rate evaluation
+// must use the same species order. Construction checks names and counts,
+// but SpeciesData carries no names to verify this ordering.
 // Every rate's other mode is 0, whatever its other_temperature: each T_o is
 // the single second temperature T_ve of a two-temperature evaluation, and a
 // backward input of an equilibrium rate with an other_temperature gives an
