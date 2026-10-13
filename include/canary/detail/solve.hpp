@@ -40,7 +40,7 @@ template <std::floating_point V> struct SolveSettings {
 
 template <Scalar T> struct SolveResult {
     T root;
-    Status status;  // Valid, NotConverged, or Invalid for a bracket without a sign change
+    Status status;  // Valid, NotConverged, or Invalid for bracket or full-residual failures
 };
 
 // Root of f in the bracket, starting from guess (clamped into the bracket).
@@ -54,16 +54,18 @@ template <Scalar T> struct SolveResult {
 // max_iterations it stops with status NotConverged and returns the last
 // bounded iterate as a constant with zero derivative; f_full is not called.
 //
-// When T is not the value type (a dual number), one final Newton step is
-// then taken in T with f_full, starting from the converged value as a
-// constant: x = x0 - f(x0) / f'(x0). For a floating-point T the converged
-// value is returned and f_full is not called.
-// With dual-number inputs captured in f_full, the derivative of the root is
-// -(df/dinput) / (df/dx), the implicit-function-theorem derivative, and the
-// value changes by at most one more Newton step.
+// When T is not the value type (a dual number), f_full is evaluated at
+// the converged value as a constant. The returned value is unchanged and
+// its input derivatives are -(df/dinput) / (df/dx). Subtracting the value
+// part of the full residual retains only its input derivatives; division
+// uses the plain value of df/dx. T must support division by V with a result
+// convertible to T. Nonfinite full-residual value parts or a zero df/dx
+// give Invalid with a constant root. For floating-point T, f_full is not called.
 template <Scalar T, std::floating_point V, typename FValue, typename FFull>
     requires std::same_as<typename ScalarTraits<T>::value_type, V> && ResidualFunction<FValue, V> &&
-             ResidualFunction<FFull, T>
+             ResidualFunction<FFull, T> && requires(const T residual, const V derivative) {
+                 { residual / derivative } -> std::convertible_to<T>;
+             }
 CANARY_HOST_DEVICE SolveResult<T> solve(const FValue& f_value,
                                         const FFull& f_full,
                                         Bracket<V> bracket,
@@ -123,9 +125,14 @@ CANARY_HOST_DEVICE SolveResult<T> solve(const FValue& f_value,
         return {.root = x, .status = status};
     } else {
         if (status == Status::NotConverged) { return {.root = T(x), .status = status}; }
-        const T x0(x);
-        const Residual<T> r = f_full(x0);
-        return {.root = x0 - (r.value / r.derivative), .status = status};
+        const Residual<T> r = f_full(T(x));
+        const V value = ScalarTraits<T>::value(r.value);
+        const V derivative = ScalarTraits<T>::value(r.derivative);
+        if (!std::isfinite(value) || !std::isfinite(derivative) || derivative == V(0)) {
+            return {.root = T(x), .status = Status::Invalid};
+        }
+        const T input_residual = r.value - T(value);
+        return {.root = T(x) - T(input_residual / derivative), .status = status};
     }
 }
 

@@ -1,4 +1,5 @@
 #include "dual.hpp"
+#include "scalar_types.hpp"
 #include "test_suites.hpp"
 
 #include <algorithm>
@@ -20,6 +21,27 @@ using D = canary::test::Dual<double>;
 
 constexpr double eps = std::numeric_limits<double>::epsilon();
 constexpr SolveSettings<double> settings {.relative_tolerance = 1.0e-14, .max_iterations = 50};
+
+constexpr auto accepts_solve = []<canary::Scalar T>() {
+    using V = canary::ScalarTraits<T>::value_type;
+    const auto f_value = [](V x) { return Residual<V> {.value = x, .derivative = V(1)}; };
+    const auto f_full = [](T x) { return Residual<T> {.value = x, .derivative = T(V(1))}; };
+    return requires {
+        canary::detail::solve<T>(
+          f_value,
+          f_full,
+          Bracket<V> {.lower = V(-1), .upper = V(1)},
+          V(0),
+          SolveSettings<V> {.relative_tolerance = V(0.1), .max_iterations = 1});
+    };
+};
+
+static_assert(accepts_solve.template operator()<float>());
+static_assert(accepts_solve.template operator()<double>());
+static_assert(accepts_solve.template operator()<canary::test::Dual<float>>());
+static_assert(accepts_solve.template operator()<D>());
+static_assert(canary::Scalar<canary::test::OnlySqrt>);
+static_assert(!accepts_solve.template operator()<canary::test::OnlySqrt>());
 
 // f(x) = x^3 + x - c, with root 2 for c = 10.
 template <typename X> Residual<X> cubic(X x, X c)
@@ -59,6 +81,127 @@ void test_solve()
         expect(r.status == Status::Valid);
         expect(std::abs(r.root.real() - 2.0) <= 4.0 * eps * 2.0);
         expect(std::abs(r.root.dual() - (1.0 / 13.0)) <= 8.0 * eps / 13.0) << r.root.dual();
+    };
+
+    "dual solves preserve the converged value and use its implicit derivative"_test = [] {
+        const auto check = []<std::floating_point V>() {
+            using Dual = canary::test::Dual<V>;
+            const Dual coefficient(V(1), V(1));
+            const auto f_value = [&](V x) {
+                return Residual<V> {
+                  .value = (coefficient.real() * x * x * x) + x - V(10),
+                  .derivative = (V(3) * coefficient.real() * x * x) + V(1),
+                };
+            };
+            const auto f_full = [&](Dual x) {
+                return Residual<Dual> {
+                  .value = (coefficient * x * x * x) + x - V(10),
+                  .derivative = (V(3) * coefficient * x * x) + V(1),
+                };
+            };
+            // A loose step tolerance leaves a nonzero residual so that a
+            // separate final Newton step would change the returned value.
+            const SolveSettings<V> limits {.relative_tolerance = V(0.1), .max_iterations = 50};
+            const Bracket<V> bracket {.lower = V(0), .upper = V(5)};
+            const auto plain = solve<V>(f_value, f_value, bracket, V(2.125), limits);
+            const auto dual = solve<Dual>(f_value, f_full, bracket, V(2.125), limits);
+            const V x = plain.root;
+            const V expected = -(x * x * x) / ((V(3) * x * x) + V(1));
+            expect(plain.status == Status::Valid && dual.status == Status::Valid);
+            expect(f_value(x).value != V(0));
+            expect(dual.root.real() == x);
+            expect(std::abs(dual.root.dual() - expected) <=
+                   V(8) * std::numeric_limits<V>::epsilon() * std::abs(expected));
+        };
+        check.template operator()<float>();
+        check.template operator()<double>();
+    };
+
+    "implicit derivatives remain finite for extreme finite residual slopes"_test = [] {
+        const auto check = []<std::floating_point V>() {
+            using Dual = canary::test::Dual<V>;
+            for (const V slope : {std::numeric_limits<V>::min(),
+                                  -std::numeric_limits<V>::min(),
+                                  std::numeric_limits<V>::max() / V(2),
+                                  -std::numeric_limits<V>::max() / V(2)}) {
+                const auto f_value = [slope](V x) {
+                    return Residual<V> {.value = slope * x, .derivative = slope};
+                };
+                const auto f_full = [slope](Dual x) {
+                    return Residual<Dual> {.value = slope * x - Dual(V(0), V(1)),
+                                           .derivative = Dual(slope)};
+                };
+                const auto r =
+                  solve<Dual>(f_value,
+                              f_full,
+                              Bracket<V> {.lower = V(-1), .upper = V(1)},
+                              V(0),
+                              SolveSettings<V> {.relative_tolerance = V(0.1), .max_iterations = 1});
+                expect(r.status == Status::Valid);
+                expect(r.root.real() == V(0));
+                expect(std::isfinite(r.root.dual()));
+                expect(r.root.dual() == V(1) / slope);
+            }
+        };
+        check.template operator()<float>();
+        check.template operator()<double>();
+    };
+
+    "unusable full residual value parts return an Invalid constant root"_test = [] {
+        const auto check = []<std::floating_point V>() {
+            using Dual = canary::test::Dual<V>;
+            const auto f_value = [](V x) {
+                return Residual<V> {.value = x - V(1), .derivative = V(1)};
+            };
+            const Bracket<V> bracket {.lower = V(0), .upper = V(2)};
+            const SolveSettings<V> limits {.relative_tolerance = V(0.1), .max_iterations = 50};
+            const auto plain = solve<V>(f_value, f_value, bracket, V(0.5), limits);
+            expect(plain.status == Status::Valid);
+            const auto check_invalid = [&](V value, V derivative) {
+                const auto f_full = [=](Dual) {
+                    return Residual<Dual> {.value = Dual(value, V(1)),
+                                           .derivative = Dual(derivative)};
+                };
+                const auto r = solve<Dual>(f_value, f_full, bracket, V(0.5), limits);
+                expect(r.status == Status::Invalid);
+                expect(r.root.real() == plain.root);
+                expect(r.root.real() >= bracket.lower && r.root.real() <= bracket.upper);
+                expect(r.root.dual() == V(0));
+            };
+            check_invalid(V(0), V(0));
+            for (const V value : {std::numeric_limits<V>::quiet_NaN(),
+                                  std::numeric_limits<V>::infinity(),
+                                  -std::numeric_limits<V>::infinity()}) {
+                check_invalid(value, V(1));
+                check_invalid(V(0), value);
+            }
+        };
+        check.template operator()<float>();
+        check.template operator()<double>();
+    };
+
+    "a singular dual root returns an Invalid constant"_test = [] {
+        const auto check = []<std::floating_point V>() {
+            using Dual = canary::test::Dual<V>;
+            const auto f_value = [](V x) {
+                return Residual<V> {.value = x * x * x, .derivative = V(3) * x * x};
+            };
+            const auto f_full = [](Dual x) {
+                return Residual<Dual> {.value = x * x * x - Dual(V(0), V(1)),
+                                       .derivative = V(3) * x * x};
+            };
+            const auto r =
+              solve<Dual>(f_value,
+                          f_full,
+                          Bracket<V> {.lower = V(-1), .upper = V(1)},
+                          V(0),
+                          SolveSettings<V> {.relative_tolerance = V(0.1), .max_iterations = 1});
+            expect(r.status == Status::Invalid);
+            expect(r.root.real() == V(0));
+            expect(r.root.dual() == V(0));
+        };
+        check.template operator()<float>();
+        check.template operator()<double>();
     };
 
     "a start at the bracket edge converges"_test = [] {

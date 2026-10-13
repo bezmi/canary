@@ -195,6 +195,9 @@ void test_thermally_perfect()
                            mix_d,
                            canary::Density<D, si> {D(1.0)},
                            canary::SpecificEnergy<D, si> {D(ref.state.e.value(), 1.0)});
+            const auto plain = thermo_state(gas, mix, Rho {1.0}, ref.state.e);
+            expect(c.status == Status::Valid && plain.status == Status::Valid);
+            expect(c.state.temp.value().real() == plain.state.temp.value());
             const auto props = canary::properties(gas, mix, ref.state);
             expect(relative(c.state.temp.value().dual(), 1.0 / props.cv.value(), 1.0e-9))
               << t << c.state.temp.value().dual() << 1.0 / props.cv.value();
