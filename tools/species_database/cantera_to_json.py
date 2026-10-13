@@ -46,13 +46,23 @@ def main():
     parser.add_argument("--source", required=True)
     parser.add_argument("-o", "--output", required=True)
     args = parser.parse_args()
-    weights = {k: Decimal(v) for k, v in (item.split("=") for item in args.atomic_weights)}
+    weights = {}
+    for item in args.atomic_weights:
+        element, value = item.split("=")
+        if element in weights:
+            raise SystemExit(f"atomic weight for {element}: given twice")
+        weights[element] = Decimal(value)
     widths = species_json.parse_blend_widths(args.blend)
     with open(args.yaml_file, encoding="utf-8") as stream:
         # BaseLoader keeps every scalar a string: YAML 1.1 would read the
         # species name NO as false.
         data = yaml.load(stream, Loader=yaml.BaseLoader)
-    entries = {entry["name"]: entry for entry in data["species"]}
+    entries = {}
+    for entry in data["species"]:
+        name = entry["name"]
+        if name in entries:
+            raise SystemExit(f"{args.yaml_file}: species {name} is given twice")
+        entries[name] = entry
     species = {}
     for name in args.species:
         if name not in entries:

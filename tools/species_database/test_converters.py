@@ -14,6 +14,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import yaml
+
 root = Path(sys.argv[1])
 tools = root / "tools" / "species_database"
 data = root / "tests" / "data" / "species"
@@ -29,6 +31,12 @@ runs = {
                     "--electronic"],
 }
 
+expected_species = {
+    "thermo.inp": {"N2", "O2", "NO"},
+    "Cantera": {"N2", "O2", "NO"},
+    "GDTk layout": {"N2"},
+}
+
 failures = 0
 with tempfile.TemporaryDirectory() as tmp:
     for label, command in runs.items():
@@ -36,6 +44,10 @@ with tempfile.TemporaryDirectory() as tmp:
         subprocess.run([sys.executable, *map(str, command), "--source", "test", "-o", str(out)], check=True)
         converted = json.loads(out.read_text())
         assert converted["format"] == "canary-species-1"
+        assert set(converted["species"]) == expected_species[label], f"{label}: unexpected species set"
+        if label == "GDTk layout":
+            assert converted["species"]["N2"]["electronic_levels"] == shipped["N2"]["electronic_levels"]
+            assert converted["species"]["N2"]["transport"] == shipped["N2"]["transport"]
         for name, record in converted["species"].items():
             expected = shipped[name]
             for key in ("molar_mass", "charge"):
@@ -53,6 +65,29 @@ with tempfile.TemporaryDirectory() as tmp:
                 failures += 1
                 print(f"{label} {name}: transport differs")
             print(f"{label} {name}: checked")
+
+# Duplicate atomic weights and species names must be rejected before output.
+with tempfile.TemporaryDirectory() as tmp:
+    out = Path(tmp) / "duplicate.json"
+    command = list(runs["Cantera"])
+    command.insert(command.index("--blend"), "N=14.0067")
+    result = subprocess.run([sys.executable, *map(str, command), "--source", "test", "-o", str(out)],
+                            capture_output=True, text=True)
+    assert result.returncode != 0 and "atomic weight for N: given twice" in result.stderr
+    assert not out.exists()
+
+    with (data / "cantera_excerpt.yaml").open(encoding="utf-8") as stream:
+        records = yaml.load(stream, Loader=yaml.BaseLoader)
+    records["species"].append(records["species"][0])
+    duplicate = Path(tmp) / "duplicate.yaml"
+    duplicate.write_text(yaml.safe_dump(records), encoding="utf-8")
+    command = list(runs["Cantera"])
+    command[1] = duplicate
+    result = subprocess.run([sys.executable, *map(str, command), "--source", "test", "-o", str(out)],
+                            capture_output=True, text=True)
+    assert result.returncode != 0 and "species N2 is given twice" in result.stderr
+    assert str(duplicate) in result.stderr
+    assert not out.exists()
 
 # GDTk layout with the bracket form of a species name (N+ in N_plus.lua),
 # with its electronic levels converted to temperatures: equal to the shipped
