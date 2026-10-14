@@ -258,6 +258,67 @@ void test_calorically_perfect_mixture()
                           4.0));
     };
 
+    "composition transfer differentiates pressure temperature and heat capacities"_test = [] {
+        const auto check = []<typename V> {
+            using Dual = canary::test::Dual<V>;
+            const auto built = canary::make_calorically_perfect_mixture<3>(
+              std::array {canary::ParticleMass<V, scaled> {V(2)},
+                          canary::ParticleMass<V, scaled> {V(4)},
+                          canary::ParticleMass<V, scaled> {V(8)}},
+              std::array {canary::Charge<V, scaled> {V(0)},
+                          canary::Charge<V, scaled> {V(0)},
+                          canary::Charge<V, scaled> {V(0)}},
+              canary::BoltzmannConstant<V, scaled> {V(1)},
+              std::array {canary::HeatCapacityRatio<V> {V(2)},
+                          canary::HeatCapacityRatio<V> {V(1.25)},
+                          canary::HeatCapacityRatio<V> {V(1.5)}});
+            // R_i = 1/m_i and cv_i = R_i/(gamma_i-1), all exactly representable.
+            constexpr std::array<long double, 3> r {0.5L, 0.25L, 0.125L};
+            constexpr std::array<long double, 3> cv {0.5L, 1.0L, 0.25L};
+            constexpr long double mixture_r = 0.28125L;
+            constexpr long double mixture_cv = 0.6875L;
+            constexpr long double temperature = 2.0L / mixture_cv;
+            const auto close = [](V actual, long double expected) {
+                return std::abs(static_cast<long double>(actual) - expected) <=
+                       64 * std::numeric_limits<V>::epsilon() * std::abs(expected);
+            };
+            for (const canary::SpeciesIndex gained : canary::species_indices(0, 3)) {
+                for (const canary::SpeciesIndex lost : canary::species_indices(0, 3)) {
+                    if (gained == lost) { continue; }
+                    std::array<Dual, 3> y {Dual(V(0.25)), Dual(V(0.5)), Dual(V(0.25))};
+                    y[gained.value()] = Dual(y[gained.value()].real(), V(1));
+                    y[lost.value()] = Dual(y[lost.value()].real(), V(-1));
+                    const auto view = canary::as_kind<canary::kind::mass_fraction>(
+                      Kokkos::mdspan<const Dual, Extents>(y.data(), 3));
+                    const auto mix = mixture(built.model, view);
+                    const auto state =
+                      thermo_state(built.model,
+                                   mix,
+                                   canary::Density<Dual, scaled> {Dual(V(3))},
+                                   canary::SpecificEnergy<Dual, scaled> {Dual(V(2))});
+                    const auto props = canary::properties(built.model, mix, state.state);
+                    const long double dr = r[gained.value()] - r[lost.value()];
+                    const long double dcv = cv[gained.value()] - cv[lost.value()];
+                    const long double dt = -2 * dcv / (mixture_cv * mixture_cv);
+                    const long double dp = 3 * (dr * temperature + mixture_r * dt);
+                    expect(state.status == Status::Valid);
+                    expect(close(props.gas_constant.value().dual(), dr));
+                    expect(close(props.cv.value().dual(), dcv));
+                    expect(close(props.cp.value().dual(), dcv + dr));
+                    expect(close(state.state.temp.value().real(), temperature));
+                    expect(close(state.state.temp.value().dual(), dt));
+                    expect(close(state.state.p.value().dual(), dp));
+                    expect(close(props.capacity_ratio.value().dual(),
+                                 (dr * mixture_cv - mixture_r * dcv) / (mixture_cv * mixture_cv)));
+                    expect(state.state.rho.value().dual() == V(0) &&
+                           state.state.e.value().dual() == V(0));
+                }
+            }
+        };
+        check.operator()<float>();
+        check.operator()<double>();
+    };
+
     "make_calorically_perfect_mixture rejects inconsistent or out-of-range species"_test = [] {
         const std::array<Mass, 2> m {Mass {1.0}, Mass {2.0}};
         const std::array<Q, 2> q {Q {0.0}, Q {0.0}};

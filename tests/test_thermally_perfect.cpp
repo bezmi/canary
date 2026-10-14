@@ -47,6 +47,16 @@ const canary::UnitScales<double, scaled> reference_scales {{
   .length = 1.0,
 }};
 
+// Exercise both parameter precisions and physical/scaled model units.
+template <typename F> void for_parameter_units(const F& check)
+{
+    check(canary::UnitScales<float, si> {});
+    check(canary::UnitScales<double, si> {});
+    check(canary::UnitScales<float, scaled> {
+      {.mass = 4.65e-26F, .density = 1.0e-3F, .temperature = 1000.0F, .length = 1.0F}});
+    check(reference_scales);
+}
+
 template <typename T> auto fractions(const std::array<T, 5>& y)
 {
     return canary::as_kind<canary::kind::mass_fraction>(
@@ -561,6 +571,163 @@ void test_thermally_perfect()
                 }
             }
         }
+    };
+
+    "energy inversion accepts both limits and rejects energies immediately outside"_test = [] {
+        for_parameter_units([]<typename V, typename U>(const canary::UnitScales<V, U>& scales) {
+            auto model = canary::make_air5<V>(scales).model;
+            using Temperature = canary::Temperature<V, U>;
+            using Energy = canary::SpecificEnergy<V, U>;
+            using Density = canary::Density<V, U>;
+            using Initial = canary::TemperatureGuess<V, U>;
+            model.temperature_min = Temperature {canary::convert<U>(Temp {400}, scales)};
+            model.temperature_max = Temperature {canary::convert<U>(Temp {8000}, scales)};
+            const std::array<V, 5> y {V(0.75), V(0.25), V(0), V(0), V(0)};
+            const auto mix = mixture(model, fractions(y));
+            const Density rho {V(1)};
+            for (const bool lower : {true, false}) {
+                const Temperature bound = lower ? model.temperature_min : model.temperature_max;
+                const auto forward = thermo_state(model, mix, rho, bound);
+                expect(forward.status == Status::Valid);
+                const Energy outside {std::nextafter(forward.state.e.value(),
+                                                     lower ? -std::numeric_limits<V>::infinity()
+                                                           : std::numeric_limits<V>::infinity())};
+                for (const V guess : {model.temperature_min.value() / V(2),
+                                      model.temperature_min.value(),
+                                      model.temperature_max.value(),
+                                      model.temperature_max.value() * V(2)}) {
+                    const auto at =
+                      thermo_state(model, mix, rho, forward.state.e, Initial {Temperature {guess}});
+                    expect(at.status == Status::Valid);
+                    expect(at.state.temp == bound && at.state.e == forward.state.e);
+                    const auto beyond =
+                      thermo_state(model, mix, rho, outside, Initial {Temperature {guess}});
+                    expect(beyond.status == Status::Invalid);
+                    expect(beyond.state.temp.value() >= model.temperature_min.value() &&
+                           beyond.state.temp.value() <= model.temperature_max.value());
+                    expect(beyond.state.e == outside && beyond.state.rho == rho);
+                }
+                using Dual = canary::test::Dual<V>;
+                std::array<Dual, 5> yd {};
+                for (const canary::SpeciesIndex i : canary::species_indices(0, 5)) {
+                    yd[i.value()] = Dual(y[i.value()]);
+                }
+                const auto mix_d = mixture(model, fractions(yd));
+                const auto at =
+                  thermo_state(model,
+                               mix_d,
+                               canary::Density<Dual, U> {Dual(1)},
+                               canary::SpecificEnergy<Dual, U> {Dual(forward.state.e.value(), 1)},
+                               canary::TemperatureGuess<Dual, U> {
+                                 canary::Temperature<Dual, U> {Dual(bound.value())}});
+                const V cv = canary::properties(model, mix, forward.state).cv.value();
+                expect(at.status == Status::Valid);
+                expect(at.state.temp.value().real() == bound.value());
+                expect(relative(at.state.temp.value().dual(),
+                                V(1) / cv,
+                                V(32) * std::numeric_limits<V>::epsilon()));
+            }
+        });
+    };
+
+    "strided fractions and partial densities preserve closure values and derivatives"_test = [] {
+        for_parameter_units([]<typename V, typename U>(const canary::UnitScales<V, U>& scales) {
+            using Dual = canary::test::Dual<V>;
+            const auto model = canary::make_air5<V>(scales).model;
+            const std::array<Dual, 5> y {Dual(V(0.5), V(1)),
+                                         Dual(V(0.25), V(-1)),
+                                         Dual(V(0.125)),
+                                         Dual(V(0.0625)),
+                                         Dual(V(0.0625))};
+            std::array<Dual, 37> storage {};
+            storage.fill(Dual(std::numeric_limits<V>::quiet_NaN()));
+            using View = Kokkos::mdspan<const Dual, Extents, Kokkos::layout_stride>;
+            const typename View::mapping_type map(Extents(5), std::array<std::size_t, 1> {7});
+            const View view(storage.data() + 3, map);
+            const canary::Density<Dual, U> rho {Dual(V(2))};
+            const canary::Temperature<Dual, U> temp {
+              Dual(V(canary::convert<U>(Temp {1100}, scales).value()))};
+            const auto contiguous = thermo_state(model, fractions(y), rho, temp);
+            const auto same = [&](const auto& a, const auto& b) {
+                expect(a.status == b.status);
+                const auto field = [&](const auto& x, const auto& z) {
+                    expect(x.value().real() == z.value().real());
+                    expect(x.value().dual() == z.value().dual());
+                };
+                field(a.state.rho, b.state.rho);
+                field(a.state.e, b.state.e);
+                field(a.state.p, b.state.p);
+                field(a.state.temp, b.state.temp);
+            };
+            const auto compare = [&](const auto& composition) {
+                const auto forward = thermo_state(model, composition, rho, temp);
+                same(forward, contiguous);
+                const canary::TemperatureGuess<Dual, U> guess {temp};
+                const auto reference =
+                  thermo_state(model, fractions(y), rho, contiguous.state.e, guess);
+                const auto inverse =
+                  thermo_state(model, composition, rho, contiguous.state.e, guess);
+                expect(reference.status == Status::Valid && inverse.status == Status::Valid);
+                same(inverse, reference);
+            };
+            for (const canary::SpeciesIndex i : canary::species_indices(0, 5)) {
+                storage[3 + 7 * i.value()] = y[i.value()];
+            }
+            compare(canary::as_kind<canary::kind::mass_fraction>(view));
+            for (const canary::SpeciesIndex i : canary::species_indices(0, 5)) {
+                storage[3 + 7 * i.value()] = rho.value() * y[i.value()];
+            }
+            compare(canary::as_kind<canary::kind::density, U>(view));
+        });
+    };
+
+    "blend energy inversions preserve the capacity derivative"_test = [] {
+        for_parameter_units([]<typename V, typename U>(const canary::UnitScales<V, U>& scales) {
+            const auto model = canary::make_air5<V>(scales).model;
+            const auto mix = mixture(model, fractions(dissociated));
+            const std::array<D, 5> yd {D(0.2), D(0.05), D(0.3), D(0.4), D(0.05)};
+            const auto mix_d = mixture(model, fractions(yd));
+            const canary::Density<double, U> rho {1};
+            for (const double kelvin : {850.0, 1000.0, 1150.0, 5625.0, 6000.0, 6375.0}) {
+                const canary::Temperature<double, U> temp {
+                  canary::convert<U>(Temp {kelvin}, scales)};
+                const auto forward = thermo_state(model, mix, rho, temp);
+                const auto props = canary::properties(model, mix, forward.state);
+                const auto inverse =
+                  thermo_state(model,
+                               mix_d,
+                               canary::Density<D, U> {D(1)},
+                               canary::SpecificEnergy<D, U> {D(forward.state.e.value(), 1)});
+                expect(inverse.status == Status::Valid);
+                expect(
+                  relative(inverse.state.temp.value().real(), temp.value(), 2 * solve_tolerance));
+                const double derivative = inverse.state.temp.value().dual();
+                expect(relative(derivative, 1 / props.cv.value(), 1.0e-9));
+                const auto seeded = thermo_state(model,
+                                                 mix_d,
+                                                 canary::Density<D, U> {D(1)},
+                                                 canary::Temperature<D, U> {D(temp.value(), 1)});
+                expect(relative(derivative * seeded.state.e.value().dual(), 1.0, 1.0e-9));
+                const double step = props.cv.value() * temp.value() * 1.0e-4;
+                const auto solve_at = [&](double energy) {
+                    const auto result =
+                      thermo_state(model, mix, rho, canary::SpecificEnergy<double, U> {energy});
+                    expect(result.status == Status::Valid);
+                    return result.state.temp.value();
+                };
+                const double energy = forward.state.e.value();
+                const double whole =
+                  (solve_at(energy + step) - solve_at(energy - step)) / (2 * step);
+                const double half =
+                  (solve_at(energy + step / 2) - solve_at(energy - step / 2)) / step;
+                // Estimate truncation from step halving; include both root errors and subtraction
+                // roundoff.
+                const double bound = 4 * std::abs(half - whole) +
+                                     (4 * solve_tolerance + 64 * eps) * temp.value() / step;
+                expect(std::abs(derivative - half) <= bound)
+                  << kelvin << derivative << half << bound;
+            }
+        });
     };
 
     "species properties are consistent with each other and the closure"_test = [&] {
