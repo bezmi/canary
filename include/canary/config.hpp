@@ -33,7 +33,8 @@
 #endif
 
 // Check of a precondition in per-cell code. Define it when assert is not
-// usable in device code. Defaults to assert, so it is disabled by NDEBUG.
+// usable in device code. An override must not throw. Defaults to assert, so
+// it is disabled by NDEBUG.
 #ifndef CANARY_ASSERT
     #include <cassert>
     #define CANARY_ASSERT(cond) assert(cond)

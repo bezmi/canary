@@ -74,6 +74,28 @@ static_assert(std::same_as<decltype(canary::as_kind<kind::mass_fraction>(
                              std::declval<StridedView>()))::layout_type,
                            Kokkos::layout_stride>);
 
+static_assert(std::is_nothrow_default_constructible_v<canary::SpeciesIndex>);
+static_assert(std::is_nothrow_constructible_v<canary::SpeciesIndex, std::size_t>);
+static_assert(noexcept(std::declval<canary::SpeciesIndex>().value()));
+static_assert(noexcept(canary::SpeciesIndex {0} == canary::SpeciesIndex {1}));
+static_assert(std::is_nothrow_default_constructible_v<canary::OptionalSpeciesIndex>);
+static_assert(std::is_nothrow_constructible_v<canary::OptionalSpeciesIndex, canary::SpeciesIndex>);
+static_assert(noexcept(std::declval<canary::OptionalSpeciesIndex>().has_value()));
+static_assert(noexcept(bool(std::declval<canary::OptionalSpeciesIndex>())));
+static_assert(noexcept(*std::declval<canary::OptionalSpeciesIndex>()));
+static_assert(noexcept(canary::OptionalSpeciesIndex {} == canary::OptionalSpeciesIndex {}));
+static_assert(noexcept(canary::species_indices(0, 1)));
+static_assert(noexcept(std::declval<const canary::SpeciesIndexRange&>().begin()));
+static_assert(noexcept(std::declval<const canary::SpeciesIndexRange&>().end()));
+static_assert(noexcept(std::declval<const canary::SpeciesIndexRange&>().size()));
+static_assert(noexcept(*std::declval<canary::SpeciesIndexRange::iterator>()));
+static_assert(noexcept(++std::declval<canary::SpeciesIndexRange::iterator&>()));
+static_assert(noexcept(std::declval<canary::SpeciesIndexRange::iterator&>()++));
+static_assert(noexcept(canary::SpeciesIndexRange::iterator {} ==
+                       canary::SpeciesIndexRange::iterator {}));
+static_assert(noexcept(canary::SpeciesIndexRange::iterator {} ==
+                       canary::SpeciesIndexRange::sentinel {}));
+
 static_assert(sizeof(canary::SpeciesIndex) == sizeof(std::uint32_t));
 static_assert(sizeof(canary::OptionalSpeciesIndex) == sizeof(std::uint32_t));
 static_assert(alignof(canary::SpeciesIndex) == alignof(std::uint32_t));

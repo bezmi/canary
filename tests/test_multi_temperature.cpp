@@ -24,6 +24,7 @@
 #include <mdspan/mdspan.hpp>
 #include <string>
 #include <type_traits>
+#include <utility>
 
 namespace
 {
@@ -556,6 +557,11 @@ void check_derivatives(const G& gas,
 }
 
 }  // namespace
+
+static_assert(noexcept(canary::species_vibration_mode(std::declval<const Air11&>(),
+                                                      canary::SpeciesIndex {0})));
+static_assert(noexcept(canary::electron_species_index(std::declval<const Air11&>())));
+static_assert(noexcept(canary::electron_energy_mode(std::declval<const Air11&>())));
 
 static_assert(canary::ThermoStateOf<Air4::State<double>, double, si>);
 static_assert(canary::GasModel<Air4, double>);

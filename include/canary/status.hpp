@@ -25,7 +25,7 @@ enum class Status : unsigned char {
 
 // The more severe of two statuses. Commutative and associative, with Valid
 // as identity, so statuses of several steps combine in any order.
-CANARY_HOST_DEVICE constexpr Status combine(Status a, Status b) { return a < b ? b : a; }
+CANARY_HOST_DEVICE constexpr Status combine(Status a, Status b) noexcept { return a < b ? b : a; }
 
 }  // namespace canary
 

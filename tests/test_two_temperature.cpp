@@ -20,6 +20,7 @@
 #include <mdspan/mdspan.hpp>
 #include <string>
 #include <type_traits>
+#include <utility>
 
 namespace
 {
@@ -154,6 +155,11 @@ constexpr std::array<ReferenceState, 5> reference_states {
 const double gas_constant_ratio = canary::constants::universal_gas_constant<double> / 8.31451;
 
 }  // namespace
+
+static_assert(noexcept(canary::species_vibration_mode(std::declval<const Air&>(),
+                                                      canary::SpeciesIndex {0})));
+static_assert(noexcept(canary::electron_species_index(std::declval<const Air&>())));
+static_assert(noexcept(canary::electron_energy_mode(std::declval<const Air&>())));
 
 static_assert(canary::ThermoStateOf<Air::State<double>, double, si>);
 static_assert(canary::GasModel<Air, double>);

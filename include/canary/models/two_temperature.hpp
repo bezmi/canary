@@ -683,7 +683,8 @@ CANARY_HOST_DEVICE std::array<SpecificEnergy<T, U>, N>
 // holds the vibrational-electronic energy of every species.
 template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
 CANARY_HOST_DEVICE constexpr int
-  species_vibration_mode(const TwoTemperatureMixture<P, U, N, S>& /*gas*/, SpeciesIndex index)
+  species_vibration_mode(const TwoTemperatureMixture<P, U, N, S>& /*gas*/,
+                         SpeciesIndex index) noexcept
 {
     const auto i = index.value();
     return i < N ? 0 : -1;
@@ -692,13 +693,13 @@ CANARY_HOST_DEVICE constexpr int
 // The model has no free-electron species.
 template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
 CANARY_HOST_DEVICE constexpr OptionalSpeciesIndex
-  electron_species_index(const TwoTemperatureMixture<P, U, N, S>& /*gas*/)
+  electron_species_index(const TwoTemperatureMixture<P, U, N, S>& /*gas*/) noexcept
 { return {}; }
 
 // -1: the model has no free electrons.
 template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
 CANARY_HOST_DEVICE constexpr int
-  electron_energy_mode(const TwoTemperatureMixture<P, U, N, S>& /*gas*/)
+  electron_energy_mode(const TwoTemperatureMixture<P, U, N, S>& /*gas*/) noexcept
 { return -1; }
 
 // Energy per unit mass of every species in mode m (which must be 0) at

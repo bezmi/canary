@@ -29,14 +29,16 @@ namespace canary
 class SpeciesIndex
 {
   public:
-    CANARY_HOST_DEVICE constexpr SpeciesIndex() {}
-    CANARY_HOST_DEVICE constexpr explicit SpeciesIndex(std::size_t value)
+    CANARY_HOST_DEVICE constexpr SpeciesIndex() noexcept {}
+    CANARY_HOST_DEVICE constexpr explicit SpeciesIndex(std::size_t value) noexcept
     {
         CANARY_ASSERT(value < std::numeric_limits<std::uint32_t>::max());
         value_ = static_cast<std::uint32_t>(value);
     }
-    [[nodiscard]] CANARY_HOST_DEVICE constexpr std::uint32_t value() const { return value_; }
-    friend CANARY_HOST_DEVICE constexpr bool operator==(SpeciesIndex, SpeciesIndex) = default;
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr std::uint32_t value() const noexcept
+    { return value_; }
+    friend CANARY_HOST_DEVICE constexpr bool operator==(SpeciesIndex,
+                                                        SpeciesIndex) noexcept = default;
 
   private:
     std::uint32_t value_ {0};
@@ -48,21 +50,21 @@ class SpeciesIndex
 class OptionalSpeciesIndex
 {
   public:
-    CANARY_HOST_DEVICE constexpr OptionalSpeciesIndex() {}
-    CANARY_HOST_DEVICE constexpr explicit OptionalSpeciesIndex(SpeciesIndex index) :
+    CANARY_HOST_DEVICE constexpr OptionalSpeciesIndex() noexcept {}
+    CANARY_HOST_DEVICE constexpr explicit OptionalSpeciesIndex(SpeciesIndex index) noexcept :
         value_(index.value())
     {
     }
-    [[nodiscard]] CANARY_HOST_DEVICE constexpr bool has_value() const
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr bool has_value() const noexcept
     { return value_ != std::numeric_limits<std::uint32_t>::max(); }
-    CANARY_HOST_DEVICE constexpr explicit operator bool() const { return has_value(); }
-    [[nodiscard]] CANARY_HOST_DEVICE constexpr SpeciesIndex operator*() const
+    CANARY_HOST_DEVICE constexpr explicit operator bool() const noexcept { return has_value(); }
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr SpeciesIndex operator*() const noexcept
     {
         CANARY_ASSERT(has_value());
         return SpeciesIndex {value_};
     }
     friend CANARY_HOST_DEVICE constexpr bool operator==(OptionalSpeciesIndex,
-                                                        OptionalSpeciesIndex) = default;
+                                                        OptionalSpeciesIndex) noexcept = default;
 
   private:
     std::uint32_t value_ {std::numeric_limits<std::uint32_t>::max()};

@@ -1607,7 +1607,8 @@ template <std::floating_point P,
           std::size_t S,
           std::size_t L>
 CANARY_HOST_DEVICE constexpr int
-  species_vibration_mode(const MultiTemperatureMixture<P, U, N, M, S, L>& gas, SpeciesIndex index)
+  species_vibration_mode(const MultiTemperatureMixture<P, U, N, M, S, L>& gas,
+                         SpeciesIndex index) noexcept
 {
     const auto i = index.value();
     if (i >= N) { return -1; }
@@ -1625,7 +1626,7 @@ template <std::floating_point P,
           std::size_t S,
           std::size_t L>
 CANARY_HOST_DEVICE constexpr OptionalSpeciesIndex
-  electron_species_index(const MultiTemperatureMixture<P, U, N, M, S, L>& gas)
+  electron_species_index(const MultiTemperatureMixture<P, U, N, M, S, L>& gas) noexcept
 { return gas.electron; }
 
 // The mode that holds the energy of the free electrons, or -1 without free electrons.
@@ -1636,7 +1637,7 @@ template <std::floating_point P,
           std::size_t S,
           std::size_t L>
 CANARY_HOST_DEVICE constexpr int
-  electron_energy_mode(const MultiTemperatureMixture<P, U, N, M, S, L>& gas)
+  electron_energy_mode(const MultiTemperatureMixture<P, U, N, M, S, L>& gas) noexcept
 { return gas.electron_mode; }
 
 // Energy per unit mass e_i,m(T') of the components of every species i that

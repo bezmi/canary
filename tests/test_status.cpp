@@ -18,6 +18,7 @@ constexpr std::array all_statuses {
 
 }  // namespace
 
+static_assert(noexcept(canary::combine(Status::Valid, Status::Invalid)));
 static_assert(canary::combine(Status::Valid, Status::Valid) == Status::Valid);
 static_assert(canary::combine(Status::CompositionViolation, Status::NotConverged) ==
               Status::NotConverged);
