@@ -4,8 +4,6 @@
 #include <algorithm>
 #include <array>
 #include <boost/ut.hpp>
-#include <cmath>
-#include <cstddef>
 #include <canary/build.hpp>
 #include <canary/data/air5.hpp>
 #include <canary/data/air5_kim_jo.hpp>
@@ -15,12 +13,16 @@
 #include <canary/reactions.hpp>
 #include <canary/species.hpp>
 #include <canary/units.hpp>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <mdspan/mdspan.hpp>
 #include <random>
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 namespace
 {
@@ -508,6 +510,47 @@ void test_reactions()
                   << state << i << w << ref.production[i];
             }
         }
+    };
+
+    "reaction orders and dimension exponents are checked before narrowing"_test = [&] {
+        const std::intmax_t maximum = std::numeric_limits<int>::max();
+        expect(canary::detail::reaction_order(std::array {std::numeric_limits<int>::max(), 1},
+                                              true,
+                                              "reactant") == maximum + 2);
+        const auto limit = maximum / 3 + 1;
+        const auto dimension = canary::detail::rate_dimension(limit, "forward");
+        expect(dimension.length == 3 * (limit - 1));
+        expect(dimension.count == -(limit - 1));
+        for (const auto order : {std::intmax_t(0), limit + 1, maximum}) {
+            expect(error_message([&] {
+                       (void)canary::detail::rate_dimension(order, "forward");
+                   }).starts_with("forward rate: reaction order"));
+        }
+        const auto build = [&](const auto& input) {
+            (void)canary::make_reaction_mechanism(
+              input,
+              std::array<std::string_view, 5> {"N2", "O2", "N", "O", "NO"},
+              built.species,
+              si_scales);
+        };
+        auto input = canary::air5_kim_jo;
+        auto& reaction = input.reactions[0];
+        reaction.reactants = {.count = 2, .entries = {{{"N2", double(maximum)}, {"O2", 1.0}}}};
+        reaction.products = reaction.reactants;
+        expect(error_message([&] { build(input); }).find("forward rate: reaction order") !=
+               std::string::npos);
+        reaction.third_body = true;
+        expect(error_message([&] { build(input); }).find("forward rate: reaction order") !=
+               std::string::npos);
+        reaction.third_body = false;
+        reaction.reactants = {.count = 1, .entries = {{{"N2", 1.0}}}};
+        reaction.products = {.count = 2,
+                             .entries = {{{"N", double(maximum)}, {"O", double(maximum)}}}};
+        expect(error_message([&] { build(input); }).find("net stoichiometric coefficient") !=
+               std::string::npos);
+        std::swap(reaction.reactants, reaction.products);
+        expect(error_message([&] { build(input); }).find("net stoichiometric coefficient") !=
+               std::string::npos);
     };
 
     "the builder rejects invalid input with the reaction in the message"_test = [&] {

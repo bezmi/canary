@@ -36,11 +36,6 @@
 // on T_o.
 
 #include <array>
-#include <cmath>
-#include <concepts>
-#include <cstddef>
-#include <cstdint>
-#include <format>
 #include <canary/build.hpp>
 #include <canary/config.hpp>
 #include <canary/models/thermally_perfect.hpp>
@@ -49,6 +44,11 @@
 #include <canary/species.hpp>
 #include <canary/thermo.hpp>
 #include <canary/units.hpp>
+#include <cmath>
+#include <concepts>
+#include <cstddef>
+#include <cstdint>
+#include <format>
 #include <limits>
 #include <string_view>
 
@@ -234,7 +234,7 @@ std::array<int, N> stoichiometric_coefficients(const SpeciesCoefficients<K>& lis
     std::array<int, N> out {};
     for (std::size_t e = 0; e < static_cast<std::size_t>(list.count); ++e) {
         const double nu = list.entries[e].value;
-        if (!(nu >= 1.0) || !(nu <= static_cast<double>(std::numeric_limits<int>::max())) ||
+        if (!(nu >= 1.0) || !(nu < std::ldexp(1.0, std::numeric_limits<int>::digits)) ||
             nu != std::floor(nu)) {
             throw ParameterError(
               std::format("coefficient of \"{}\" in the {} must be a positive integer, got {}",
@@ -270,6 +270,37 @@ std::array<P, N> third_body_efficiencies(const SpeciesCoefficients<K>& list,
     return out;
 }
 
+// Host-side reaction orders include an optional third body. Accumulation
+// is checked before addition; stored integer coefficients remain unchanged.
+template <std::size_t N>
+std::intmax_t
+  reaction_order(const std::array<int, N>& coefficients, bool third_body, std::string_view role)
+{
+    std::intmax_t order = third_body ? 1 : 0;
+    for (const int coefficient : coefficients) {
+        if (coefficient < 0 || order > std::numeric_limits<std::intmax_t>::max() - coefficient) {
+            throw ParameterError(std::format("{} reaction order is not representable", role));
+        }
+        order += coefficient;
+    }
+    return order;
+}
+
+// The integer exponents must be representable before constructing Dimension.
+inline Dimension rate_dimension(std::intmax_t order, std::string_view role)
+{
+    constexpr std::intmax_t maximum_order = std::numeric_limits<int>::max() / 3 + 1;
+    if (order < 1 || order > maximum_order) {
+        throw ParameterError(std::format(
+          "{} rate: reaction order {} is outside the representable dimension range [1, {}]",
+          role,
+          order,
+          maximum_order));
+    }
+    const auto power = static_cast<int>(order - 1);
+    return {.length = 3 * power, .time = -1, .count = -power};
+}
+
 // Rate constant of the given order in model units. A must be finite and
 // positive, n finite, theta finite and non-negative and s finite in [0, 1].
 // A per mole in SI
@@ -278,7 +309,7 @@ std::array<P, N> third_body_efficiencies(const SpeciesCoefficients<K>& list,
 // / time. The conversion is done in double.
 template <std::floating_point P, UnitSystem U>
 ArrheniusRate<P, U> arrhenius_rate(const ArrheniusInput& input,
-                                   int order,
+                                   std::intmax_t order,
                                    const UnitScales<P, U>& scales,
                                    std::string_view role)
 {
@@ -303,11 +334,7 @@ ArrheniusRate<P, U> arrhenius_rate(const ArrheniusInput& input,
                       s_t));
     }
     const UnitScales<double, U> s = double_scales(scales);
-    const Dimension dimension {
-      .length = 3 * (order - 1),
-      .time = -1,
-      .count = -(order - 1),
-    };
+    const Dimension dimension = rate_dimension(order, role);
     const double tau = scale_factor<kind::temperature>(s);
     const double per_particle =
       input.A / std::pow(constants::avogadro<double>, static_cast<double>(order - 1));
@@ -355,21 +382,20 @@ Reaction<P, U, N> make_reaction(const ReactionInput<K>& input,
     } else if (input.efficiencies.count != 0) {
         throw ParameterError("third-body efficiencies are given without a third body");
     }
-    int reactant_order = 0;
-    int product_order = 0;
-    for (std::size_t i = 0; i < N; ++i) {
-        reactant_order += r.reactants[i];
-        product_order += r.products[i];
+    const std::intmax_t reactant_order = reaction_order(r.reactants, input.third_body, "reactant");
+    const std::intmax_t product_order = reaction_order(r.products, input.third_body, "product");
+    const std::intmax_t change = product_order - reactant_order;
+    if (change < std::numeric_limits<int>::min() || change > std::numeric_limits<int>::max()) {
+        throw ParameterError(
+          std::format("net stoichiometric coefficient {} is not representable", change));
     }
-    r.coefficient_change = product_order - reactant_order;
-    const int third_body_order = input.third_body ? 1 : 0;
-    r.forward = arrhenius_rate(input.forward, reactant_order + third_body_order, scales, "forward");
+    r.coefficient_change = static_cast<int>(change);
+    r.forward = arrhenius_rate(input.forward, reactant_order, scales, "forward");
     r.forward.other_mode = other_mode(input.forward, input.reactants, "forward");
     r.backward_model = input.backward_model;
     r.equilibrium_at_other_temperature = false;
     if (input.backward_model == BackwardRateModel::arrhenius) {
-        r.backward =
-          arrhenius_rate(input.backward, product_order + third_body_order, scales, "backward");
+        r.backward = arrhenius_rate(input.backward, product_order, scales, "backward");
         r.backward.other_mode = other_mode(input.backward, input.reactants, "backward");
     } else if (input.backward_model == BackwardRateModel::equilibrium) {
         if (input.backward.other_temperature != nullptr) {
