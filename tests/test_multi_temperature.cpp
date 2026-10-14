@@ -731,6 +731,7 @@ void test_multi_temperature()
         degrees = canary::air11_rotational_degrees;
         species[2].metadata.role = canary::SpeciesRole::electron;
         species[2].charge = -1;
+        species[2].metadata.elements = std::span<const canary::ElementCount> {};
         const auto error = air11_error(species,
                                        degrees,
                                        canary::air11_electronic_levels,

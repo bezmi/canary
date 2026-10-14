@@ -25,6 +25,15 @@
 namespace canary
 {
 
+namespace detail
+{
+inline constexpr std::array<ElementCount, 1> air5_elements_0 {{{"N", 2}}};
+inline constexpr std::array<ElementCount, 1> air5_elements_1 {{{"O", 2}}};
+inline constexpr std::array<ElementCount, 1> air5_elements_2 {{{"N", 1}}};
+inline constexpr std::array<ElementCount, 1> air5_elements_3 {{{"O", 1}}};
+inline constexpr std::array<ElementCount, 2> air5_elements_4 {{{"N", 1}, {"O", 1}}};
+}  // namespace detail
+
 // Molar masses in kg/mol, charges in elementary charges, fits in SI
 // (kelvin). Entries past a species' segment count are zero.
 inline constexpr std::array<Nasa9Species<4>, 5> air5_species {
@@ -35,7 +44,8 @@ inline constexpr std::array<Nasa9Species<4>, 5> air5_species {
       .name = "N2",
       .molar_mass = 28.0134e-3,
       .charge = 0,
-      .metadata = {.role = SpeciesRole::heavy},
+      .metadata = {.role = SpeciesRole::heavy,
+                   .elements = std::span<const ElementCount> {detail::air5_elements_0}},
       .fit =
         {
           .segments = 3,
@@ -97,7 +107,8 @@ inline constexpr std::array<Nasa9Species<4>, 5> air5_species {
       .name = "O2",
       .molar_mass = 0.03199880,
       .charge = 0,
-      .metadata = {.role = SpeciesRole::heavy},
+      .metadata = {.role = SpeciesRole::heavy,
+                   .elements = std::span<const ElementCount> {detail::air5_elements_1}},
       .fit =
         {
           .segments = 3,
@@ -159,7 +170,8 @@ inline constexpr std::array<Nasa9Species<4>, 5> air5_species {
       .name = "N",
       .molar_mass = 14.0067e-3,
       .charge = 0,
-      .metadata = {.role = SpeciesRole::heavy},
+      .metadata = {.role = SpeciesRole::heavy,
+                   .elements = std::span<const ElementCount> {detail::air5_elements_2}},
       .fit =
         {
           .segments = 4,
@@ -234,7 +246,8 @@ inline constexpr std::array<Nasa9Species<4>, 5> air5_species {
       .name = "O",
       .molar_mass = 0.01599940,
       .charge = 0,
-      .metadata = {.role = SpeciesRole::heavy},
+      .metadata = {.role = SpeciesRole::heavy,
+                   .elements = std::span<const ElementCount> {detail::air5_elements_3}},
       .fit =
         {
           .segments = 4,
@@ -309,7 +322,8 @@ inline constexpr std::array<Nasa9Species<4>, 5> air5_species {
       .name = "NO",
       .molar_mass = 0.03000610,
       .charge = 0,
-      .metadata = {.role = SpeciesRole::heavy},
+      .metadata = {.role = SpeciesRole::heavy,
+                   .elements = std::span<const ElementCount> {detail::air5_elements_4}},
       .fit =
         {
           .segments = 3,

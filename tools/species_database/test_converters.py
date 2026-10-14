@@ -16,6 +16,7 @@ import tempfile
 from pathlib import Path
 
 import yaml
+import jsonschema
 
 import species_json
 
@@ -54,7 +55,7 @@ with tempfile.TemporaryDirectory() as tmp:
             assert converted["species"]["N2"]["transport"] == shipped["N2"]["transport"]
         for name, record in converted["species"].items():
             expected = shipped[name]
-            for key in ("molar_mass", "charge", "role"):
+            for key in ("molar_mass", "charge", "role", "elements"):
                 if record[key] != expected[key]:
                     failures += 1
                     print(f"{label} {name}: {key} {record[key]} != {expected[key]}")
@@ -148,6 +149,8 @@ with tempfile.TemporaryDirectory() as tmp:
     records = json.loads(out.read_text())["species"]
     assert records["e-"]["role"] == "heavy" and records["e-"]["charge"] == 0
     assert records["carrier"]["role"] == "electron" and records["carrier"]["charge"] == -1
+    assert records["carrier"]["elements"] == {}
+    assert records["e-"]["elements"] == {"N": 1}
 
     # A GDTk-layout electron with a user-chosen label and a constant cp/R fit.
     (Path(tmp) / "carrier.lua").write_text(
@@ -402,5 +405,50 @@ with tempfile.TemporaryDirectory() as tmp:
             failures += 1
             print(f"collision-integral converter: {got} != {expected}")
     print("collision-integral converter: checked")
+
+
+
+# Species header generation preserves all three composition states.
+with tempfile.TemporaryDirectory() as tmp:
+    file = json.loads((root / "database/data/air11.json").read_text())
+    del file["species"]["N"]["elements"]
+    file["species"]["O"]["elements"] = {}
+    source = Path(tmp) / "species.json"
+    header = Path(tmp) / "species.hpp"
+    source.write_text(json.dumps(file))
+    command = [sys.executable, str(tools / "species_to_header.py"), str(source),
+               "--species", "N2", "N", "O", "e-", "--name", "example", "--thermo", "-o", str(header)]
+    subprocess.run(command, check=True)
+    text = header.read_text()
+    assert 'example_elements_0' in text and '{"N", 2}' in text
+    assert 'example_elements_1' not in text
+    assert 'std::array<ElementCount, 0> example_elements_2' in text
+    assert 'std::array<ElementCount, 0> example_elements_3' in text
+    source.write_text(json.dumps(file).replace('"elements": {"N": 2}', '"elements": {"N": 2, "\\u004e": 3}', 1))
+    result = subprocess.run(command, text=True, capture_output=True)
+    assert result.returncode and 'duplicate JSON key' in result.stderr
+    result = subprocess.run([sys.executable, str(tools / "check_species_files.py"),
+                             str(root / "database/species.schema.json"), str(source)],
+                            text=True, capture_output=True)
+    assert result.returncode and 'duplicate JSON key' in result.stderr
+print("Species elemental composition and generated metadata: checked")
+
+schema = json.loads((root / "database/species.schema.json").read_text())
+validator = jsonschema.Draft202012Validator(schema)
+file = json.loads((root / "database/data/air5.json").read_text())
+for invalid in ({"N": 0}, {"N": -1}, {"N": 1.5}, {"N": True}, {"N": "2"},
+                {"N": 4294967296}, {"": 1}, []):
+    file["species"]["N2"]["elements"] = invalid
+    assert list(validator.iter_errors(file)), invalid
+    try:
+        species_json.species_file(file["species"])
+    except SystemExit:
+        pass
+    else:
+        raise AssertionError(f"invalid element composition accepted: {invalid}")
+for valid in ({}, {"N": 2}, {"N": 4294967295}, None):
+    file["species"]["N2"]["elements"] = valid
+    assert not list(validator.iter_errors(file)), valid
+print("Element schema and import validation boundaries: checked")
 
 sys.exit(1 if failures else 0)

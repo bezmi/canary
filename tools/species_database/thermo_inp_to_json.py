@@ -46,6 +46,17 @@ def charge(record):
     return total
 
 
+def elements(record, name):
+    """Nuclear entries from the formula field; E is charge metadata."""
+    entries = []
+    for k in range(5):
+        element = record[10 + 8 * k:12 + 8 * k].strip()
+        count = record[12 + 8 * k:18 + 8 * k].strip()
+        if element and element.upper() != "E":
+            entries.append((element, species_json.number(count)))
+    return species_json.element_counts(entries, name)
+
+
 def convert(lines, name, widths):
     i, intervals = find_species(lines, name)
     record = lines[i + 1]
@@ -76,6 +87,7 @@ def convert(lines, name, widths):
     return {
         "molar_mass": species_json.kg_per_mol(record[52:65].strip()),
         "charge": charge(record),
+        "elements": elements(record, name),
         "thermo": species_json.nasa9_thermo(
             ranges, coefficients, species_json.blend_widths_for(name, ranges, widths), lines[i][18:].strip() or None
         ),

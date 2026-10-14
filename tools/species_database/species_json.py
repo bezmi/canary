@@ -84,12 +84,54 @@ def parse_roles(items, names):
     return roles
 
 
+def element_counts(entries, name):
+    """Validate nuclear counts and retain decoded element identifiers."""
+    result = {}
+    for element, count in entries:
+        if not isinstance(element, str) or not element:
+            raise SystemExit(f"{name}: element identifier must not be empty")
+        if element in result:
+            raise SystemExit(f"{name}: element {element}: given twice")
+        if isinstance(count, bool) or not isinstance(count, (int, float, Decimal)):
+            raise SystemExit(f"{name}: element {element}: count must be a positive unsigned integer")
+        if ((isinstance(count, Decimal) and not count.is_finite())
+                or not 0 < count <= 4294967295 or count != int(count)):
+            raise SystemExit(f"{name}: element {element}: count must be a positive unsigned integer")
+        result[element] = int(count)
+    return result
+
+
+def validate_elements(record, name):
+    elements = record.get("elements")
+    if elements is None:
+        return
+    if not isinstance(elements, dict):
+        raise SystemExit(f"{name}: elements must be an object")
+    validated = element_counts(elements.items(), name)
+    if record.get("role") == "electron" and validated:
+        raise SystemExit(f"{name}: free-electron elemental composition must be empty")
+
+
+def load(path):
+    """Read JSON without silently replacing duplicate object keys."""
+    def unique_object(entries):
+        out = {}
+        for key, value in entries:
+            if key in out:
+                raise SystemExit(f"{path}: duplicate JSON key {key!r}")
+            out[key] = value
+        return out
+    with open(path, encoding="utf-8") as stream:
+        return json.load(stream, object_pairs_hook=unique_object)
+
+
 def species_file(species, reference=None, notes=None):
     for name, record in species.items():
         if record.get("role") not in ("heavy", "electron"):
             raise SystemExit(f"{name}: role must be heavy or electron")
         if record["role"] == "electron" and record["charge"] != -1:
             raise SystemExit(f"{name}: electron role requires charge -1")
+        validate_elements(record, name)
     out = {"format": FORMAT, "units": UNITS, "species": species}
     if reference:
         out["reference"] = reference

@@ -102,6 +102,7 @@ void test_thermally_perfect()
         inputs[0].metadata.role = canary::SpeciesRole::electron;
         check(inputs, "species N2: charge must be -1");
         inputs[0].charge = -1;
+        inputs[0].metadata.elements = std::span<const canary::ElementCount> {};
         inputs[1].metadata.role = canary::SpeciesRole::electron;
         inputs[1].charge = -1;
         check(inputs, "species O2: more than one electron-role species");

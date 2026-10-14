@@ -165,6 +165,19 @@ def convert(path, name, with_transport=False, with_electronic=False):
         "charge": species_json.number(charge.group(1)) if charge else 0.0,
         "thermo": species_json.nasa9_thermo(ranges, coefficients, blends, quoted(thermo, "ref") or quoted(thermo, "reference")),
     }
+    if re.search(rf"{entry(name)}\.atomicConstituents\s*=", text):
+        body = table(text, name, "atomicConstituents")
+        entries = []
+        for item in body.split(","):
+            if not item.strip():
+                continue
+            match = re.fullmatch(r"\s*([A-Za-z][A-Za-z0-9_]*)\s*=\s*([0-9.eE+-]+)\s*", item)
+            if not match:
+                raise SystemExit(f"{name}: invalid atomicConstituents entry {item!r}")
+            element, count = match.groups()
+            if element != "E":
+                entries.append((element, species_json.number(count)))
+        record["elements"] = species_json.element_counts(entries, name)
     if with_transport:
         record["transport"] = transport(text, name)
     if with_electronic and re.search(rf"{entry(name)}\.electronic_levels\s*=", text):

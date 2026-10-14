@@ -147,7 +147,10 @@
             ],
             "reference": "NIST, as in the GDTk species database"
          },
-         "notes": "molar mass: from CEA2::thermo.inp"
+         "notes": "molar mass: from CEA2::thermo.inp",
+         "elements": {
+            "N": 2
+         }
       },
       "O2": {
          "role": "heavy",
@@ -286,7 +289,10 @@
             ],
             "reference": "NIST, as in the GDTk species database"
          },
-         "notes": "molar mass: from CEA2::thermo.inp"
+         "notes": "molar mass: from CEA2::thermo.inp",
+         "elements": {
+            "O": 2
+         }
       },
       "N": {
          "role": "heavy",
@@ -427,7 +433,10 @@
             ],
             "reference": "NIST, as in the GDTk species database"
          },
-         "notes": "molar mass: CEA2::thermo.inp"
+         "notes": "molar mass: CEA2::thermo.inp",
+         "elements": {
+            "N": 1
+         }
       },
       "O": {
          "role": "heavy",
@@ -566,7 +575,10 @@
             ],
             "reference": "NIST, as in the GDTk species database"
          },
-         "notes": "molar mass: CEA2::thermo.inp"
+         "notes": "molar mass: CEA2::thermo.inp",
+         "elements": {
+            "O": 1
+         }
       },
       "NO": {
          "role": "heavy",
@@ -705,7 +717,11 @@
             ],
             "reference": "NIST, as in the GDTk species database"
          },
-         "notes": "molar mass: CEA2::thermo.inp"
+         "notes": "molar mass: CEA2::thermo.inp",
+         "elements": {
+            "N": 1,
+            "O": 1
+         }
       }
    },
    "reference": "GDTk species database (gdtk-uq/gdtk commit bf559c3f, src/gas/species-database); fits: NASA CEA2 thermo.inp (McBride, Zehe and Gordon, NASA/TP-2002-211556) for N2, O2, NO and Johnston et al., AIAA Paper 2015-3110 for N and O; transport: NASA CEA trans.inp fits as in the GDTk database, Lennard-Jones parameters from GRI-Mech 3.0 (Svehla 1962 for N); electronic levels: NIST, as in the GDTk database"

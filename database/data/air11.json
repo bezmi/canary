@@ -81,7 +81,10 @@
             ],
             "reference": "NIST, as in the GDTk species database"
          },
-         "notes": "molar mass: from CEA2::thermo.inp"
+         "notes": "molar mass: from CEA2::thermo.inp",
+         "elements": {
+            "N": 2
+         }
       },
       "O2": {
          "role": "heavy",
@@ -154,7 +157,10 @@
             ],
             "reference": "NIST, as in the GDTk species database"
          },
-         "notes": "molar mass: from CEA2::thermo.inp"
+         "notes": "molar mass: from CEA2::thermo.inp",
+         "elements": {
+            "O": 2
+         }
       },
       "N": {
          "role": "heavy",
@@ -244,7 +250,10 @@
             "reference": "NIST, as in the GDTk species database"
          },
          "notes": "molar mass: CEA2::thermo.inp",
-         "ionisation_energy": 1402330.360173364
+         "ionisation_energy": 1402330.360173364,
+         "elements": {
+            "N": 1
+         }
       },
       "O": {
          "role": "heavy",
@@ -332,7 +341,10 @@
             "reference": "NIST, as in the GDTk species database"
          },
          "notes": "molar mass: CEA2::thermo.inp",
-         "ionisation_energy": 1313942.077121842
+         "ionisation_energy": 1313942.077121842,
+         "elements": {
+            "O": 1
+         }
       },
       "NO": {
          "role": "heavy",
@@ -405,7 +417,11 @@
             ],
             "reference": "NIST, as in the GDTk species database"
          },
-         "notes": "molar mass: CEA2::thermo.inp"
+         "notes": "molar mass: CEA2::thermo.inp",
+         "elements": {
+            "N": 1,
+            "O": 1
+         }
       },
       "N+": {
          "role": "heavy",
@@ -492,7 +508,10 @@
             ],
             "reference": "NIST, as in the GDTk species database"
          },
-         "notes": "molar mass: CEA2::thermo.inp"
+         "notes": "molar mass: CEA2::thermo.inp",
+         "elements": {
+            "N": 1
+         }
       },
       "O+": {
          "role": "heavy",
@@ -579,7 +598,10 @@
             ],
             "reference": "NIST, as in the GDTk species database"
          },
-         "notes": "molar mass: CEA2::therm.inp"
+         "notes": "molar mass: CEA2::therm.inp",
+         "elements": {
+            "O": 1
+         }
       },
       "N2+": {
          "role": "heavy",
@@ -651,7 +673,10 @@
             ],
             "reference": "NIST, as in the GDTk species database"
          },
-         "notes": "molar mass: from CEA2::thermo.inp"
+         "notes": "molar mass: from CEA2::thermo.inp",
+         "elements": {
+            "N": 2
+         }
       },
       "O2+": {
          "role": "heavy",
@@ -720,7 +745,10 @@
             ],
             "reference": "NIST, as in the GDTk species database"
          },
-         "notes": "molar mass: CEA2::thermo.inp"
+         "notes": "molar mass: CEA2::thermo.inp",
+         "elements": {
+            "O": 2
+         }
       },
       "NO+": {
          "role": "heavy",
@@ -796,7 +824,11 @@
             "reference": "NIST, as in the GDTk species database",
             "notes": "the source lists 8 degeneracies and 7 level energies; the first 7 of each are used, as GDTk does"
          },
-         "notes": "molar mass: CEA2::thermo.inp"
+         "notes": "molar mass: CEA2::thermo.inp",
+         "elements": {
+            "N": 1,
+            "O": 1
+         }
       },
       "e-": {
          "role": "electron",
@@ -850,7 +882,8 @@
                ]
             ]
          },
-         "notes": "molar mass: CEA2::therm.inp"
+         "notes": "molar mass: CEA2::therm.inp",
+         "elements": {}
       }
    },
    "reference": "GDTk species database (gdtk-uq/gdtk commit bf559c3f, src/gas/species-database); thermo fits as cited per species (NASA CEA2 thermo.inp, Johnston et al. AIAA Paper 2015-3110); electronic levels: NIST, as in the GDTk database; ionisation energies of N (14.53413 eV) and O (13.61805 eV): NIST Atomic Spectra Database"

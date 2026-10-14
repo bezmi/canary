@@ -12,6 +12,8 @@ import sys
 
 import jsonschema
 
+import species_json
+
 
 def groups(arguments):
     group = []
@@ -37,7 +39,7 @@ for schema_path, *paths in argument_groups:
     schema = json.loads(open(schema_path, encoding="utf-8").read())
     jsonschema.Draft202012Validator.check_schema(schema)
     for path in paths:
-        data = json.loads(open(path, encoding="utf-8").read())
+        data = species_json.load(path)
         errors = list(jsonschema.Draft202012Validator(schema).iter_errors(data))
         for error in errors:
             print(f"{path}: {'/'.join(map(str, error.path))}: {error.message}")

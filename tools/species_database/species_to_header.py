@@ -14,8 +14,9 @@ Usage: species_to_header.py species.json --species N2 O2 ... --name air11
 """
 
 import argparse
-import json
 from pathlib import Path
+
+import species_json
 
 from reactions_to_header import comment, number, string
 
@@ -35,10 +36,14 @@ def padded(values, size, zero):
     return values + [zero] * (size - len(values))
 
 
-def thermo_entry(name, record, segments):
+def thermo_entry(name, record, segments, elements_name=None):
     role = record.get("role")
     if role not in ("heavy", "electron"):
         raise SystemExit(f"{name}: role must be heavy or electron")
+    species_json.validate_elements(record, name)
+    metadata = f".role = SpeciesRole::{role}"
+    if elements_name is not None:
+        metadata += f", .elements = std::span<const ElementCount>{{detail::{elements_name}}}"
     thermo = record["thermo"]
     if thermo["model"] != "nasa9":
         raise SystemExit(f"{name}: thermo model must be nasa9")
@@ -51,7 +56,7 @@ def thermo_entry(name, record, segments):
         f".name = {string(name)},",
         f".molar_mass = {number(record['molar_mass'])},",
         f".charge = {number(record['charge'])},",
-        f".metadata = {{.role = SpeciesRole::{role}}},",
+        f".metadata = {{{metadata}}},",
         f".fit = {{.segments = {count}, .breaks = {array(number(x) for x in breaks)}, "
         f".blends = {array(number(x) for x in blends)}, "
         f".a = {{{{{', '.join(array(number(x) for x in row) for row in rows)},}},}},}},",
@@ -84,7 +89,7 @@ def main():
     parser.add_argument("-o", "--output", required=True)
     args = parser.parse_args()
 
-    data = json.loads(Path(args.species_file).read_text(encoding="utf-8"))
+    data = species_json.load(args.species_file)
     if data["format"] != FORMAT:
         raise SystemExit(f"{args.species_file}: not a {FORMAT} file")
     species = data["species"]
@@ -95,11 +100,25 @@ def main():
     count = len(args.species)
     if args.thermo:
         includes.append("#include <canary/models/thermally_perfect.hpp>")
+        includes.append("#include <span>")
+        element_names = {}
+        element_arrays = []
+        for i, name in enumerate(args.species):
+            record = species[name]
+            species_json.validate_elements(record, name)
+            if record.get("elements") is not None:
+                identifier = f"{args.name}_elements_{i}"
+                element_names[name] = identifier
+                elements = species_json.element_counts(record["elements"].items(), name)
+                values = [f"{{{string(e)}, {n}}}" for e, n in elements.items()]
+                element_arrays.append(f"inline constexpr std::array<ElementCount, {len(values)}> {identifier} {array(values)};")
+        if element_arrays:
+            blocks.append("namespace detail\n{\n" + "\n".join(element_arrays) + "\n}  // namespace detail")
         blocks.append(f"""// NASA-9 data of {", ".join(args.species)}, in this order: molar masses in
 // kg/mol, charges in elementary charges, fits in SI (kelvin); entries past a
 // species' segment count are zero.
 inline constexpr std::array<Nasa9Species<{args.segments}>, {count}> {args.name}_species {{{{
-{chr(10).join(thermo_entry(n, species[n], args.segments) for n in args.species)}
+{chr(10).join(thermo_entry(n, species[n], args.segments, element_names.get(n)) for n in args.species)}
 }},}};""")
     if args.electronic:
         includes.append("#include <canary/models/multi_temperature.hpp>")

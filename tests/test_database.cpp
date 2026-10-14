@@ -644,6 +644,81 @@ int main()
         });
     };
 
+    "element objects preserve missing empty and populated composition"_test = [] {
+        static_assert(!std::is_convertible_v<std::string, db::ElementName>);
+        auto file = db::read_species_file(air11_path());
+        expect(file.species.at("N2").elements->entries ==
+               db::ElementComposition {{{db::ElementName {"N"}, 2}}}.entries);
+        expect(file.species.at("e-").elements.has_value());
+        expect(file.species.at("e-").elements->entries.empty());
+        file.species.at("N").elements.reset();
+        file.species.at("O").elements = db::ElementComposition {};
+        const auto text = db::write_species(file);
+        expect(db::parse_species(text) == file);
+        const auto owner = [&] {
+            auto source = db::parse_species(text);
+            const auto converted = db::nasa9_species<4>(source, air11_names);
+            source.species.clear();
+            return converted;
+        }();
+        canary::detail::with_input(owner, [&](const auto& input) {
+            expect((*input[0].metadata.elements)[0].element == "N");
+            expect((*input[0].metadata.elements)[0].count == 2_u);
+            expect(!input[2].metadata.elements.has_value());
+            expect(input[3].metadata.elements.has_value() && input[3].metadata.elements->empty());
+            expect(input[10].metadata.elements.has_value() && input[10].metadata.elements->empty());
+        });
+        const auto built =
+          canary::make_thermally_perfect_mixture(owner, canary::UnitScales<double, canary::si> {});
+        expect(built.species.n == 11_u);
+    };
+
+    "element objects reject invalid counts identifiers and repeated decoded keys"_test = [] {
+        auto file = db::read_species_file(air5_path());
+        for (auto& [name, record] : file.species) { record.elements.reset(); }
+        const auto base = db::write_species(file);
+        const auto with_elements = [&](std::string_view elements) {
+            auto text = base;
+            const auto position = text.find("\"thermo\"");
+            text.insert(position, "\"elements\": " + std::string(elements) + ",");
+            return text;
+        };
+        for (const std::string_view invalid : {R"({"N":0})",
+                                               R"({"N":-1})",
+                                               R"({"N":1.5})",
+                                               R"({"N":4294967296})",
+                                               R"({"N":true})",
+                                               R"({"N":"2"})",
+                                               R"({"":1})",
+                                               R"({"N":2,"N":3})",
+                                               R"({"N":2,"\u004e":3})",
+                                               R"([{"N":2}])"}) {
+            expect(throws_database_error([&] { (void)db::parse_species(with_elements(invalid)); }))
+              << invalid;
+        }
+        expect(nothrow([&] { (void)db::parse_species(with_elements(R"({"N":4294967295})")); }));
+        for (const std::string_view duplicate : {R"({"N":2,"N":3})", R"({"N":2,"\u004e":3})"}) {
+            try {
+                (void)db::parse_species(with_elements(duplicate));
+                expect(false) << "duplicate element accepted";
+            } catch (const db::DatabaseError& error) {
+                expect(std::string_view(error.what()).find("element N: given twice") !=
+                       std::string_view::npos);
+            }
+        }
+        auto& entries = file.species.at("N2").elements.emplace().entries;
+        entries = {{db::ElementName {"N"}, 2}, {db::ElementName {"N"}, 3}};
+        expect(throws_database_error([&] { (void)db::write_species(file); }));
+        const auto owner = db::nasa9_species<4>(file, air5_names);
+        expect(throws_parameter_error([&] {
+            (void)canary::make_thermally_perfect_mixture(owner,
+                                                         canary::UnitScales<double, canary::si> {});
+        }));
+        auto electrons = db::read_species_file(air11_path());
+        electrons.species.at("e-").elements = db::ElementComposition {{{db::ElementName {"N"}, 1}}};
+        expect(throws_database_error([&] { (void)db::write_species(electrons); }));
+    };
+
     "the shipped schema is the schema of the current file structs"_test = [] {
         expect(db::species_schema() == read_text(source_path("database/species.schema.json")));
     };
@@ -658,6 +733,15 @@ int main()
                 expect(std::string_view(a.name) == std::string_view(b.name));
                 expect(a.molar_mass == b.molar_mass && a.charge == b.charge) << b.name;
                 expect(a.metadata.role == b.metadata.role) << b.name;
+                expect(a.metadata.elements.has_value() == b.metadata.elements.has_value());
+                if (a.metadata.elements && b.metadata.elements) {
+                    expect(a.metadata.elements->size() == b.metadata.elements->size());
+                    for (std::size_t e = 0; e < a.metadata.elements->size(); ++e) {
+                        expect((*a.metadata.elements)[e].element ==
+                               (*b.metadata.elements)[e].element);
+                        expect((*a.metadata.elements)[e].count == (*b.metadata.elements)[e].count);
+                    }
+                }
                 expect(a.fit.segments == b.fit.segments) << b.name;
                 const auto n = static_cast<std::size_t>(b.fit.segments);
                 for (std::size_t k = 0; k <= n; ++k) {

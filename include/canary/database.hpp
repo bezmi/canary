@@ -18,6 +18,7 @@
 //         "molar_mass": 0.0280134,
 //         "charge": 0,
 //         "role": "heavy",
+//         "elements": {"N": 2},
 //         "thermo": {
 //           "model": "nasa9",
 //           "temperature_ranges": [200, 1000, 6000, 20000],
@@ -40,9 +41,12 @@
 //     "reference": "...", "notes": "..."
 //   }
 // "reference" and "notes" are optional everywhere, and so are "transport",
-// each of its three records, and "electronic_levels"; every other key is required, and unknown
-// keys are errors. Numbers are written in the shortest form that reads back
-// to the same double.
+// each of its three records, "electronic_levels", "ionisation_energy" and
+// "elements". Element composition maps nonempty element identifiers to positive
+// unsigned counts. Missing or null composition is unknown; {} explicitly specifies no
+// nuclear elements. Duplicate element identifiers are errors. Every other key is required, and
+// unknown keys are errors. Numbers are written in the shortest form that reads back to the same
+// double.
 //
 // Collision-integral files hold curve fits of the collision integrals
 // pi Omega(1,1) and pi Omega(2,2) of species pairs (Gupta et al. 1990 form)
@@ -153,6 +157,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace canary::database
@@ -233,13 +238,31 @@ struct ElectronicLevelsRecord {
     friend bool operator==(const ElectronicLevelsRecord&, const ElectronicLevelsRecord&) = default;
 };
 
+// Owning element identifier used only in host database records.
+struct ElementName {
+    std::string value;
+    ElementName() = default;
+    explicit ElementName(std::string_view name) : value(name) {}
+    friend bool operator==(const ElementName&, const ElementName&) = default;
+};
+
+// Nuclear composition serialized as a JSON object. Entries preserve duplicate
+// decoded identifiers so validation can reject them before model construction.
+// Counts must be positive; identifiers must be nonempty and distinct.
+struct ElementComposition {
+    std::vector<std::pair<ElementName, unsigned>> entries;
+    friend bool operator==(const ElementComposition&, const ElementComposition&) = default;
+};
+
 // One species: molar mass in kg/mol, charge in elementary charges, thermo
 // data, explicit heavy/electron role and optionally transport data, electronic levels and the
-// ionisation energy in J/mol.
+// ionisation energy in J/mol. Missing elements mean unknown composition; a
+// present empty composition specifies no nuclear elements.
 struct SpeciesRecord {
     double molar_mass {};
     double charge {};
     SpeciesRole role {SpeciesRole::unspecified};
+    std::optional<ElementComposition> elements;
     ThermoRecord thermo;
     std::optional<TransportRecord> transport;
     std::optional<ElectronicLevelsRecord> electronic_levels;
@@ -546,17 +569,19 @@ class DatabaseError : public std::runtime_error
     using std::runtime_error::runtime_error;
 };
 
-// The species file in json. Throws DatabaseError.
+// The species file in json. Checks the format, units, roles and element
+// composition, including duplicate decoded element keys. Throws DatabaseError.
 SpeciesFile parse_species(std::string_view json);
 
 // The species file at path. Throws DatabaseError.
 SpeciesFile read_species_file(const std::filesystem::path& path);
 
-// file as indented JSON.
+// file as indented JSON. Checks the same metadata as parse_species and throws
+// DatabaseError for invalid metadata or serialization errors.
 std::string write_species(const SpeciesFile& file);
 
-// Writes file as indented JSON to path. Throws DatabaseError when the file
-// cannot be written.
+// Writes file as indented JSON to path. Validates and serializes before opening
+// the destination. Throws DatabaseError for invalid metadata or write failures.
 void write_species_file(const std::filesystem::path& path, const SpeciesFile& file);
 
 // JSON Schema of species files.
@@ -644,6 +669,23 @@ template <std::size_t S> Nasa9Data<S> nasa9_data(const ThermoRecord& thermo)
     return data;
 }
 
+namespace detail
+{
+
+// The descriptors borrow names from composition; keep it unchanged until the
+// consuming construction or validation call finishes.
+inline std::vector<ElementCount> element_views(const ElementComposition& composition)
+{
+    std::vector<ElementCount> out;
+    out.reserve(composition.entries.size());
+    for (const auto& [element, count] : composition.entries) {
+        out.push_back({element.value, count});
+    }
+    return out;
+}
+
+}  // namespace detail
+
 // Converted inputs own their numeric values and all required names/labels.
 // Source files may be modified or destroyed after conversion. Builders accept
 // these owners directly; borrowed views are internal to construction.
@@ -657,17 +699,23 @@ OwnedInput<std::array<Nasa9Species<S>, N>>
   nasa9_species(const SpeciesFile& file, const std::array<std::string_view, N>& names)
 {
     std::array<Nasa9Species<S>, N> out {};
+    std::array<std::vector<ElementCount>, N> elements;
     for (const SpeciesIndex i : species_indices(0, N)) {
         const auto entry = file.species.find(std::string(names[i.value()]));
         if (entry == file.species.end()) {
             throw DatabaseError(std::format("species \"{}\" is not in the file", names[i.value()]));
         }
         try {
+            SpeciesMetadataView metadata {.role = entry->second.role};
+            if (entry->second.elements) {
+                elements[i.value()] = detail::element_views(*entry->second.elements);
+                metadata.elements = std::span<const ElementCount> {elements[i.value()]};
+            }
             out[i.value()] = Nasa9Species<S> {
               .name = entry->first.c_str(),
               .molar_mass = entry->second.molar_mass,
               .charge = entry->second.charge,
-              .metadata = {.role = entry->second.role},
+              .metadata = metadata,
               .fit = nasa9_data<S>(entry->second.thermo),
             };
         } catch (const ParameterError& error) {

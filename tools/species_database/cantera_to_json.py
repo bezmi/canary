@@ -39,6 +39,8 @@ def convert(entry, weights, widths):
     ranges = [float(t) for t in thermo["temperature-ranges"]]
     coefficients = [[float(a) for a in row] for row in thermo["data"]]
     return {
+        "elements": species_json.element_counts(
+            ((e, Decimal(str(n))) for e, n in composition.items() if e != "E"), name),
         "molar_mass": mass,
         "charge": -float(composition["E"]) if "E" in composition else 0.0,
         "thermo": species_json.nasa9_thermo(

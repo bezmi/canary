@@ -14,6 +14,15 @@ template <> struct glz::meta<canary::SpeciesRole> {
     static constexpr auto value = glz::enumerate(heavy, electron);
 };
 
+template <> struct glz::meta<canary::database::ElementName> {
+    using mimic = std::string;
+    static constexpr auto value = &canary::database::ElementName::value;
+};
+
+template <> struct glz::meta<canary::database::ElementComposition> {
+    static constexpr auto value = &canary::database::ElementComposition::entries;
+};
+
 namespace canary::database::detail
 {
 
@@ -61,6 +70,16 @@ void check_header(const SpeciesFile& file)
         if (record.role == SpeciesRole::electron && record.charge != -1.0) {
             throw DatabaseError(std::format("species {}: electron role requires charge -1", name));
         }
+        if (record.elements) {
+            const auto elements = detail::element_views(*record.elements);
+            try {
+                canary::detail::check_species_metadata(
+                  {.role = record.role, .elements = std::span<const ElementCount> {elements}},
+                  record.charge);
+            } catch (const ParameterError& error) {
+                throw DatabaseError(std::format("species {}: {}", name, error.what()));
+            }
+        }
     }
 }
 
@@ -89,11 +108,27 @@ SpeciesFile read_species_file(const std::filesystem::path& path)
     }
 }
 
-std::string write_species(const SpeciesFile& file) { return detail::write_json(file, "species"); }
+std::string write_species(const SpeciesFile& file)
+{
+    check_header(file);
+    return detail::write_json(file, "species");
+}
 
 void write_species_file(const std::filesystem::path& path, const SpeciesFile& file)
 { detail::write_text(path, write_species(file)); }
 
-std::string species_schema() { return detail::json_schema<SpeciesFile>("species"); }
+std::string species_schema()
+{
+    auto schema = glz::read_json<glz::generic>(detail::json_schema<SpeciesFile>("species"));
+    if (!schema) {
+        throw DatabaseError(std::format("cannot read generated species schema: {}",
+                                        glz::format_error(schema.error())));
+    }
+    auto& elements = (*schema)["properties"]["species"]["additionalProperties"]["properties"]
+                              ["elements"]["anyOf"][0];
+    elements["propertyNames"] = glz::generic {{"minLength", 1}};
+    elements["additionalProperties"]["minimum"] = 1;
+    return detail::write_json(*schema, "species schema");
+}
 
 }  // namespace canary::database

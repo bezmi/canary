@@ -4,6 +4,7 @@
 -- five-species air; Lennard-Jones parameters from GRI-Mech 3.0.
 db.N2 = {}
 db.N2.charge = 0
+db.N2.atomicConstituents = {N=2}
 db.N2.M = {
    value = 28.0134e-3,
    units = 'kg/mol',
