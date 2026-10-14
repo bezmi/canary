@@ -25,6 +25,11 @@ template <typename A, typename B>
 concept MultipliableWith = requires(A a, B b) { a * b; };
 
 template <typename Ratio>
+concept HasSoundSpeedRelation = requires(Ratio ratio) {
+    canary::sound_speed(ratio, canary::Pressure<double, si> {1}, canary::Density<double, si> {1});
+};
+
+template <typename Ratio>
 concept HasCaloricallyPerfectRelation =
   requires(Ratio ratio) { canary::pressure(ratio, canary::EnergyDensity<double, si> {1}); } ||
   requires(Ratio ratio) { canary::energy_density(ratio, canary::Pressure<double, si> {1}); } ||
@@ -54,6 +59,12 @@ static_assert(
 static_assert(!AddableWith<canary::AcousticExponent<double>, canary::HeatCapacityRatio<double>>);
 static_assert(HasCaloricallyPerfectRelation<canary::HeatCapacityRatio<double>>);
 static_assert(!HasCaloricallyPerfectRelation<canary::AcousticExponent<double>>);
+
+static_assert(HasSoundSpeedRelation<canary::AcousticExponent<double>>);
+static_assert(!HasSoundSpeedRelation<canary::HeatCapacityRatio<double>>);
+static_assert(noexcept(canary::sound_speed(std::declval<canary::AcousticExponent<double>>(),
+                                           std::declval<canary::Pressure<double, si>>(),
+                                           std::declval<canary::Density<double, si>>())));
 
 // Construction is explicit only.
 static_assert(!std::convertible_to<double, canary::Density<double, si>>);
@@ -185,7 +196,7 @@ void test_quantity()
     };
 
     "sound speed from heat capacity ratio, pressure and density"_test = [] {
-        const KindOf<kind::sound_speed> auto a = canary::sound_speed(HeatCapacityRatio {1.4},
+        const KindOf<kind::sound_speed> auto a = canary::sound_speed(canary::AcousticExponent {1.4},
                                                                      Pressure<double, si> {1.0e5},
                                                                      Density<double, si> {1.2});
         expect(a.value() == std::sqrt(1.4 * 1.0e5 / 1.2));
@@ -277,7 +288,7 @@ void test_quantity()
         expect(e.value().dual() == -0.75_d);
         const auto p = canary::pressure(HeatCapacityRatio {1.4}, rho_e);
         const auto a =
-          canary::sound_speed(HeatCapacityRatio {1.4}, p, rho);  // da/drho = -a/(2 rho)
+          canary::sound_speed(canary::AcousticExponent {1.4}, p, rho);  // da/drho = -a/(2 rho)
         expect(std::abs(a.value().dual() + (a.value().real() / 4.0)) <=
                4.0 * 0x1p-52 * a.value().real());
         const auto rho_sum = rho + Density<double, si> {1.0};

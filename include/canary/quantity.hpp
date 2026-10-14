@@ -279,14 +279,15 @@ template <Scalar A, Scalar B, UnitSystem U>
 CANARY_HOST_DEVICE constexpr auto temperature(SpecificEnergy<A, U> e, SpecificHeat<B, U> cv)
 { return detail::make_quantity<kind::temperature, U>(e.value() / cv.value()); }
 
-// a = sqrt((gamma * p) / rho)
+// a = sqrt((acoustic_exponent * p) / rho)
 template <Scalar G, Scalar A, Scalar B, UnitSystem U>
     requires ScalarPair<G, A> && ScalarPair<detail::product_t<G, A>, B> &&
              HasSqrt<detail::quotient_t<detail::product_t<G, A>, B>>
-CANARY_HOST_DEVICE auto sound_speed(HeatCapacityRatio<G> gamma, Pressure<A, U> p, Density<B, U> rho)
+CANARY_HOST_DEVICE auto
+  sound_speed(AcousticExponent<G> acoustic_exponent, Pressure<A, U> p, Density<B, U> rho) noexcept
 {
     return detail::make_quantity<kind::sound_speed, U>(
-      math::sqrt(gamma.value() * p.value() / rho.value()));
+      math::sqrt(acoustic_exponent.value() * p.value() / rho.value()));
 }
 
 // e = rho_e / rho

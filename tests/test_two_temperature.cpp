@@ -193,6 +193,31 @@ void test_two_temperature()
     const AirSingle single = canary::make_air5<double>(canary::UnitScales<double, si> {}).model;
     const double r = gas_constant_ratio;
 
+    "two-temperature properties expose separate energy derivatives"_test = [&] {
+        const std::array<D, 5> y {D(0.7), D(0.2), D(0.05), D(0.03), D(0.02)};
+        const auto mix = mixture(gas, fractions(y));
+        const std::array<D, 1> modes {D(5000)};
+        const auto heavy = thermo_state(gas,
+                                        mix,
+                                        canary::Density<D, si> {D(0.01)},
+                                        canary::Temperature<D, si> {D(4000, 1)},
+                                        mode_temperatures<si>(modes));
+        const auto props = canary::properties(gas, mix, heavy.state);
+        static_assert(canary::MultiTemperaturePropertiesOf<decltype(props), D, si>);
+        static_assert(noexcept(canary::properties(gas, mix, heavy.state)));
+        expect(relative(props.cv_heavy.value().real(), heavy.state.e.value().dual(), 1.0e-11));
+        const std::array<D, 1> seeded_modes {D(5000, 1)};
+        const auto mode = thermo_state(gas,
+                                       mix,
+                                       canary::Density<D, si> {D(0.01)},
+                                       canary::Temperature<D, si> {D(4000)},
+                                       mode_temperatures<si>(seeded_modes));
+        expect(
+          relative(props.mode_cv[0].value().real(), mode.state.mode_e[0].value().dual(), 1.0e-11));
+        expect(props.gas_constant_electron.value().real() == 0.0);
+        expect(props.gas_constant_heavy == mix.gas_constant);
+    };
+
     "two-temperature closures validate pressure with and without explicit modes"_test = [&] {
         const auto check = [&]<typename V> {
             const std::array<V, 5> y {V(1), V(0), V(0), V(0), V(0)};
@@ -341,8 +366,8 @@ void test_two_temperature()
                 << ref.temp << ref.t_ve << c.state.mode_e[0].value() << r * ref.u_ve;
               expect(c.state.mode_temp[0].value() == ref.t_ve);
               const auto props = canary::properties(gas, mix, c.state);
-              expect(relative(props.sound_speed.value(), std::sqrt(r) * ref.a, 1.0e-10))
-                << ref.temp << props.sound_speed.value() << std::sqrt(r) * ref.a;
+              expect(relative(props.acoustics.sound_speed.value(), std::sqrt(r) * ref.a, 1.0e-10))
+                << ref.temp << props.acoustics.sound_speed.value() << std::sqrt(r) * ref.a;
           }
       };
 

@@ -90,7 +90,7 @@ static_assert(!canary::ThermoStateOf<canary::ThermoState<double, si>, float, si>
 static_assert(!canary::ThermoStateOf<NoTemperature, double, si>);
 static_assert(std::is_trivially_copyable_v<canary::ThermoState<double, si>>);
 static_assert(std::is_trivially_copyable_v<canary::Closure<double, si>>);
-static_assert(std::is_trivially_copyable_v<canary::Properties<float, scaled>>);
+static_assert(std::is_trivially_copyable_v<canary::SingleTemperatureProperties<float, scaled>>);
 static_assert(canary::ThermoStateOf<canary::MultiTemperatureState<double, si, 1>, double, si>);
 static_assert(canary::ThermoStateOf<canary::MultiTemperatureState<D, scaled, 2>, D, scaled>);
 static_assert(!canary::ThermoStateOf<canary::MultiTemperatureState<double, si, 1>, double, scaled>);

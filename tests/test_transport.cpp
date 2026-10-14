@@ -1,4 +1,5 @@
 #include "dual.hpp"
+#include "test_models.hpp"
 #include "test_suites.hpp"
 
 #include <array>
@@ -72,6 +73,14 @@ static_assert(canary::TransportModel<SutherlandAir, AirMixture, double>);
 static_assert(
   !canary::TransportModel<SutherlandAir, canary::CaloricallyPerfect<double, scaled>, double>);
 static_assert(std::is_trivially_copyable_v<SutherlandAir>);
+static_assert(canary::TransportModel<SutherlandAir, canary::test::IdealGas, D>);
+
+template <typename Props>
+concept PrandtlProperties =
+  requires(const Props& props) { canary::conductivity(prandtl, Mu {1}, props); };
+static_assert(PrandtlProperties<canary::test::IdealProperties<double>>);
+static_assert(!PrandtlProperties<canary::MultiTemperatureProperties<double, si, 2>>);
+static_assert(!PrandtlProperties<canary::SingleTemperatureProperties<double, scaled>>);
 
 void test_transport()
 {
@@ -197,9 +206,9 @@ void test_transport()
                 compare(power, scaled_power);
                 compare(sutherland_law, scaled_sutherland);
             }
-            canary::Properties<P, si> properties {};
+            canary::SingleTemperatureProperties<P, si> properties {};
             properties.cp = canary::SpecificHeat<P, si> {P(1004.5)};
-            canary::Properties<P, scaled> scaled_properties {};
+            canary::SingleTemperatureProperties<P, scaled> scaled_properties {};
             scaled_properties.cp = canary::SpecificHeat<P, scaled> {canary::convert<scaled>(
               canary::SpecificHeat<double, si> {double(properties.cp.value())},
               scales)};
@@ -256,13 +265,25 @@ void test_transport()
         expect(mu.real() == 1.8e-5 && mu.dual() == 0.0);
     };
 
+    "transport accepts caller-owned single-temperature properties"_test = [] {
+        const canary::test::IdealGas gas {{canary::SpecificGasConstant<double, si> {287.0},
+                                           canary::SpecificHeat<double, si> {717.5}}};
+        const auto state = canary::thermo_state(gas, canary::Density<double, si> {1.2}, Temp {300});
+        const auto coefficients =
+          canary::transport(SutherlandAir {sutherland, prandtl}, gas, state.state);
+        expect(within_ulp(coefficients.conductivity.value(),
+                          canary::viscosity(sutherland, Temp {300}).value() * 1004.5 / 0.71,
+                          2.0));
+    };
+
     "constant Prandtl gives k = mu cp / Pr"_test = [] {
-        const canary::Properties<double, si> props {
+        const canary::SingleTemperatureProperties<double, si> props {
           .cv = canary::SpecificHeat<double, si> {717.5},
           .cp = canary::SpecificHeat<double, si> {1004.5},
-          .gamma = canary::HeatCapacityRatio {1.4},
-          .sound_speed = canary::SoundSpeed<double, si> {347.0},
+          .capacity_ratio = canary::HeatCapacityRatio {1.4},
           .gas_constant = canary::SpecificGasConstant<double, si> {287.0},
+          .acoustics = {.sound_speed = canary::SoundSpeed<double, si> {347.0},
+                        .acoustic_exponent = canary::AcousticExponent {1.4}},
         };
         const auto k = canary::conductivity(prandtl, Mu {1.8e-5}, props);
         expect(within_ulp(k.value(), 1.8e-5 * 1004.5 / 0.71, 2.0));
@@ -284,12 +305,13 @@ void test_transport()
             expect(within_ulp(canary::viscosity(sutherland, Temp {t}).value(), mu_sutherland, 2.0))
               << t;
             expect(within_ulp(canary::viscosity(power_law, Temp {t}).value(), mu_power, 2.0)) << t;
-            const canary::Properties<double, si> props {
+            const canary::SingleTemperatureProperties<double, si> props {
               .cv = canary::SpecificHeat<double, si> {cp / 1.4},
               .cp = canary::SpecificHeat<double, si> {cp},
-              .gamma = canary::HeatCapacityRatio {1.4},
-              .sound_speed = canary::SoundSpeed<double, si> {1.0},
+              .capacity_ratio = canary::HeatCapacityRatio {1.4},
               .gas_constant = canary::SpecificGasConstant<double, si> {cp - (cp / 1.4)},
+              .acoustics = {.sound_speed = canary::SoundSpeed<double, si> {1.0},
+                            .acoustic_exponent = canary::AcousticExponent {1.4}},
             };
             expect(within_ulp(canary::conductivity(prandtl, Mu {mu_sutherland}, props).value(),
                               mu_sutherland * cp / pr,

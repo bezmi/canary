@@ -718,26 +718,29 @@ CANARY_HOST_DEVICE std::array<SpecificEnergy<T, U>, N>
     return species_vibrational_electronic_energy(gas, temp);
 }
 
-// cv = sum(y_i (cv_tr,i + cv_ve,i(T_ve))), cp = cv + R, gamma = cp / cv,
-// the frozen sound speed a = sqrt(gamma p / rho), and R.
+// Heat capacities per mixture mass at their respective temperatures.
+// The acoustic estimate uses 1 + R / (cv_heavy + mode_cv[0]).
 template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
     requires ScalarWith<T, P> && HasLog<T> && HasSqrt<T>
-CANARY_HOST_DEVICE Properties<T, U> properties(const TwoTemperatureMixture<P, U, N, S>& gas,
-                                               const NormalisedComposition<T, U, N>& mix,
-                                               const MultiTemperatureState<T, U, 1>& state)
+CANARY_HOST_DEVICE MultiTemperatureProperties<T, U, 1>
+  properties(const TwoTemperatureMixture<P, U, N, S>& gas,
+             const NormalisedComposition<T, U, N>& mix,
+             const MultiTemperatureState<T, U, 1>& state) noexcept
 {
     const auto sums = detail::translational_rotational_sums(gas, mix.fractions);
     const T cv_ve =
       detail::vibrational_electronic_energy(gas, mix.fractions, state.mode_temp[0].value()).cv;
-    const SpecificHeat<T, U> cv {T((sums.cp - mix.gas_constant.value()) + cv_ve)};
+    const T cv_heavy = T(sums.cp - mix.gas_constant.value());
+    const SpecificHeat<T, U> cv {T(cv_heavy + cv_ve)};
     const SpecificHeat<T, U> cp {cv.value() + mix.gas_constant.value()};
-    const HeatCapacityRatio<T> gamma {heat_capacity_ratio(cp, cv)};
+    const AcousticExponent<T> exponent {heat_capacity_ratio(cp, cv).value()};
     return {
-      .cv = cv,
-      .cp = cp,
-      .gamma = gamma,
-      .sound_speed = SoundSpeed<T, U> {sound_speed(gamma, state.p, state.rho)},
-      .gas_constant = mix.gas_constant,
+      .cv_heavy = SpecificHeat<T, U> {cv_heavy},
+      .mode_cv = {SpecificHeat<T, U> {cv_ve}},
+      .gas_constant_heavy = mix.gas_constant,
+      .gas_constant_electron = SpecificGasConstant<T, U> {T(0)},
+      .acoustics = {.sound_speed = SoundSpeed<T, U> {sound_speed(exponent, state.p, state.rho)},
+                    .acoustic_exponent = exponent},
     };
 }
 

@@ -32,12 +32,15 @@ template <std::floating_point P> ConstantPrandtl<P> make_constant_prandtl(Prandt
     return {.prandtl = prandtl};
 }
 
-template <Scalar T, std::floating_point P, UnitSystem U>
-    requires ScalarWith<T, P>
+template <Scalar T, std::floating_point P, UnitSystem U, typename Props>
+    requires ScalarWith<T, P> && SingleTemperaturePropertiesOf<Props, T, U>
 CANARY_HOST_DEVICE ThermalConductivity<T, U> conductivity(const ConstantPrandtl<P>& law,
                                                           DynamicViscosity<T, U> mu,
-                                                          const Properties<T, U>& properties)
-{ return ThermalConductivity<T, U> {conductivity(mu, properties.cp, law.prandtl)}; }
+                                                          const Props& properties) noexcept
+{
+    const SpecificHeat<T, U> cp = properties.cp;
+    return ThermalConductivity<T, U> {conductivity(mu, cp, law.prandtl)};
+}
 
 }  // namespace canary
 

@@ -231,15 +231,6 @@ concept MultiTemperaturePropertiesOf = Scalar<T> && UnitSystem<U> && requires(co
     requires AcousticPropertiesOf<std::remove_cvref_t<decltype(p.acoustics)>, T, U>;
 };
 
-// Derived properties at a state.
-template <Scalar T, UnitSystem U> struct Properties {
-    SpecificHeat<T, U> cv;
-    SpecificHeat<T, U> cp;
-    HeatCapacityRatio<T> gamma;
-    SoundSpeed<T, U> sound_speed;
-    SpecificGasConstant<T, U> gas_constant;
-};
-
 // Initial temperature for a closure that solves for the temperature
 // iteratively. Passed to thermo_state after the state variables; models
 // that accept it say so through AcceptsInput. Only its value part is used.

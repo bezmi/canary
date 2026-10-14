@@ -459,8 +459,8 @@ static_assert(canary::TransportModel<canary::Air5GuptaYosTransport<float, scaled
                                      double>);
 static_assert(!canary::TransportModel<GuptaYos, CaloricallyPerfectAir, double>);
 static_assert(!canary::TransportModel<GuptaYos, canary::Air5<double, scaled>, double>);
-// A pair of single-gas laws keeps one conductivity at a state with modes.
-static_assert(canary::TransportModel<SutherlandPrandtl, AirTwoTemperature, double>);
+// Constant-Prandtl conductivity requires a single-temperature cp.
+static_assert(!canary::TransportModel<SutherlandPrandtl, AirTwoTemperature, double>);
 static_assert(std::is_trivially_copyable_v<Wilke>);
 static_assert(std::is_trivially_copyable_v<GuptaYos>);
 static_assert(

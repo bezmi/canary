@@ -203,15 +203,18 @@ CANARY_HOST_DEVICE Closure<T, U>
 // cv, cp, gamma and R, and the sound speed a = sqrt(gamma p / rho).
 template <Scalar T, Scalar C, UnitSystem U>
     requires ScalarPair<T, C> && HasSqrt<T>
-CANARY_HOST_DEVICE Properties<T, U> perfect_properties(const PerfectCoefficients<C, U>& k,
-                                                       const ThermoState<T, U>& state)
+CANARY_HOST_DEVICE SingleTemperatureProperties<T, U>
+  perfect_properties(const PerfectCoefficients<C, U>& k, const ThermoState<T, U>& state) noexcept
 {
     return {
       .cv = SpecificHeat<T, U> {k.cv},
       .cp = SpecificHeat<T, U> {k.cp},
-      .gamma = HeatCapacityRatio<T> {k.gamma},
-      .sound_speed = SoundSpeed<T, U> {sound_speed(k.gamma, state.p, state.rho)},
+      .capacity_ratio = HeatCapacityRatio<T> {k.gamma},
       .gas_constant = SpecificGasConstant<T, U> {k.gas_constant},
+      .acoustics = {.sound_speed =
+                      SoundSpeed<T, U> {
+                        sound_speed(AcousticExponent<C> {k.gamma.value()}, state.p, state.rho)},
+                    .acoustic_exponent = AcousticExponent<T> {k.gamma.value()}},
     };
 }
 
@@ -256,8 +259,8 @@ CANARY_HOST_DEVICE Closure<T, U>
 
 template <Scalar T, std::floating_point P, UnitSystem U>
     requires ScalarWith<T, P> && HasSqrt<T>
-CANARY_HOST_DEVICE Properties<T, U> properties(const CaloricallyPerfect<P, U>& gas,
-                                               const ThermoState<T, U>& state)
+CANARY_HOST_DEVICE SingleTemperatureProperties<T, U>
+  properties(const CaloricallyPerfect<P, U>& gas, const ThermoState<T, U>& state) noexcept
 { return detail::perfect_properties(detail::coefficients(gas), state); }
 
 // Per-cell coefficients of a calorically perfect mixture: the weighted means
@@ -496,10 +499,10 @@ CANARY_HOST_DEVICE Closure<T, U> close(const CaloricallyPerfectMixture<P, U, Cap
 
 template <Scalar T, std::floating_point P, UnitSystem U, std::size_t Capacity>
     requires ScalarWith<T, P> && HasSqrt<T>
-CANARY_HOST_DEVICE Properties<T, U>
+CANARY_HOST_DEVICE SingleTemperatureProperties<T, U>
   properties(const CaloricallyPerfectMixture<P, U, Capacity>& /*gas*/,
              const Mixture<T, U>& mix,
-             const ThermoState<T, U>& state)
+             const ThermoState<T, U>& state) noexcept
 { return detail::perfect_properties(detail::coefficients(mix), state); }
 
 }  // namespace canary

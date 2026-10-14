@@ -71,8 +71,9 @@ void test_cerberus_parity()
         expect(within_ulp(c.state.temp.value(), 2.0, 4.0));
         expect(within_ulp(c.state.e.value() * 8.0, 9.5, 4.0));
         const auto props = canary::properties(gas.model, mix, c.state);
-        expect(within_ulp(props.gamma.value(), 29.0 / 19, 4.0));
-        expect(within_ulp(props.sound_speed.value(), std::sqrt((29.0 / 19) * 5 / 8), 4.0));
+        expect(within_ulp(props.capacity_ratio.value(), 29.0 / 19, 4.0));
+        expect(
+          within_ulp(props.acoustics.sound_speed.value(), std::sqrt((29.0 / 19) * 5 / 8), 4.0));
         // Partial densities rho Y = {2, 6} (cerberus U[5], U[6]).
         const std::array rho_i {2.0, 6.0};
         const auto from_rho =
@@ -93,7 +94,8 @@ void test_cerberus_parity()
             expect(within_ulp(c.state.temp.value(), 2.0, 4.0)) << rho;
             const auto props =
               canary::properties(gas.model, canary::mixture(gas.model, fractions(y)), c.state);
-            expect(within_ulp(props.sound_speed.value(), std::sqrt((29.0 / 19) * 5 / 8), 4.0))
+            expect(
+              within_ulp(props.acoustics.sound_speed.value(), std::sqrt((29.0 / 19) * 5 / 8), 4.0))
               << rho;
         }
     };

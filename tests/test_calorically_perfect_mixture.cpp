@@ -135,8 +135,10 @@ void test_calorically_perfect_mixture()
                           4.0));
         const auto props = canary::properties(five.model, mix, c.state);
         const auto ref_props = canary::properties(one.model, ref.state);
-        expect(within_ulp(props.sound_speed.value(), ref_props.sound_speed.value(), 4.0));
-        expect(within_ulp(props.gamma.value(), 1.4, 4.0));
+        expect(within_ulp(props.acoustics.sound_speed.value(),
+                          ref_props.acoustics.sound_speed.value(),
+                          4.0));
+        expect(within_ulp(props.capacity_ratio.value(), 1.4, 4.0));
         expect(
           within_ulp(canary::mean_particle_mass(five.species, fractions(y)).value(), 2.0, 4.0));
         expect(within_ulp(canary::mean_charge(five.species, fractions(y)).value(), 1.0, 4.0));

@@ -28,7 +28,8 @@ concept ViscosityModel = std::is_trivially_copyable_v<V> && Scalar<T> && UnitSys
 template <typename K, typename T, typename U>
 concept ConductivityModel =
   std::is_trivially_copyable_v<K> && Scalar<T> && UnitSystem<U> &&
-  requires(const K& law, DynamicViscosity<T, U> mu, const Properties<T, U>& properties) {
+  requires(
+    const K& law, DynamicViscosity<T, U> mu, const SingleTemperatureProperties<T, U>& properties) {
       { conductivity(law, mu, properties) } -> std::same_as<ThermalConductivity<T, U>>;
   };
 
@@ -62,11 +63,13 @@ struct MultiTemperatureTransportCoefficients {
 
 namespace detail
 {
-template <TransportLaw V, TransportLaw K, Scalar T, UnitSystem U>
-    requires ViscosityModel<V, T, U> && ConductivityModel<K, T, U>
-CANARY_HOST_DEVICE TransportCoefficients<T, U> transport_from(const Transport<V, K>& model,
-                                                              Temperature<T, U> temp,
-                                                              const Properties<T, U>& properties)
+template <TransportLaw V, TransportLaw K, Scalar T, UnitSystem U, typename Props>
+    requires ViscosityModel<V, T, U> && PropertiesOf<Props, T, U> &&
+             requires(const K& law, DynamicViscosity<T, U> mu, const Props& properties) {
+                 { conductivity(law, mu, properties) } -> std::same_as<ThermalConductivity<T, U>>;
+             }
+CANARY_HOST_DEVICE TransportCoefficients<T, U>
+  transport_from(const Transport<V, K>& model, Temperature<T, U> temp, const Props& properties)
 {
     const DynamicViscosity<T, U> mu = viscosity(model.viscosity, temp);
     return {.viscosity = mu, .conductivity = conductivity(model.conductivity, mu, properties)};
@@ -77,7 +80,10 @@ CANARY_HOST_DEVICE TransportCoefficients<T, U> transport_from(const Transport<V,
 template <TransportLaw V, TransportLaw K, GasModelType G, ThermoStateType S>
     requires ViscosityModel<V, typename S::value_type, typename S::units> &&
              ConductivityModel<K, typename S::value_type, typename S::units> &&
-             detail::PropertiesAlone<G, typename S::value_type>
+             detail::PropertiesAlone<G, typename S::value_type> &&
+             requires(const Transport<V, K>& model, const G& gas, const S& state) {
+                 detail::transport_from(model, state.temp, properties(gas, state));
+             }
 CANARY_HOST_DEVICE auto transport(const Transport<V, K>& model, const G& gas, const S& state)
 { return detail::transport_from(model, state.temp, properties(gas, state)); }
 
@@ -86,7 +92,13 @@ template <TransportLaw V, TransportLaw K, GasModelType G, ThermoStateType S>
     requires HasMixture<G, typename S::value_type> &&
              ViscosityModel<V, typename S::value_type, typename S::units> &&
              ConductivityModel<K, typename S::value_type, typename S::units> &&
-             detail::PropertiesWithMixture<G, typename S::value_type>
+             detail::PropertiesWithMixture<G, typename S::value_type> &&
+             requires(const Transport<V, K>& model,
+                      const G& gas,
+                      const mixture_t<G, typename S::value_type>& mix,
+                      const S& state) {
+                 detail::transport_from(model, state.temp, properties(gas, mix, state));
+             }
 CANARY_HOST_DEVICE auto transport(const Transport<V, K>& model,
                                   const G& gas,
                                   const mixture_t<G, typename S::value_type>& mix,

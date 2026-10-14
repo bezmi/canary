@@ -424,11 +424,12 @@ void test_thermally_perfect()
         const auto mix = mixture(gas, fractions(nitrogen));
         const auto c = thermo_state(gas, mix, Rho {1.0}, Temp {300.0});
         const auto props = canary::properties(gas, mix, c.state);
-        expect(relative(props.gamma.value(), 1.4, 1.0e-3)) << props.gamma.value();
+        expect(relative(props.capacity_ratio.value(), 1.4, 1.0e-3)) << props.capacity_ratio.value();
         expect(relative(props.cp.value() - props.cv.value(), mix.gas_constant.value(), 1.0e-12));
-        expect(relative(props.sound_speed.value(),
-                        std::sqrt(props.gamma.value() * c.state.p.value() / c.state.rho.value()),
-                        4.0 * eps));
+        expect(relative(
+          props.acoustics.sound_speed.value(),
+          std::sqrt(props.capacity_ratio.value() * c.state.p.value() / c.state.rho.value()),
+          4.0 * eps));
     };
 
     "dT/de at fixed density and composition is 1 / cv"_test = [&] {

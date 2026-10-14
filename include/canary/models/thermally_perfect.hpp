@@ -623,9 +623,10 @@ CANARY_HOST_DEVICE Closure<T, U> close(const ThermallyPerfectMixture<P, U, N, S>
 // speed a = sqrt(gamma p / rho), and R.
 template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
     requires ScalarWith<T, P> && HasLog<T> && HasSqrt<T>
-CANARY_HOST_DEVICE Properties<T, U> properties(const ThermallyPerfectMixture<P, U, N, S>& gas,
-                                               const NormalisedComposition<T, U, N>& mix,
-                                               const ThermoState<T, U>& state)
+CANARY_HOST_DEVICE SingleTemperatureProperties<T, U>
+  properties(const ThermallyPerfectMixture<P, U, N, S>& gas,
+             const NormalisedComposition<T, U, N>& mix,
+             const ThermoState<T, U>& state) noexcept
 {
     const SpecificHeat<T, U> cv {detail::mixture_energy(gas, mix.fractions, state.temp.value()).cv};
     const SpecificHeat<T, U> cp {cv.value() + mix.gas_constant.value()};
@@ -633,9 +634,12 @@ CANARY_HOST_DEVICE Properties<T, U> properties(const ThermallyPerfectMixture<P, 
     return {
       .cv = cv,
       .cp = cp,
-      .gamma = gamma,
-      .sound_speed = SoundSpeed<T, U> {sound_speed(gamma, state.p, state.rho)},
+      .capacity_ratio = gamma,
       .gas_constant = mix.gas_constant,
+      .acoustics = {.sound_speed =
+                      SoundSpeed<T, U> {
+                        sound_speed(AcousticExponent<T> {gamma.value()}, state.p, state.rho)},
+                    .acoustic_exponent = AcousticExponent<T> {gamma.value()}},
     };
 }
 

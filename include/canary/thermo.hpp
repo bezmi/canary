@@ -271,15 +271,20 @@ concept ClosesFromWithMixture = requires(const G& gas, const mixture_t<G, T>& mi
     { thermo_state(gas, mix, a, b) } -> std::same_as<ClosureOf<state_t<G, T>>>;
 };
 
+// The generic front end accepts either thermodynamic property capability.
+template <typename P, typename T, typename U>
+concept PropertiesOf =
+  SingleTemperaturePropertiesOf<P, T, U> || MultiTemperaturePropertiesOf<P, T, U>;
+
 template <typename G, typename T>
 concept PropertiesAlone = requires(const G& gas, const state_t<G, T>& s) {
-    { properties(gas, s) } -> std::same_as<Properties<T, typename G::units>>;
+    { properties(gas, s) } -> PropertiesOf<T, typename G::units>;
 };
 
 template <typename G, typename T>
 concept PropertiesWithMixture =
   requires(const G& gas, const mixture_t<G, T>& mix, const state_t<G, T>& s) {
-      { properties(gas, mix, s) } -> std::same_as<Properties<T, typename G::units>>;
+      { properties(gas, mix, s) } -> PropertiesOf<T, typename G::units>;
   };
 }  // namespace detail
 

@@ -98,7 +98,7 @@ void test_calorically_perfect()
     "a^2 = gamma p / rho and equals dp/drho along an isentrope"_test = [&] {
         const auto c = thermo_state(air, Rho {1.2}, E {2.15e5});
         const auto props = canary::properties(air, c.state);
-        const double a2 = props.sound_speed.value() * props.sound_speed.value();
+        const double a2 = props.acoustics.sound_speed.value() * props.acoustics.sound_speed.value();
         expect(within_ulp(a2, 1.4 * c.state.p.value() / 1.2, 4.0));
         // p = K rho^gamma along the isentrope through the state.
         const double k = c.state.p.value() / std::pow(1.2, 1.4);
@@ -150,7 +150,7 @@ void test_calorically_perfect()
                   const auto props = canary::properties(air, c.state);
                   expect(c.status == Status::Valid);
                   expect(c.state.p.value() > 0.0 && c.state.temp.value() > 0.0);
-                  expect(props.sound_speed.value() > 0.0 && props.cv.value() > 0.0 &&
+                  expect(props.acoustics.sound_speed.value() > 0.0 && props.cv.value() > 0.0 &&
                          props.cp.value() > 0.0);
               }
           }

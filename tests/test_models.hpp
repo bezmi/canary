@@ -54,18 +54,28 @@ Closure<T, si>
     };
 }
 
+// A caller-owned record exercises the structural property contract.
+template <Scalar T> struct IdealProperties {
+    SpecificHeat<T, si> cv;
+    SpecificHeat<T, si> cp;
+    HeatCapacityRatio<T> capacity_ratio;
+    SpecificGasConstant<T, si> gas_constant;
+    AcousticProperties<T, si> acoustics;
+};
+
 template <Scalar T>
-Properties<T, si> ideal_properties(const IdealParameters& g, const ThermoState<T, si>& s)
+IdealProperties<T> ideal_properties(const IdealParameters& g, const ThermoState<T, si>& s)
 {
     const double cp = g.cv.value() + g.gas_constant.value();
     const HeatCapacityRatio<double> gamma {cp / g.cv.value()};
-    const auto a = sound_speed(gamma, s.p, s.rho);
+    const auto a = sound_speed(AcousticExponent<double> {gamma.value()}, s.p, s.rho);
     return {
       .cv = SpecificHeat<T, si> {T(g.cv.value())},
       .cp = SpecificHeat<T, si> {T(cp)},
-      .gamma = HeatCapacityRatio<T> {T(gamma.value())},
-      .sound_speed = SoundSpeed<T, si> {a},
+      .capacity_ratio = HeatCapacityRatio<T> {T(gamma.value())},
       .gas_constant = SpecificGasConstant<T, si> {T(g.gas_constant.value())},
+      .acoustics = {.sound_speed = SoundSpeed<T, si> {a},
+                    .acoustic_exponent = AcousticExponent<T> {T(gamma.value())}},
     };
 }
 
@@ -101,7 +111,7 @@ Closure<T, si> close(const IdealGas& g, Pressure<T, si> p, Temperature<T, si> te
                                temp);
 }
 
-template <Scalar T> Properties<T, si> properties(const IdealGas& g, const ThermoState<T, si>& s)
+template <Scalar T> IdealProperties<T> properties(const IdealGas& g, const ThermoState<T, si>& s)
 { return ideal_properties(g.parameters, s); }
 
 // An initial temperature for an iterative closure.
@@ -154,7 +164,7 @@ Closure<T, si> close(const GuessGas& g, Pressure<T, si> p, Temperature<T, si> te
                                temp);
 }
 
-template <Scalar T> Properties<T, si> properties(const GuessGas& g, const ThermoState<T, si>& s)
+template <Scalar T> IdealProperties<T> properties(const GuessGas& g, const ThermoState<T, si>& s)
 { return ideal_properties(g.parameters, s); }
 
 // A model with its own (rho, rho e) closure, which marks its result
@@ -206,7 +216,7 @@ Closure<T, si> close(const NoPressureTemperatureGas& g, Density<T, si> rho, Temp
 { return ideal_from_rho_temp(g.parameters, rho, temp); }
 
 template <Scalar T>
-Properties<T, si> properties(const NoPressureTemperatureGas& g, const ThermoState<T, si>& s)
+IdealProperties<T> properties(const NoPressureTemperatureGas& g, const ThermoState<T, si>& s)
 { return ideal_properties(g.parameters, s); }
 
 // A model whose (rho, e) closure requires a guess.
@@ -285,9 +295,9 @@ Closure<T, si> close(const TwoSpeciesGas& /*g*/,
 { return ideal_from_rho_temp(as_parameters(m), density(p, m.gas_constant, temp), temp); }
 
 template <Scalar T>
-Properties<T, si> properties(const TwoSpeciesGas& /*g*/,
-                             const TwoSpeciesGas::Mixture<T>& m,
-                             const ThermoState<T, si>& s)
+IdealProperties<T> properties(const TwoSpeciesGas& /*g*/,
+                              const TwoSpeciesGas::Mixture<T>& m,
+                              const ThermoState<T, si>& s)
 { return ideal_properties(as_parameters(m), s); }
 
 }  // namespace canary::test

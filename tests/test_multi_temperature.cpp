@@ -490,7 +490,7 @@ void check_derivatives(const G& gas,
             out[1 + m.value()] = c.state.mode_e[m.value()].value();
         }
         out[M + 1] = c.state.p.value();
-        out[M + 2] = canary::properties(gas, mix, c.state).sound_speed.value();
+        out[M + 2] = canary::properties(gas, mix, c.state).acoustics.sound_speed.value();
         return out;
     };
     // The same with dual numbers, seeded in T (variable 0), T_m (1 + m.value()) or
@@ -517,7 +517,7 @@ void check_derivatives(const G& gas,
             out[1 + m.value()] = c.state.mode_e[m.value()].value().dual();
         }
         out[M + 1] = c.state.p.value().dual();
-        out[M + 2] = canary::properties(gas, mix, c.state).sound_speed.value().dual();
+        out[M + 2] = canary::properties(gas, mix, c.state).acoustics.sound_speed.value().dual();
         return out;
     };
     const auto base = evaluate(t, t_m, y);
@@ -607,6 +607,51 @@ void test_multi_temperature()
     const Air11& air11 = built11.model;
     const auto single5 = canary::make_air5<double>(si_scales).model;
     const auto single11 = canary::make_air11<double>(si_scales).model;
+
+    "multi-temperature properties expose separate energy derivatives"_test = [&] {
+        const auto check = [&](const auto& model, const auto& y, const auto& temperatures) {
+            constexpr std::size_t modes =
+              std::tuple_size_v<std::remove_cvref_t<decltype(temperatures)>>;
+            std::array<D, modes> mode_values {};
+            for (const canary::ModeIndex m : canary::mode_indices(0, modes)) {
+                mode_values[m.value()] = D(temperatures[m.value()]);
+            }
+            std::array<D, std::tuple_size_v<std::remove_cvref_t<decltype(y)>>> fractions_d {};
+            for (std::size_t i = 0; i < y.size(); ++i) { fractions_d[i] = D(y[i]); }
+            const auto mix = mixture(model, fractions(fractions_d));
+            const auto heavy = thermo_state(model,
+                                            mix,
+                                            canary::Density<D, si> {D(0.01)},
+                                            canary::Temperature<D, si> {D(4000, 1)},
+                                            mode_temperatures<si>(mode_values));
+            const auto props = canary::properties(model, mix, heavy.state);
+            static_assert(canary::MultiTemperaturePropertiesOf<decltype(props), D, si>);
+            static_assert(noexcept(canary::properties(model, mix, heavy.state)));
+            expect(relative(props.cv_heavy.value().real(), heavy.state.e.value().dual(), 1.0e-11));
+            for (const canary::ModeIndex m : canary::mode_indices(0, modes)) {
+                mode_values[m.value()] = D(temperatures[m.value()], 1);
+                const auto mode = thermo_state(model,
+                                               mix,
+                                               canary::Density<D, si> {D(0.01)},
+                                               canary::Temperature<D, si> {D(4000)},
+                                               mode_temperatures<si>(mode_values));
+                expect(relative(props.mode_cv[m.value()].value().real(),
+                                mode.state.mode_e[m.value()].value().dual(),
+                                1.0e-11));
+                mode_values[m.value()] = D(temperatures[m.value()]);
+            }
+            const auto a = props.acoustics.sound_speed.value().real();
+            expect(relative(props.acoustics.acoustic_exponent.value().real(),
+                            heavy.state.rho.value().real() * a * a / heavy.state.p.value().real(),
+                            1.0e-14));
+            expect(relative(props.gas_constant_heavy.value().real() +
+                              props.gas_constant_electron.value().real(),
+                            mix.gas_constant.value().real(),
+                            1.0e-14));
+        };
+        check(air4, air5_dissociated, std::array {5000.0, 6000.0, 7000.0});
+        check(air11, air11_weakly_ionised, std::array {5000.0, 6000.0});
+    };
 
     "multi-temperature construction retains long double scale precision"_test = [] {
         const long double tau = std::nextafter(1.0L, 2.0L);
@@ -1137,8 +1182,8 @@ void test_multi_temperature()
                     << ref.u_m[m.value()];
               }
               const auto props = canary::properties(air4, mix, c.state);
-              expect(relative(props.sound_speed.value(), ref.a, 1.0e-5))
-                << ref.temp << props.sound_speed.value() << ref.a;
+              expect(relative(props.acoustics.sound_speed.value(), ref.a, 1.0e-5))
+                << ref.temp << props.acoustics.sound_speed.value() << ref.a;
           }
       };
 
@@ -1174,8 +1219,8 @@ void test_multi_temperature()
                     << ref.temp << m.value() << c.state.mode_e[m.value()].value() << u_m[m.value()];
               }
               const auto props = canary::properties(air11, mix, c.state);
-              expect(relative(props.sound_speed.value(), ref.a, 1.0e-5))
-                << ref.temp << props.sound_speed.value() << ref.a;
+              expect(relative(props.acoustics.sound_speed.value(), ref.a, 1.0e-5))
+                << ref.temp << props.acoustics.sound_speed.value() << ref.a;
           }
       };
 

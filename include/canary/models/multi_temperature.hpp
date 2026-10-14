@@ -1564,9 +1564,8 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
                                              combine(solved.status, mix.status));
 }
 
-// cv = sum over heavy i of y_i cv_tr,i + sum_m cv_m(T_m), cp = cv + R_h,
-// gamma = cp / cv, the frozen sound speed a = sqrt(gamma p / rho), and the
-// mixture gas constant R = sum(y_i R_i) over all species.
+// Heat capacities and heavy/electron gas constants per mixture mass.
+// The acoustic estimate uses 1 + R_h / (cv_heavy + sum_m mode_cv[m]).
 template <Scalar T,
           std::floating_point P,
           UnitSystem U,
@@ -1575,26 +1574,30 @@ template <Scalar T,
           std::size_t S,
           std::size_t L>
     requires ScalarWith<T, P> && HasLog<T> && HasExp<T> && HasSqrt<T>
-CANARY_HOST_DEVICE Properties<T, U> properties(const MultiTemperatureMixture<P, U, N, M, S, L>& gas,
-                                               const NormalisedComposition<T, U, N>& mix,
-                                               const MultiTemperatureState<T, U, M>& state)
+CANARY_HOST_DEVICE MultiTemperatureProperties<T, U, M>
+  properties(const MultiTemperatureMixture<P, U, N, M, S, L>& gas,
+             const NormalisedComposition<T, U, N>& mix,
+             const MultiTemperatureState<T, U, M>& state) noexcept
 {
     const auto sums = detail::heavy_species_sums(gas, mix.fractions);
-    T cv_value = T(sums.cp - sums.gas_constant);
+    const SpecificHeat<T, U> cv_heavy {T(sums.cp - sums.gas_constant)};
+    std::array<SpecificHeat<T, U>, M> mode_cv {};
+    T cv_value = cv_heavy.value();
     for (const ModeIndex m : mode_indices(0, M)) {
-        cv_value =
-          cv_value +
-          detail::mode_energy(gas, mix.fractions, m, state.mode_temp[m.value()].value()).cv;
+        mode_cv[m.value()] = SpecificHeat<T, U> {
+          detail::mode_energy(gas, mix.fractions, m, state.mode_temp[m.value()].value()).cv};
+        cv_value = cv_value + mode_cv[m.value()].value();
     }
     const SpecificHeat<T, U> cv {cv_value};
     const SpecificHeat<T, U> cp {T(cv_value + sums.gas_constant)};
-    const HeatCapacityRatio<T> gamma {heat_capacity_ratio(cp, cv)};
+    const AcousticExponent<T> exponent {heat_capacity_ratio(cp, cv).value()};
     return {
-      .cv = cv,
-      .cp = cp,
-      .gamma = gamma,
-      .sound_speed = SoundSpeed<T, U> {sound_speed(gamma, state.p, state.rho)},
-      .gas_constant = mix.gas_constant,
+      .cv_heavy = cv_heavy,
+      .mode_cv = mode_cv,
+      .gas_constant_heavy = SpecificGasConstant<T, U> {sums.gas_constant},
+      .gas_constant_electron = SpecificGasConstant<T, U> {sums.electron_gas_constant},
+      .acoustics = {.sound_speed = SoundSpeed<T, U> {sound_speed(exponent, state.p, state.rho)},
+                    .acoustic_exponent = exponent},
     };
 }
 
