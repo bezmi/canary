@@ -1671,20 +1671,203 @@ CANARY_HOST_DEVICE std::array<SpecificEnergy<T, U>, N> species_mode_energy(
     return out;
 }
 
-// Fractions returned by charge neutralization and the calculation status.
-// Invalid results retain the input fractions for diagnostics.
+// Detailed outcome of a requested charge-neutralization operation. None
+// denotes success. NoNeutralisingSpecies means the electron convenience
+// overload has no electron to select; a caller may select a negative ion.
+enum class ChargeNeutralisationReason : unsigned char {
+    None,
+    NoNeutralisingSpecies,
+    InvalidSpeciesCount,
+    SpeciesIndexOutOfRange,
+    NonFiniteFraction,
+    NegativeFraction,
+    NonFiniteMass,
+    NonPositiveMass,
+    NonFiniteCharge,
+    NonNegativeNeutralisingCharge,
+    NonFiniteChargePerMass,
+    ChargePerMassUnderflow,
+    NonFiniteWeightSum,
+    NonFiniteChargeSum,
+    NonFiniteMassPerCharge,
+    MassPerChargeUnderflow,
+    NonFiniteBalancingFraction,
+    NegativeBalancingFraction,
+    BalancingFractionUnderflow,
+    NonFiniteNormalisationSum,
+    NonPositiveNormalisationSum,
+    NonFiniteNormalisedFraction,
+};
+
+// Fractions returned by charge neutralization and the calculation outcome.
+// Invalid results retain the input fractions for diagnostics. This status
+// describes the requested operation, not the admissibility of a charged fluid.
 template <Scalar T, std::size_t N> struct ChargeNeutralFractions {
     std::array<MassFraction<T>, N> fractions;
     Status status;
+    ChargeNeutralisationReason reason;
 };
 
-// Mass fractions of a charge-neutral composition. With e- at index e, its
-// fraction is replaced by a = m_e sum_{i != e} z_i y_i / m_i (z_i the charge
-// number, m_i the particle mass, from species), and every fraction is then
-// divided by a + sum_{i != e} y_i, so that the fractions sum to 1 and the
-// charge density sum(y_i q_i / m_i) is zero. Without e- the fractions are
-// returned unchanged. The fractions are not clamped. Scalar operations and
-// range access must not throw.
+// Normalize a composition after adjusting the selected negative species b.
+// Its weight becomes a = -(m_b/q_b) sum_{i != b}(q_i y_i/m_i); all weights
+// are divided by a + sum_{i != b} y_i. Relative proportions of the other
+// species are preserved. The selected species may be an electron or a
+// negative ion. No species is selected implicitly by this overload.
+//
+// Requires fractions.extent(0) == N and non-throwing scalar operations and
+// range access. Inputs need not sum to one and are not clamped. Invalid is
+// returned for a mismatched species count, an out-of-range index, nonfinite
+// or negative input weights, nonfinite charges, nonpositive/nonfinite masses,
+// or a selected charge that is not negative. Nonfinite intermediate values,
+// a negative required balancing weight, an underflowed nonzero charge ratio
+// or balancing weight, and a nonpositive normalization sum also give Invalid.
+// Validation uses scalar value parts; Dual derivatives are propagated but
+// are not checked. Invalid retains the input fractions and reports the first
+// failed check in reason. Checks follow species storage order.
+// Valid returns normalized charge-neutral fractions, to floating-point
+// accuracy. This is an optional composition operation, not a closure step.
+template <std::floating_point P,
+          UnitSystem U,
+          std::size_t N,
+          std::size_t M,
+          std::size_t S,
+          std::size_t L,
+          typename V>
+    requires SpeciesWeights<V, kind::mass_fraction, unitless, P> &&
+             ScalarWith<typename range_quantity_t<V>::value_type, P>
+CANARY_HOST_DEVICE ChargeNeutralFractions<typename range_quantity_t<V>::value_type, N>
+  charge_neutral_fractions(const MultiTemperatureMixture<P, U, N, M, S, L>& /*gas*/,
+                           const SpeciesData<P, U, N>& species,
+                           const V& fractions,
+                           SpeciesIndex neutralising_species) noexcept
+{
+    using T = range_quantity_t<V>::value_type;
+    using Value = ScalarTraits<T>::value_type;
+    // NOLINTNEXTLINE(misc-static-assert): run-time extent
+    CANARY_ASSERT(static_cast<std::size_t>(fractions.extent(0)) == N);
+    ChargeNeutralFractions<T, N> out {.fractions = {},
+                                      .status = Status::Invalid,
+                                      .reason = ChargeNeutralisationReason::None};
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        out.fractions[i.value()] = MassFraction<T> {fractions[i.value()].value()};
+    }
+    const auto b = neutralising_species.value();
+    if (!std::cmp_equal(species.n, N)) {
+        out.reason = ChargeNeutralisationReason::InvalidSpeciesCount;
+        return out;
+    }
+    if (b >= N) {
+        out.reason = ChargeNeutralisationReason::SpeciesIndexOutOfRange;
+        return out;
+    }
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        const Value y = ScalarTraits<T>::value(out.fractions[i.value()].value());
+        const P mass = species.mass[i.value()].value();
+        if (!std::isfinite(y)) {
+            out.reason = ChargeNeutralisationReason::NonFiniteFraction;
+            return out;
+        }
+        if (y < Value(0)) {
+            out.reason = ChargeNeutralisationReason::NegativeFraction;
+            return out;
+        }
+        if (!std::isfinite(mass)) {
+            out.reason = ChargeNeutralisationReason::NonFiniteMass;
+            return out;
+        }
+        if (!(mass > P(0))) {
+            out.reason = ChargeNeutralisationReason::NonPositiveMass;
+            return out;
+        }
+        if (!std::isfinite(species.charge[i.value()].value())) {
+            out.reason = ChargeNeutralisationReason::NonFiniteCharge;
+            return out;
+        }
+    }
+    if (!(species.charge[b].value() < P(0))) {
+        out.reason = ChargeNeutralisationReason::NonNegativeNeutralisingCharge;
+        return out;
+    }
+    T other_weight = T(Value(0));
+    T charge = T(Value(0));
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        if (i.value() == b) { continue; }
+        const T y = out.fractions[i.value()].value();
+        const P q = species.charge[i.value()].value();
+        const P charge_per_mass = q / species.mass[i.value()].value();
+        if (!std::isfinite(charge_per_mass)) {
+            out.reason = ChargeNeutralisationReason::NonFiniteChargePerMass;
+            return out;
+        }
+        if (q != P(0) && charge_per_mass == P(0)) {
+            out.reason = ChargeNeutralisationReason::ChargePerMassUnderflow;
+            return out;
+        }
+        other_weight = other_weight + y;
+        charge = charge + T(y * charge_per_mass);
+    }
+    if (!math::isfinite(other_weight)) {
+        out.reason = ChargeNeutralisationReason::NonFiniteWeightSum;
+        return out;
+    }
+    if (!math::isfinite(charge)) {
+        out.reason = ChargeNeutralisationReason::NonFiniteChargeSum;
+        return out;
+    }
+    const P mass_per_charge = species.mass[b].value() / species.charge[b].value();
+    if (!std::isfinite(mass_per_charge)) {
+        out.reason = ChargeNeutralisationReason::NonFiniteMassPerCharge;
+        return out;
+    }
+    if (mass_per_charge == P(0)) {
+        out.reason = ChargeNeutralisationReason::MassPerChargeUnderflow;
+        return out;
+    }
+    const T balancing_weight = T(-(mass_per_charge * charge));
+    const Value balancing_value = ScalarTraits<T>::value(balancing_weight);
+    if (!std::isfinite(balancing_value)) {
+        out.reason = ChargeNeutralisationReason::NonFiniteBalancingFraction;
+        return out;
+    }
+    if (balancing_value < Value(0)) {
+        out.reason = ChargeNeutralisationReason::NegativeBalancingFraction;
+        return out;
+    }
+    if (ScalarTraits<T>::value(charge) != Value(0) && balancing_value == Value(0)) {
+        out.reason = ChargeNeutralisationReason::BalancingFractionUnderflow;
+        return out;
+    }
+    const T total = T(other_weight + balancing_weight);
+    if (!math::isfinite(total)) {
+        out.reason = ChargeNeutralisationReason::NonFiniteNormalisationSum;
+        return out;
+    }
+    if (!(ScalarTraits<T>::value(total) > Value(0))) {
+        out.reason = ChargeNeutralisationReason::NonPositiveNormalisationSum;
+        return out;
+    }
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        const T weight = i.value() == b ? balancing_weight : out.fractions[i.value()].value();
+        const T normalized = T(weight / total);
+        if (!math::isfinite(normalized)) {
+            out.reason = ChargeNeutralisationReason::NonFiniteNormalisedFraction;
+            for (const SpeciesIndex j : species_indices(0, N)) {
+                out.fractions[j.value()] = MassFraction<T> {fractions[j.value()].value()};
+            }
+            return out;
+        }
+        out.fractions[i.value()] = MassFraction<T> {normalized};
+    }
+    out.status = Status::Valid;
+    return out;
+}
+
+// Charge neutralization using the model's electron species. The input extent
+// must equal N, and scalar operations and range access must not throw.
+// Without an electron, return the input unchanged with Invalid and
+// NoNeutralisingSpecies; no negative ion is selected automatically, even if
+// the input is already neutral. Otherwise the explicit-species overload
+// supplies validation, normalization and diagnostics.
 template <std::floating_point P,
           UnitSystem U,
           std::size_t N,
@@ -1699,31 +1882,15 @@ CANARY_HOST_DEVICE ChargeNeutralFractions<typename range_quantity_t<V>::value_ty
                            const SpeciesData<P, U, N>& species,
                            const V& fractions) noexcept
 {
+    if (gas.electron) { return charge_neutral_fractions(gas, species, fractions, *gas.electron); }
     using T = range_quantity_t<V>::value_type;
-    using Value = ScalarTraits<T>::value_type;
     // NOLINTNEXTLINE(misc-static-assert): run-time extent
     CANARY_ASSERT(static_cast<std::size_t>(fractions.extent(0)) == N);
-    ChargeNeutralFractions<T, N> out {.fractions = {}, .status = Status::Valid};
+    ChargeNeutralFractions<T, N> out {.fractions = {},
+                                      .status = Status::Invalid,
+                                      .reason = ChargeNeutralisationReason::NoNeutralisingSpecies};
     for (const SpeciesIndex i : species_indices(0, N)) {
         out.fractions[i.value()] = MassFraction<T> {fractions[i.value()].value()};
-    }
-    if (!gas.electron) { return out; }
-    const auto e = (*gas.electron).value();
-    T heavy = T(Value(0));
-    T charge = T(Value(0));
-    for (const SpeciesIndex i : species_indices(0, N)) {
-        if (i.value() == e) { continue; }
-        const T y = fractions[i.value()].value();
-        heavy = heavy + y;
-        charge =
-          charge + T(y * (species.charge[i.value()].value() / species.mass[i.value()].value()));
-    }
-    const P electron_mass_per_charge = species.mass[e].value() / species.charge[e].value();
-    const T y_e = T(-(electron_mass_per_charge * charge));
-    const T total = T(heavy + y_e);
-    for (const SpeciesIndex i : species_indices(0, N)) {
-        out.fractions[i.value()] =
-          MassFraction<T> {T((i.value() == e ? y_e : fractions[i.value()].value()) / total)};
     }
     return out;
 }

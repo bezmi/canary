@@ -1326,6 +1326,7 @@ void test_multi_temperature()
           static_assert(std::same_as<std::remove_cv_t<decltype(y)>,
                                      canary::ChargeNeutralFractions<double, 11>>);
           expect(y.status == Status::Valid);
+          expect(y.reason == canary::ChargeNeutralisationReason::None);
           double sum = 0;
           double charge = 0;
           double charge_scale = 0;
@@ -1345,11 +1346,221 @@ void test_multi_temperature()
           expect(std::abs(charge) <= 16.0 * eps * charge_scale) << charge;
           const auto unchanged =
             canary::charge_neutral_fractions(air4, built4.species, fractions(air5_dissociated));
-          expect(unchanged.status == Status::Valid);
+          expect(unchanged.status == Status::Invalid);
+          expect(unchanged.reason == canary::ChargeNeutralisationReason::NoNeutralisingSpecies);
           for (std::size_t i = 0; i < 5; ++i) {
               expect(unchanged.fractions[i].value() == air5_dissociated[i]);
           }
       };
+
+    "charge neutralization reports distinct failures and preserves input fractions"_test = [] {
+        const auto check =
+          []<typename P, canary::UnitSystem U>(const canary::UnitScales<P, U>& scales) {
+              using Reason = canary::ChargeNeutralisationReason;
+              const auto built = canary::make_air11_three_temperature<P>(scales);
+              std::array<P, 11> physical_input {};
+              for (std::size_t i = 0; i < 11; ++i) {
+                  physical_input[i] = static_cast<P>(air11_weakly_ionised_input[i]);
+              }
+              const auto physical = canary::charge_neutral_fractions(built.model,
+                                                                     built.species,
+                                                                     fractions(physical_input));
+              const auto input_view = fractions(physical_input);
+              static_assert(
+                noexcept(canary::charge_neutral_fractions(built.model, built.species, input_view)));
+              static_assert(std::is_trivially_copyable_v<decltype(physical)>);
+              expect(physical.status == Status::Valid && physical.reason == Reason::None);
+              long double sum = 0;
+              long double charge = 0;
+              long double charge_scale = 0;
+              for (std::size_t i = 0; i < 11; ++i) {
+                  const long double fraction = physical.fractions[i].value();
+                  sum += fraction;
+                  const long double term =
+                    fraction * static_cast<long double>(built.species.charge[i].value()) /
+                    static_cast<long double>(built.species.mass[i].value());
+                  charge += term;
+                  charge_scale += std::abs(term);
+              }
+              const long double bound =
+                32 * static_cast<long double>(std::numeric_limits<P>::epsilon());
+              expect(std::abs(sum - 1) <= bound);
+              expect(std::abs(charge) <= bound * charge_scale);
+              auto species = built.species;
+              for (std::size_t i = 0; i < 11; ++i) {
+                  species.mass[i] = canary::ParticleMass<P, U> {P(1)};
+                  species.charge[i] = canary::Charge<P, U> {P(0)};
+              }
+              species.charge[0] = canary::Charge<P, U> {P(1)};
+              species.charge[10] = canary::Charge<P, U> {P(-1)};
+              std::array<P, 11> input {};
+              input[0] = P(1);
+              const auto invalid = [&](const auto& data,
+                                       const auto& y,
+                                       Reason reason,
+                                       canary::SpeciesIndex carrier = canary::SpeciesIndex {10}) {
+                  const auto result =
+                    canary::charge_neutral_fractions(built.model, data, fractions(y), carrier);
+                  expect(result.status == Status::Invalid);
+                  expect(result.reason == reason);
+                  for (std::size_t i = 0; i < 11; ++i) {
+                      const P original = y[i];
+                      const P returned = result.fractions[i].value();
+                      expect(std::isnan(original) ? std::isnan(returned) : returned == original);
+                  }
+              };
+              const auto valid =
+                canary::charge_neutral_fractions(built.model, species, fractions(input));
+              expect(valid.status == Status::Valid && valid.reason == Reason::None);
+              expect(valid.fractions[0].value() == P(0.5));
+              expect(valid.fractions[10].value() == P(0.5));
+              invalid(species, input, Reason::SpeciesIndexOutOfRange, canary::SpeciesIndex {11});
+              auto changed = species;
+              changed.n = 10;
+              invalid(changed, input, Reason::InvalidSpeciesCount);
+              auto y = input;
+              y[1] = P(-1);
+              invalid(species, y, Reason::NegativeFraction);
+              for (const P bad :
+                   {std::numeric_limits<P>::quiet_NaN(), std::numeric_limits<P>::infinity()}) {
+                  y = input;
+                  y[1] = bad;
+                  invalid(species, y, Reason::NonFiniteFraction);
+                  changed = species;
+                  changed.mass[0] = canary::ParticleMass<P, U> {bad};
+                  invalid(changed, input, Reason::NonFiniteMass);
+                  changed = species;
+                  changed.charge[0] = canary::Charge<P, U> {bad};
+                  invalid(changed, input, Reason::NonFiniteCharge);
+              }
+              for (const P mass : {P(0), P(-1)}) {
+                  changed = species;
+                  changed.mass[10] = canary::ParticleMass<P, U> {mass};
+                  invalid(changed, input, Reason::NonPositiveMass);
+              }
+              for (const P q : {P(0), P(1)}) {
+                  changed = species;
+                  changed.charge[10] = canary::Charge<P, U> {q};
+                  invalid(changed, input, Reason::NonNegativeNeutralisingCharge);
+              }
+              changed = species;
+              changed.charge[0] = canary::Charge<P, U> {P(-1)};
+              invalid(changed, input, Reason::NegativeBalancingFraction);
+              y.fill(P(0));
+              invalid(species, y, Reason::NonPositiveNormalisationSum);
+              y[10] = P(1);
+              invalid(species, y, Reason::NonPositiveNormalisationSum);
+              const P maximum = std::numeric_limits<P>::max();
+              const P minimum = std::numeric_limits<P>::min();
+              changed = species;
+              changed.mass[0] = canary::ParticleMass<P, U> {minimum};
+              changed.charge[0] = canary::Charge<P, U> {maximum};
+              invalid(changed, input, Reason::NonFiniteChargePerMass);
+              changed.mass[0] = canary::ParticleMass<P, U> {maximum};
+              changed.charge[0] = canary::Charge<P, U> {minimum};
+              invalid(changed, input, Reason::ChargePerMassUnderflow);
+              y = input;
+              y[0] = maximum;
+              y[1] = maximum;
+              invalid(species, y, Reason::NonFiniteWeightSum);
+              changed = species;
+              changed.charge[0] = canary::Charge<P, U> {maximum};
+              y = input;
+              y[0] = P(2);
+              invalid(changed, y, Reason::NonFiniteChargeSum);
+              changed = species;
+              changed.mass[10] = canary::ParticleMass<P, U> {maximum};
+              changed.charge[10] = canary::Charge<P, U> {-minimum};
+              invalid(changed, input, Reason::NonFiniteMassPerCharge);
+              changed.mass[10] = canary::ParticleMass<P, U> {minimum};
+              changed.charge[10] = canary::Charge<P, U> {-maximum};
+              invalid(changed, input, Reason::MassPerChargeUnderflow);
+              changed = species;
+              changed.mass[10] = canary::ParticleMass<P, U> {maximum};
+              invalid(changed, y, Reason::NonFiniteBalancingFraction);
+              changed.mass[10] = canary::ParticleMass<P, U> {minimum};
+              changed.charge[0] = canary::Charge<P, U> {minimum};
+              invalid(changed, input, Reason::BalancingFractionUnderflow);
+              y = input;
+              y[0] = maximum;
+              invalid(species, y, Reason::NonFiniteNormalisationSum);
+          };
+        check(canary::UnitScales<float, si> {});
+        check(canary::UnitScales<double, si> {});
+        check(canary::UnitScales<float, scaled> {
+          {.mass = 4.65e-26F, .density = 1.0e-3F, .temperature = 1000.0F, .length = 1.0F}});
+        check(canary::UnitScales<double, scaled> {
+          {.mass = 4.65e-26, .density = 1.0e-3, .temperature = 1000.0, .length = 1.0}});
+    };
+
+    "charge neutralization uses only the explicitly selected negative ion"_test = [&] {
+        using Reason = canary::ChargeNeutralisationReason;
+        auto species = built4.species;
+        for (std::size_t i = 0; i < 5; ++i) {
+            species.mass[i] = canary::ParticleMass<double, si> {1.0};
+            species.charge[i] = canary::Charge<double, si> {0.0};
+        }
+        species.mass[1] = canary::ParticleMass<double, si> {2.0};
+        species.mass[2] = canary::ParticleMass<double, si> {4.0};
+        species.charge[0] = canary::Charge<double, si> {1.0};
+        species.charge[1] = canary::Charge<double, si> {-1.0};
+        species.charge[2] = canary::Charge<double, si> {-2.0};
+        for (const std::size_t selected : {std::size_t(1), std::size_t(2)}) {
+            std::array<double, 5> y {2.0, 1.0, 1.0, 1.0, 0.0};
+            y[selected] = 999.0;
+            const auto result = canary::charge_neutral_fractions(air4,
+                                                                 species,
+                                                                 fractions(y),
+                                                                 canary::SpeciesIndex {selected});
+            expect(result.status == Status::Valid && result.reason == Reason::None);
+            double net_charge = 0;
+            for (std::size_t i = 0; i < 5; ++i) {
+                const double expected = (i == selected ? 3.0 : y[i]) / 7.0;
+                expect(result.fractions[i].value() == expected);
+                net_charge +=
+                  result.fractions[i].value() * species.charge[i].value() / species.mass[i].value();
+            }
+            expect(std::abs(net_charge) <= 4.0 * eps);
+            const auto absent = canary::charge_neutral_fractions(air4, species, fractions(y));
+            expect(absent.status == Status::Invalid &&
+                   absent.reason == Reason::NoNeutralisingSpecies);
+            for (std::size_t i = 0; i < 5; ++i) { expect(absent.fractions[i].value() == y[i]); }
+        }
+        std::array<double, 10>
+          strided {2.0, -99.0, 999.0, -99.0, 1.0, -99.0, 1.0, -99.0, 0.0, -99.0};
+        const Kokkos::layout_stride::mapping<Extents> mapping {Extents {5},
+                                                               std::array<std::size_t, 1> {2}};
+        const auto strided_view = canary::as_kind<canary::kind::mass_fraction>(
+          Kokkos::mdspan<const double, Extents, Kokkos::layout_stride>(strided.data(), mapping));
+        static_assert(noexcept(
+          canary::charge_neutral_fractions(air4, species, strided_view, canary::SpeciesIndex {1})));
+        const auto strided_result =
+          canary::charge_neutral_fractions(air4, species, strided_view, canary::SpeciesIndex {1});
+        expect(strided_result.status == Status::Valid && strided_result.reason == Reason::None);
+        expect(strided_result.fractions[0].value() == 2.0 / 7.0);
+        expect(strided_result.fractions[1].value() == 3.0 / 7.0);
+        std::array<D, 5> y {D {2.0, 1.0}, D {999.0}, D {1.0}, D {1.0}, D {0.0}};
+        const auto result =
+          canary::charge_neutral_fractions(air4, species, fractions(y), canary::SpeciesIndex {1});
+        expect(result.status == Status::Valid && result.reason == Reason::None);
+        const std::array expected_derivative {1.0 / 49.0,
+                                              5.0 / 49.0,
+                                              -3.0 / 49.0,
+                                              -3.0 / 49.0,
+                                              0.0};
+        for (std::size_t i = 0; i < 5; ++i) {
+            expect(std::abs(result.fractions[i].value().dual() - expected_derivative[i]) <=
+                   4.0 * eps);
+        }
+        y[0] = D {-1.0, 17.0};
+        const auto invalid =
+          canary::charge_neutral_fractions(air4, species, fractions(y), canary::SpeciesIndex {1});
+        expect(invalid.status == Status::Invalid && invalid.reason == Reason::NegativeFraction);
+        for (std::size_t i = 0; i < 5; ++i) {
+            expect(invalid.fractions[i].value().real() == y[i].real());
+            expect(invalid.fractions[i].value().dual() == y[i].dual());
+        }
+    };
 
     "multi-temperature: the eleven-species thermally perfect model has the five-species data"_test =
       [&] {
