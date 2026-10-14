@@ -480,7 +480,7 @@ void test_multi_temperature_kinetics()
                                                                si_scales);
                    }) == "electron species index is outside the species range");
         }
-        const canary::Air5TwoTemperature<double, si> no_electrons {};
+        const auto no_electrons = canary::make_air5_two_temperature(si_scales).model;
         expect(!canary::electron_species_index(no_electrons));
         expect(canary::species_vibration_mode(gas, canary::SpeciesIndex {0}) == 0_i);
         expect(canary::species_vibration_mode(gas, canary::SpeciesIndex {11}) == -1_i);

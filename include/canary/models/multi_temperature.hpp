@@ -224,7 +224,7 @@ template <Scalar W,
           std::size_t M,
           std::size_t S,
           std::size_t L>
-    requires ScalarWith<W, P> && HasExp<W>
+    requires ScalarWith<W, P> && HasExp<W> && HasLog<W>
 CANARY_HOST_DEVICE EnergyAndCv<W>
   component_energy(const MultiTemperatureMixture<P, U, N, M, S, L>& gas,
                    SpeciesIndex index,
@@ -972,10 +972,17 @@ Built<MultiTemperatureMixture<P, U, N, M, S, L>, SpeciesData<P, U, N>>
     detail::check_multi_temperature_species(species, names, rotational_degrees);
     const auto single = make_thermally_perfect_mixture(species, scales);
 
-    Built<MultiTemperatureMixture<P, U, N, M, S, L>, SpeciesData<P, U, N>> built {};
+    Built<MultiTemperatureMixture<P, U, N, M, S, L>, SpeciesData<P, U, N>> built {
+      .model = {.thermally_perfect = single.model,
+                .translational_rotational_cp = {},
+                .formation_enthalpy = {},
+                .electronic_levels = {},
+                .reference_electronic_energy = {},
+                .mode_components = {},
+                .electron = {},
+                .electron_mode = {}},
+      .species = single.species};
     auto& model = built.model;
-    model.thermally_perfect = single.model;
-    built.species = single.species;
     const P t_ref = single.model.reference_temperature.value();
     const P ln_t_ref = std::log(t_ref);
     for (const SpeciesIndex i : species_indices(0, N)) {

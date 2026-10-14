@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <format>
 #include <limits>
+#include <utility>
 
 namespace canary
 {
@@ -157,7 +158,6 @@ void fill_thermally_perfect_species(ThermallyPerfectMixture<P, U, N, S>& model,
         throw ParameterError(std::format("charge must be finite, got {}", input.charge));
     }
     check_species_metadata(input.metadata, input.charge);
-    const P tau = scale_factor<kind::temperature>(scales);
     const auto molar_mass = static_cast<long double>(input.molar_mass);
     const SpecificGasConstant<long double, si> gas_constant {
       constants::universal_gas_constant<long double> / molar_mass};
@@ -172,7 +172,6 @@ void fill_thermally_perfect_species(ThermallyPerfectMixture<P, U, N, S>& model,
     if (input.charge != 0.0 && species.charge[i].value() == P(0)) {
         throw ParameterError("nonzero charge rounds to zero in the model's units");
     }
-    model.curve[i] = make_nasa9_curve(input.fit, tau);
 
     const P t_ref = model.reference_temperature.value();
     const Nasa9CpH<P> ref = nasa9_cp_h(model.curve[i], t_ref, std::log(t_ref));
@@ -210,24 +209,48 @@ Built<ThermallyPerfectMixture<P, U, N, S>, SpeciesData<P, U, N>>
   make_thermally_perfect_mixture(const std::array<Nasa9Species<S>, N>& species,
                                  const UnitScales<P, U>& scales)
 {
-    Built<ThermallyPerfectMixture<P, U, N, S>, SpeciesData<P, U, N>> built {};
-    auto& model = built.model;
-    model.n = static_cast<int>(N);
-    built.species.n = static_cast<int>(N);
-    model.reference_temperature = detail::positive_thermodynamic_parameter<P>(
+    const auto reference_temperature = detail::positive_thermodynamic_parameter<P>(
       convert<U>(Temperature<long double, si> {298.15L}, scales),
       "reference temperature");
-    model.temperature_min = detail::positive_thermodynamic_parameter<P>(
+    const auto temperature_min = detail::positive_thermodynamic_parameter<P>(
       convert<U>(Temperature<long double, si> {10}, scales),
       "minimum temperature");
-    model.temperature_max = detail::positive_thermodynamic_parameter<P>(
+    const auto temperature_max = detail::positive_thermodynamic_parameter<P>(
       convert<U>(Temperature<long double, si> {100000}, scales),
       "maximum temperature");
-    model.bracket_width = detail::positive_thermodynamic_parameter<P>(
+    const auto bracket_width = detail::positive_thermodynamic_parameter<P>(
       convert<U>(Temperature<long double, si> {1000}, scales),
       "temperature bracket width");
-    model.relative_tolerance = P(1.0e-10);
-    model.max_iterations = 30;
+    // Each array entry is constructed from a complete validated curve.
+    const auto make_curve = [&](std::size_t i) {
+        if (species[i].name == nullptr || species[i].name[0] == '\0') {
+            throw ParameterError(std::format("species {}: name must not be null or empty", i));
+        }
+        try {
+            return make_nasa9_curve(species[i].fit,
+                                    static_cast<P>(scale_factor<kind::temperature>(scales)));
+        } catch (const ParameterError& error) {
+            throw ParameterError(std::format("species {}: {}", species[i].name, error.what()));
+        }
+    };
+    const auto curves = [&]<std::size_t... I>(std::index_sequence<I...>) {
+        return std::array<Nasa9Curve<P, S>, N> {make_curve(I)...};
+    }(std::make_index_sequence<N> {});
+    Built<ThermallyPerfectMixture<P, U, N, S>, SpeciesData<P, U, N>> built {
+      .model = {.n = static_cast<int>(N),
+                .gas_constant = {},
+                .curve = curves,
+                .reference_temperature = reference_temperature,
+                .reference_energy = {},
+                .reference_cv = {},
+                .temperature_min = temperature_min,
+                .temperature_max = temperature_max,
+                .bracket_width = bracket_width,
+                .relative_tolerance = P(1.0e-10),
+                .max_iterations = 30},
+      .species = {}};
+    auto& model = built.model;
+    built.species.n = static_cast<int>(N);
     bool has_electron = false;
     for (const SpeciesIndex i : species_indices(0, N)) {
         if (species[i.value()].name == nullptr || species[i.value()].name[0] == '\0') {

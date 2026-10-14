@@ -1,6 +1,7 @@
 #include "dual.hpp"
 #include "test_suites.hpp"
 
+#include <algorithm>
 #include <array>
 #include <boost/ut.hpp>
 #include <canary/build.hpp>
@@ -13,6 +14,7 @@
 #include <cstddef>
 #include <limits>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -94,11 +96,18 @@ std::array<long double, 9> segment(const Data& data, std::size_t j)
     return a;
 }
 
-// Reference at t inside the fit, with lambda-weighted coefficients inside a
-// blending region.
-Reference reference_at(const Data& data, double t)
+// Original evaluator retained only for the reference anchor.
+Reference original_reference_at(const Data& data, double t)
 {
     const auto n = static_cast<std::size_t>(data.segments);
+    if (t < data.breaks[0] || t > data.breaks[n]) {
+        const auto i = t < data.breaks[0] ? std::size_t(0) : n - 1;
+        const double end = t < data.breaks[0] ? data.breaks[0] : data.breaks[n];
+        auto out = reference(segment(data, i), end);
+        out.h += out.cp * (t - end);
+        out.s += out.cp * std::log(static_cast<long double>(t) / end);
+        return out;
+    }
     std::size_t seg = 0;
     for (std::size_t i = 1; i < n; ++i) {
         const double start = data.breaks[i] - (data.blends[i - 1] / 2);
@@ -116,6 +125,103 @@ Reference reference_at(const Data& data, double t)
         if (t > end) { seg = i; }
     }
     return reference(segment(data, seg), t);
+}
+
+// Independent quadrature integrates the prescribed cp, without using the
+// production analytic moments. Sixteen-point Gauss-Legendre quadrature resolves
+// the smooth rational NASA9 terms over the shipped transition intervals.
+template <typename F> long double integrate(F f, long double a, long double b)
+{
+    static const auto rule = [] {
+        std::array<std::pair<long double, long double>, 16> out {};
+        for (int i = 0; i < 16; ++i) {
+            long double x = std::cos(std::acos(-1.0L) * (i + 0.75L) / 16.5L);
+            long double derivative = 0;
+            for (int iteration = 0; iteration < 20; ++iteration) {
+                long double p0 = 1, p1 = x;
+                for (int n = 2; n <= 16; ++n) {
+                    const long double p = ((2 * n - 1) * x * p1 - (n - 1) * p0) / n;
+                    p0 = p1;
+                    p1 = p;
+                }
+                derivative = 16 * (x * p1 - p0) / (x * x - 1);
+                const long double next = x - p1 / derivative;
+                if (next == x) { break; }
+                x = next;
+            }
+            out[i] = {x, 2 / ((1 - x * x) * derivative * derivative)};
+        }
+        return out;
+    }();
+    long double result = 0;
+    for (const auto [x, w] : rule) { result += w * f((a + b) / 2 + (b - a) * x / 2); }
+    return result * (b - a) / 2;
+}
+
+Reference smooth_capacity(const Data& data, long double t)
+{
+    t = std::clamp(t,
+                   static_cast<long double>(data.breaks[0]),
+                   static_cast<long double>(data.breaks[data.segments]));
+    for (std::size_t i = 1; i < static_cast<std::size_t>(data.segments); ++i) {
+        const long double start = data.breaks[i] - data.blends[i - 1] / 2;
+        const long double end = data.breaks[i] + data.blends[i - 1] / 2;
+        if (t < start) { return reference(segment(data, i - 1), t); }
+        if (t <= end) {
+            const long double u = (t - start) / (end - start);
+            const long double w = u * u * (3 - 2 * u);
+            auto lower = reference(segment(data, i - 1), t);
+            const auto upper = reference(segment(data, i), t);
+            lower.cp = (1 - w) * lower.cp + w * upper.cp;
+            lower.cp_scale = (1 - w) * lower.cp_scale + w * upper.cp_scale;
+            return lower;
+        }
+    }
+    return reference(segment(data, static_cast<std::size_t>(data.segments - 1)), t);
+}
+
+Reference reference_at(const Data& data, double t)
+{
+    auto out = smooth_capacity(data, t);
+    const auto anchor = original_reference_at(data, 298.15);
+    out.h = anchor.h;
+    out.s = anchor.s;
+    out.h_scale += anchor.h_scale;
+    out.s_scale += anchor.s_scale;
+    std::vector<long double> points {298.15L, t};
+    const long double lo = std::min(298.15L, static_cast<long double>(t));
+    const long double hi = std::max(298.15L, static_cast<long double>(t));
+    for (std::size_t i = 1; i < static_cast<std::size_t>(data.segments); ++i) {
+        for (const double edge :
+             {data.breaks[i] - data.blends[i - 1] / 2, data.breaks[i] + data.blends[i - 1] / 2}) {
+            if (edge > lo && edge < hi) { points.push_back(edge); }
+        }
+    }
+    for (const double edge : {data.breaks[0], data.breaks[data.segments]}) {
+        if (edge > lo && edge < hi) { points.push_back(edge); }
+    }
+    std::sort(points.begin(), points.end());
+    const long double sign = t < 298.15 ? -1 : 1;
+    for (std::size_t i = 1; i < points.size(); ++i) {
+        const long double a = points[i - 1], b = points[i];
+        // Split long ordinary intervals as well to resolve inverse powers.
+        const int panels = static_cast<int>(std::ceil(b / a));
+        for (int panel = 0; panel < panels; ++panel) {
+            const long double left = a + (b - a) * panel / panels;
+            const long double right = a + (b - a) * (panel + 1) / panels;
+            const long double h =
+              integrate([&](long double x) { return smooth_capacity(data, x).cp; }, left, right);
+            const long double entropy =
+              integrate([&](long double x) { return smooth_capacity(data, x).cp / x; },
+                        left,
+                        right);
+            out.h += sign * h;
+            out.s += sign * entropy;
+            out.h_scale += std::abs(h);
+            out.s_scale += std::abs(entropy);
+        }
+    }
+    return out;
 }
 
 struct Values {
@@ -196,17 +302,21 @@ void test_nasa9()
         }
     };
 
-    "a curve with temperature scale 1 has the fit's coefficients"_test = [] {
+    "validated curves are copyable values with preserved reference anchors"_test = [] {
+        static_assert(!std::is_default_constructible_v<Curve>);
+        static_assert(!std::is_aggregate_v<Curve>);
+        static_assert(std::is_trivially_copyable_v<Curve>);
+        static_assert(std::is_nothrow_copy_constructible_v<Curve>);
+        static_assert(noexcept(canary::nasa9_cp_h(std::declval<const Curve&>(), 1.0, 0.0)));
+        static_assert(noexcept(canary::nasa9_s(std::declval<const Curve&>(), 1.0, 0.0)));
         for (const auto& sp : species) {
             const Curve curve = canary::make_nasa9_curve(sp.fit, 1.0);
-            const auto n = static_cast<std::size_t>(sp.fit.segments);
-            for (std::size_t j = 0; j < n; ++j) {
-                for (std::size_t k = 0; k < 9; ++k) {
-                    expect(curve.b[j][k] == sp.fit.a[j][k]) << sp.name << j << k;
-                }
-            }
-            for (std::size_t i = 0; i <= n; ++i) { expect(curve.breaks[i] == sp.fit.breaks[i]); }
-            for (std::size_t i = 0; i + 1 < n; ++i) { expect(curve.blends[i] == sp.fit.blends[i]); }
+            const Curve copy = curve;
+            const auto v = evaluate(copy, 298.15);
+            const auto r = original_reference_at(sp.fit, 298.15);
+            expect(close_to(v.cp, r.cp, r.cp_scale, 4.0)) << sp.name;
+            expect(close_to(v.h, r.h, r.h_scale, 4.0)) << sp.name;
+            expect(close_to(v.s, r.s, r.s_scale, 4.0)) << sp.name;
         }
     };
 
@@ -257,7 +367,7 @@ void test_nasa9()
         }
     };
 
-    "values inside a blending region use the lambda-weighted coefficients"_test = [] {
+    "transition values integrate the smoothstep heat capacity"_test = [] {
         for (const auto& sp : species) {
             const Curve curve = canary::make_nasa9_curve(sp.fit, 1.0);
             const auto n = static_cast<std::size_t>(sp.fit.segments);
@@ -275,7 +385,7 @@ void test_nasa9()
         }
     };
 
-    "values inside segments equal the polynomial forms"_test = [] {
+    "segment capacities retain their polynomials and primitives remain continuous"_test = [] {
         for (const auto& sp : species) {
             const Curve curve = canary::make_nasa9_curve(sp.fit, 1.0);
             for (const double t : {200.0, 300.0, 700.0, 2000.0, 5000.0, 10000.0, 20000.0, 4.0e4}) {
@@ -338,6 +448,173 @@ void test_nasa9()
         }
     };
 
+    "smoothstep derivatives agree with capacity in rounded SI and scaled curves"_test = [] {
+        const auto check = []<typename P> {
+            using Dual = canary::test::Dual<P>;
+            const P epsilon = std::numeric_limits<P>::epsilon();
+            for (const auto& sp : canary::air11_species) {
+                for (const P scale : {P(1), P(3000)}) {
+                    const auto curve = canary::make_nasa9_curve(sp.fit, scale);
+                    for (int i = 1; i < sp.fit.segments; ++i) {
+                        const P boundary = P(static_cast<long double>(sp.fit.breaks[i]) / scale);
+                        const P width = P(static_cast<long double>(sp.fit.blends[i - 1]) / scale);
+                        const P start = boundary - width / P(2), end = boundary + width / P(2);
+                        for (const P u : {P(0), P(0.125), P(0.5), P(0.875), P(1)}) {
+                            const P t = start + u * (end - start);
+                            const Dual td(t, P(1));
+                            const auto values =
+                              canary::nasa9_cp_h(curve, td, canary::math::log(td));
+                            const auto entropy = canary::nasa9_s(curve, td, canary::math::log(td));
+                            const auto ref =
+                              smooth_capacity(sp.fit, static_cast<long double>(t) * scale);
+                            if (u == P(0) || u == P(1)) {
+                                const P outside =
+                                  std::nextafter(t,
+                                                 u == P(0) ? P(0) : std::numeric_limits<P>::max());
+                                const Dual adjacent(outside, P(1));
+                                const auto other =
+                                  canary::nasa9_cp_h(curve, adjacent, canary::math::log(adjacent));
+                                expect(std::abs(values.cp_over_r.dual() - other.cp_over_r.dual()) <=
+                                       64 * epsilon * ref.cp_scale / (end - start))
+                                  << sp.name << scale << t;
+                            }
+                            // Cancellation in the fitted polynomial is measured by
+                            // the sum of absolute cp terms, not by the final cp alone.
+                            const long double bound = 64 * epsilon * ref.cp_scale;
+                            expect(std::abs(values.h_over_r.dual() - values.cp_over_r.real()) <=
+                                   bound)
+                              << sp.name << scale << t;
+                            expect(std::abs(t * entropy.dual() - values.cp_over_r.real()) <= bound)
+                              << sp.name << scale << t;
+                            if constexpr (std::same_as<P, double>) {
+                                const P delta = std::cbrt(epsilon) * std::min(t, end - start);
+                                const auto plus =
+                                  canary::nasa9_cp_h(curve, t + delta, std::log(t + delta));
+                                const auto minus =
+                                  canary::nasa9_cp_h(curve, t - delta, std::log(t - delta));
+                                const P sp = canary::nasa9_s(curve, t + delta, std::log(t + delta));
+                                const P sm = canary::nasa9_s(curve, t - delta, std::log(t - delta));
+                                const long double truncation =
+                                  64 * std::pow(epsilon, 2.0 / 3.0) * ref.cp_scale;
+                                const long double h_bound =
+                                  truncation +
+                                  4 * epsilon *
+                                    (std::abs(plus.h_over_r) + std::abs(minus.h_over_r)) / delta;
+                                const long double s_bound =
+                                  truncation +
+                                  4 * epsilon * t * (std::abs(sp) + std::abs(sm)) / delta;
+                                expect(std::abs((plus.h_over_r - minus.h_over_r) / (2 * delta) -
+                                                values.cp_over_r.real()) <= h_bound);
+                                expect(std::abs(t * (sp - sm) / (2 * delta) -
+                                                values.cp_over_r.real()) <= s_bound);
+                            }
+                        }
+                    }
+                }
+            }
+        };
+        check.template operator()<float>();
+        check.template operator()<double>();
+    };
+
+    "wide transitions integrate each NASA9 capacity power with a reference inside the blend"_test =
+      [] {
+          const auto check = []<typename P> {
+              using Dual = canary::test::Dual<P>;
+              const P epsilon = std::numeric_limits<P>::epsilon();
+              for (std::size_t power = 0; power < 7; ++power) {
+                  Data data {};
+                  data.segments = 2;
+                  data.breaks = {50, 1000, 3000};
+                  data.blends[0] = 1800;
+                  data.a[0][2] = data.a[1][2] = 3;
+                  data.a[1][power] += std::pow(1000.0, 2 - static_cast<int>(power));
+                  data.a[0][7] = 100;
+                  data.a[1][7] = 200;
+                  data.a[0][8] = 2;
+                  data.a[1][8] = 5;
+                  for (const P scale : {P(1), P(1000)}) {
+                      const auto curve = canary::make_nasa9_curve(data, scale);
+                      for (const double physical_t :
+                           {100.0, 199.0, 201.0, 298.15, 800.0, 1000.0, 1800.0, 1900.0, 2000.0}) {
+                          const P t = P(physical_t) / scale;
+                          const auto ref = reference_at(data, static_cast<double>(t) * scale);
+                          const Dual td(t, P(1));
+                          const auto values = canary::nasa9_cp_h(curve, td, canary::math::log(td));
+                          const auto entropy = canary::nasa9_s(curve, td, canary::math::log(td));
+                          expect(std::abs(values.cp_over_r.real() - ref.cp) <=
+                                 64 * epsilon * ref.cp_scale)
+                            << power << t;
+                          expect(std::abs(values.h_over_r.real() * scale - ref.h) <=
+                                 64 * epsilon * ref.h_scale)
+                            << power << t;
+                          expect(std::abs(entropy.real() - ref.s) <= 64 * epsilon * ref.s_scale)
+                            << power << t;
+                          expect(std::abs(values.h_over_r.dual() - values.cp_over_r.real()) <=
+                                 64 * epsilon * ref.cp_scale)
+                            << power << t;
+                          expect(std::abs(t * entropy.dual() - values.cp_over_r.real()) <=
+                                 64 * epsilon * ref.cp_scale)
+                            << power << t;
+                      }
+                  }
+              }
+          };
+          check.template operator()<float>();
+          check.template operator()<double>();
+      };
+
+    "reference anchors outside the fit retain constant capacity continuation"_test = [] {
+        const auto check = []<typename P> {
+            using Dual = canary::test::Dual<P>;
+            const P epsilon = std::numeric_limits<P>::epsilon();
+            for (const double offset : {0.0, 400.0}) {
+                Data data {};
+                data.segments = 2;
+                data.breaks = {50 + offset, 150 + offset, 250 + offset};
+                data.blends[0] = 100;
+                data.a[0][2] = 3;
+                data.a[1][2] = 5;
+                data.a[0][7] = 100;
+                data.a[1][7] = 200;
+                data.a[0][8] = 2;
+                data.a[1][8] = 5;
+                for (const P scale : {P(1), P(1000)}) {
+                    const auto curve = canary::make_nasa9_curve(data, scale);
+                    for (const double physical_t : {298.15,
+                                                    25 + offset,
+                                                    50 + offset,
+                                                    125 + offset,
+                                                    175 + offset,
+                                                    250 + offset,
+                                                    275 + offset}) {
+                        const P t = P(physical_t) / scale;
+                        const auto ref = reference_at(data, static_cast<double>(t) * scale);
+                        const Dual td(t, P(1));
+                        const auto values = canary::nasa9_cp_h(curve, td, canary::math::log(td));
+                        const auto entropy = canary::nasa9_s(curve, td, canary::math::log(td));
+                        expect(std::abs(values.cp_over_r.real() - ref.cp) <=
+                               64 * epsilon * ref.cp_scale)
+                          << offset << scale << t;
+                        expect(std::abs(values.h_over_r.real() * scale - ref.h) <=
+                               64 * epsilon * ref.h_scale)
+                          << offset << scale << t;
+                        expect(std::abs(entropy.real() - ref.s) <= 64 * epsilon * ref.s_scale)
+                          << offset << scale << t;
+                        expect(std::abs(values.h_over_r.dual() - values.cp_over_r.real()) <=
+                               64 * epsilon * ref.cp_scale)
+                          << offset << scale << t;
+                        expect(std::abs(t * entropy.dual() - values.cp_over_r.real()) <=
+                               64 * epsilon * ref.cp_scale)
+                          << offset << scale << t;
+                    }
+                }
+            }
+        };
+        check.template operator()<float>();
+        check.template operator()<double>();
+    };
+
     "rounded transition endpoints retain adjacent heat capacities"_test = [] {
         const auto check = []<typename P> {
             Data data {};
@@ -349,9 +626,9 @@ void test_nasa9()
             data.a[0][2] = 5;
             data.a[1][2] = 2;
             const auto curve = canary::make_nasa9_curve(data, P(1));
-            const P start = curve.breaks[1] - curve.blends[0] / P(2);
-            const P end = curve.breaks[1] + curve.blends[0] / P(2);
-            expect(end - start != curve.blends[0]);
+            const P start = P(data.breaks[1]) - P(data.blends[0]) / P(2);
+            const P end = P(data.breaks[1]) + P(data.blends[0]) / P(2);
+            expect(end - start != P(data.blends[0]));
             for (const auto [t, cp] : std::array {std::pair {start, P(5)}, std::pair {end, P(2)}}) {
                 const auto values = canary::nasa9_cp_h(curve, t, std::log(t));
                 expect(values.cp_over_r == cp);
@@ -406,7 +683,7 @@ void test_nasa9()
             expect(nothrow([&] { canary::make_nasa9_curve(data, P(1)); }));
 
             // T²(cp/R-1) = (T-2)^6 + offset in the lower segment;
-            // the upper segment doubles it, giving a degree-seven transition.
+            // the upper segment doubles it, giving a degree-nine transition.
             for (const double offset : {-0.015625, 0.0, 0.015625}) {
                 const std::array<double, 7>
                   coefficients {64.0 + offset, -192.0, 240.0, -160.0, 60.0, -12.0, 1.0};
@@ -495,8 +772,9 @@ void test_nasa9()
                     for (int region = 0; region < sp.fit.segments; ++region) {
                         const auto j = static_cast<std::size_t>(region);
                         for (const P fraction : {P(0), P(0.25), P(0.5), P(0.75), P(1)}) {
-                            const P t =
-                              curve.breaks[j] + fraction * (curve.breaks[j + 1] - curve.breaks[j]);
+                            const P t = P(sp.fit.breaks[j] / scale) +
+                                        fraction * (P(sp.fit.breaks[j + 1] / scale) -
+                                                    P(sp.fit.breaks[j] / scale));
                             const auto values = canary::nasa9_cp_h(curve, t, std::log(t));
                             expect(std::isfinite(values.cp_over_r) && values.cp_over_r > P(1))
                               << sp.name;

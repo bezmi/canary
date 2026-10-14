@@ -58,8 +58,8 @@ inline CapacityInterval operator*(CapacityInterval a, CapacityInterval b)
                            *std::max_element(products.begin(), products.end()));
 }
 
-// Degree seven covers T²(cp/R-1) for a NASA9 segment or a linear blend.
-using CapacityPolynomial = std::array<CapacityInterval, 8>;
+// Degree nine covers T²(cp/R-1) for a NASA9 segment or cubic smoothstep blend.
+using CapacityPolynomial = std::array<CapacityInterval, 10>;
 
 // Power coefficients in u, with T = low + (high-low)u, for T²(cp/R-1).
 // Multiplication by T² preserves the sign because all admitted T are positive.
@@ -99,7 +99,7 @@ inline CapacityPolynomial capacity_bernstein(const CapacityPolynomial& power)
     for (unsigned i = 0; i < out.size(); ++i) {
         for (unsigned k = 0; k <= i; ++k) {
             const long double ratio =
-              static_cast<long double>(capacity_binomial(i, k)) / capacity_binomial(7, k);
+              static_cast<long double>(capacity_binomial(i, k)) / capacity_binomial(9, k);
             out[i] = out[i] + power[k] * capacity_bounds(ratio, ratio);
         }
     }

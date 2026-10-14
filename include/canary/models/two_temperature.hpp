@@ -96,10 +96,12 @@ Built<TwoTemperatureMixture<P, U, N, S>, SpeciesData<P, U, N>>
         }
     }
     const auto single = make_thermally_perfect_mixture(species, scales);
-    Built<TwoTemperatureMixture<P, U, N, S>, SpeciesData<P, U, N>> built {};
+    Built<TwoTemperatureMixture<P, U, N, S>, SpeciesData<P, U, N>> built {
+      .model = {.thermally_perfect = single.model,
+                .translational_rotational_cp = {},
+                .formation_enthalpy = {}},
+      .species = single.species};
     auto& model = built.model;
-    model.thermally_perfect = single.model;
-    built.species = single.species;
     const P t_ref = single.model.reference_temperature.value();
     const P ln_t_ref = std::log(t_ref);
     for (const SpeciesIndex i : species_indices(0, N)) {
@@ -141,7 +143,7 @@ CANARY_HOST_DEVICE TranslationalRotationalSums<W>
 // temperature t (model units), with ln_t = ln t, with plain values of type
 // W.
 template <Scalar W, std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
-    requires ScalarWith<W, P>
+    requires ScalarWith<W, P> && HasLog<W>
 CANARY_HOST_DEVICE EnergyAndCv<W> species_vibrational_electronic_energy(
   const TwoTemperatureMixture<P, U, N, S>& gas, SpeciesIndex index, W t, W ln_t)
 {

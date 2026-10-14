@@ -6,9 +6,11 @@
 // NASA/TP-2002-211556). These are empirical fits: they compute on plain
 // scalars, in the temperature unit of the model that holds the curve.
 
+#include <algorithm>
 #include <array>
 #include <canary/build.hpp>
 #include <canary/config.hpp>
+#include <canary/detail/nasa9_integrals.hpp>
 #include <canary/detail/nasa9_validation.hpp>
 #include <canary/scalar.hpp>
 #include <cmath>
@@ -55,76 +57,120 @@ template <Scalar T> struct Nasa9CpH {
     T h_over_r;
 };
 
-// A fit in the temperature unit of a model, with temperature scale tau
-// (1 in SI): with t' = t / tau, the polynomial forms of Nasa9Data with
-// coefficients b give cp/R, h/R in model temperature units, and s/R. The
-// breaks and blending widths are in model temperature units. low and high
-// hold the values at breaks[0] and breaks[segments], which continue the
-// curve beyond its ends (see nasa9_cp_h).
-template <std::floating_point P, std::size_t S>
-    requires(S > 0)
-struct Nasa9Curve {
-    int segments;
-    std::array<P, S + 1> breaks;
-    std::array<P, S> blends;
-    std::array<std::array<P, 9>, S> b;
-    Nasa9Values<P> low;
-    Nasa9Values<P> high;
-};
-
 namespace detail
 {
 
-// Coefficients of the curve at the value part t:
-// - inside the closed blending region [b_i - w_i / 2, b_i + w_i / 2] of an
-//   interior boundary b_i: lambda * (segment above) + (1 - lambda) *
-//   (segment below), with lambda = (t - start) / (end - start) using
-//   the rounded endpoints start = b_i - w_i/2 and end = b_i + w_i/2;
-// - otherwise those of the segment that contains t.
-// lambda is computed in P from the value part only, so a dual-number
-// temperature treats it as a constant. Outside blending regions lambda is 0 and the
-// same formula returns the segment's coefficients exactly.
-template <std::floating_point P, std::size_t S, std::floating_point V>
-CANARY_HOST_DEVICE constexpr std::array<P, 9> nasa9_coefficients(const Nasa9Curve<P, S>& curve, V t)
+// Ordinary NASA9 polynomials; integration constants are stored in k[7:9].
+template <Scalar T, typename P>
+CANARY_HOST_DEVICE T nasa9_cp(const std::array<P, 9>& k, T t) noexcept
 {
-    const auto tc = static_cast<P>(t);
-    int below = 0;
-    int above = 0;
-    P lambda = P(0);
-    for (int i = 1; i < curve.segments; ++i) {
-        const auto boundary = static_cast<std::size_t>(i);
-        const P width = curve.blends[boundary - 1];
-        const P start = curve.breaks[boundary] - (width / P(2));
-        const P end = curve.breaks[boundary] + (width / P(2));
-        if (tc >= start && tc <= end) {
-            below = i - 1;
-            above = i;
-            lambda = (tc - start) / (end - start);
-        } else if (tc > end) {
-            below = i;
-            above = i;
-        }
-    }
-    const auto& lower = curve.b[static_cast<std::size_t>(below)];
-    const auto& upper = curve.b[static_cast<std::size_t>(above)];
-    std::array<P, 9> k {};
-    for (std::size_t j = 0; j < 9; ++j) {
-        k[j] = (lambda * upper[j]) + ((P(1) - lambda) * lower[j]);
-    }
-    return k;
+    using V = ScalarTraits<T>::value_type;
+    const T inv = T(V(1)) / t;
+    return T(((k[0] * inv) + k[1]) * inv + k[2] + t * (k[3] + t * (k[4] + t * (k[5] + t * k[6]))));
+}
+
+template <Scalar T, typename P>
+CANARY_HOST_DEVICE T nasa9_h(const std::array<P, 9>& k, T t, T ln_t) noexcept
+{
+    using V = ScalarTraits<T>::value_type;
+    return T(
+      -k[0] / t + k[1] * ln_t + k[7] +
+      t * (k[2] + t * (k[3] / V(2) + t * (k[4] / V(3) + t * (k[5] / V(4) + t * (k[6] / V(5)))))));
+}
+
+template <Scalar T, typename P>
+CANARY_HOST_DEVICE T nasa9_entropy(const std::array<P, 9>& k, T t, T ln_t) noexcept
+{
+    using V = ScalarTraits<T>::value_type;
+    const T inv = T(V(1)) / t;
+    return T(((-k[0] / V(2)) * inv - k[1]) * inv + k[2] * ln_t + k[8] +
+             t * (k[3] + t * (k[4] / V(2) + t * (k[5] / V(3) + t * (k[6] / V(4))))));
 }
 
 }  // namespace detail
 
-// cp/R and h/R of the curve at temperature t (model units), with ln_t the
-// natural logarithm of t, which the caller computes once for all species.
-// Inside [breaks[0], breaks[segments]] the polynomials are evaluated in
-// Horner form with the coefficients of detail::nasa9_coefficients. Beyond
-// an end t_end, cp keeps its value at t_end and h continues as
-// h(t_end) + cp(t_end) (t - t_end).
+// Validated fixed-size fit in model temperature units. Construction is through
+// make_nasa9_curve. Copies retain the validation; evaluation is const and allocates
+// no storage dynamically. The heat capacity uses cubic smoothstep transitions.
+// Enthalpy and entropy integrate that capacity and retain their 298.15 K anchors.
+template <std::floating_point P, std::size_t S>
+    requires(S > 0)
+class Nasa9Curve
+{
+    int segments {};
+    std::array<P, S + 1> breaks {};
+    std::array<P, S> blends {};
+    std::array<std::array<P, 9>, S> b {};
+    Nasa9Values<P> low {};
+    Nasa9Values<P> high {};
+
+    Nasa9Curve() = default;
+    void check() const;
+
+    // Selection uses the scalar value; all transition arithmetic retains T.
+    struct Region {
+        std::size_t lower;
+        P start;
+        P end;
+        bool transition;
+    };
+
+    template <std::floating_point V> CANARY_HOST_DEVICE Region region(V t) const noexcept
+    {
+        for (std::size_t i = 1; i < static_cast<std::size_t>(segments); ++i) {
+            const P start = breaks[i] - blends[i - 1] / P(2);
+            const P end = breaks[i] + blends[i - 1] / P(2);
+            if (t < start) { return {i - 1, start, end, false}; }
+            if (t <= end) { return {i - 1, start, end, true}; }
+        }
+        return {static_cast<std::size_t>(segments - 1), P(0), P(0), false};
+    }
+
+    template <HasLog T>
+        requires ScalarWith<T, P>
+    CANARY_HOST_DEVICE Nasa9CpH<T> inside_cp_h(T t, T ln_t) const noexcept
+    {
+        using V = ScalarTraits<T>::value_type;
+        const auto r = region(ScalarTraits<T>::value(t));
+        const auto& lower = b[r.lower];
+        const T cp = detail::nasa9_cp(lower, t);
+        const T h = detail::nasa9_h(lower, t, ln_t);
+        if (!r.transition) { return {cp, h}; }
+        const auto& upper = b[r.lower + 1];
+        const T u = T((t - r.start) / (r.end - r.start));
+        const T w = u * u * (T(V(3)) - T(V(2)) * u);
+        return {T((T(V(1)) - w) * cp + w * detail::nasa9_cp(upper, t)),
+                T(h + detail::nasa9_integral<false>(lower, upper, t, r.start, r.end))};
+    }
+
+    template <HasLog T>
+        requires ScalarWith<T, P>
+    CANARY_HOST_DEVICE T inside_s(T t, T ln_t) const noexcept
+    {
+        const auto r = region(ScalarTraits<T>::value(t));
+        const T s = detail::nasa9_entropy(b[r.lower], t, ln_t);
+        if (!r.transition) { return s; }
+        return T(s + detail::nasa9_integral<true>(b[r.lower], b[r.lower + 1], t, r.start, r.end));
+    }
+
+    template <std::size_t M, std::floating_point Q>
+    friend Nasa9Curve<Q, M> make_nasa9_curve(const Nasa9Data<M>&, Q);
+    template <Scalar T, std::floating_point Q, std::size_t M>
+        requires(ScalarWith<T, Q> && HasLog<T>)
+    friend CANARY_HOST_DEVICE Nasa9CpH<T> nasa9_cp_h(const Nasa9Curve<Q, M>&, T, T) noexcept;
+    template <Scalar T, std::floating_point Q, std::size_t M>
+        requires(ScalarWith<T, Q> && HasLog<T>)
+    friend CANARY_HOST_DEVICE T nasa9_s(const Nasa9Curve<Q, M>&, T, T) noexcept;
+};
+
+// cp/R and h/R at positive temperature t in model units; ln_t must equal ln(t).
+// The caller may share ln_t across species. Wide transitions additionally use
+// log(t/start), so custom scalars must provide HasLog. Scalar operations,
+// ScalarTraits access and log must not throw. Outside the fit cp is
+// constant and h continues as h(end) + cp(end)*(t-end).
 template <Scalar T, std::floating_point P, std::size_t S>
-    requires ScalarWith<T, P>
-CANARY_HOST_DEVICE Nasa9CpH<T> nasa9_cp_h(const Nasa9Curve<P, S>& curve, T t, T ln_t)
+    requires(ScalarWith<T, P> && HasLog<T>)
+CANARY_HOST_DEVICE Nasa9CpH<T> nasa9_cp_h(const Nasa9Curve<P, S>& curve, T t, T ln_t) noexcept
 {
     using V = ScalarTraits<T>::value_type;
     const V tv = ScalarTraits<T>::value(t);
@@ -133,44 +179,28 @@ CANARY_HOST_DEVICE Nasa9CpH<T> nasa9_cp_h(const Nasa9Curve<P, S>& curve, T t, T 
         const bool below = tv < curve.breaks[0];
         const Nasa9Values<P>& end = below ? curve.low : curve.high;
         const P t_end = below ? curve.breaks[0] : curve.breaks[last];
-        return {
-          .cp_over_r = T(static_cast<V>(end.cp_over_r)),
-          .h_over_r = T(end.h_over_r + (end.cp_over_r * (t - t_end))),
-        };
+        return {T(static_cast<V>(end.cp_over_r)), T(end.h_over_r + end.cp_over_r * (t - t_end))};
     }
-    const std::array<P, 9> k = detail::nasa9_coefficients(curve, tv);
-    const T inv_t = T(V(1)) / t;
-    const auto cp = (((k[0] * inv_t) + k[1]) * inv_t) +
-                    (k[2] + (t * (k[3] + (t * (k[4] + (t * (k[5] + (t * k[6]))))))));
-    const auto h =
-      (-(k[0] * inv_t)) + (k[1] * ln_t) + k[7] +
-      (t * (k[2] + (t * ((k[3] / P(2)) +
-                         (t * ((k[4] / P(3)) + (t * ((k[5] / P(4)) + (t * (k[6] / P(5)))))))))));
-    return {.cp_over_r = T(cp), .h_over_r = T(h)};
+    return curve.inside_cp_h(t, ln_t);
 }
 
-// s/R of the curve at temperature t (model units) and the standard pressure
-// of the fit, with ln_t = ln t. Beyond an end t_end, s continues as
-// s(t_end) + cp(t_end) ln(t / t_end).
+// s/R at positive temperature t and the fit's standard pressure, with ln_t=ln(t).
+// Requires HasLog for wide transitions; scalar operations, ScalarTraits access
+// and log must not throw. Outside the fit s continues as
+// s(end) + cp(end)*ln(t/end). No exceptions or allocation occur during evaluation.
 template <Scalar T, std::floating_point P, std::size_t S>
-    requires ScalarWith<T, P>
-CANARY_HOST_DEVICE T nasa9_s(const Nasa9Curve<P, S>& curve, T t, T ln_t)
+    requires(ScalarWith<T, P> && HasLog<T>)
+CANARY_HOST_DEVICE T nasa9_s(const Nasa9Curve<P, S>& curve, T t, T ln_t) noexcept
 {
-    using V = ScalarTraits<T>::value_type;
-    const V tv = ScalarTraits<T>::value(t);
+    const auto tv = ScalarTraits<T>::value(t);
     const auto last = static_cast<std::size_t>(curve.segments);
     if (tv < curve.breaks[0] || tv > curve.breaks[last]) {
         const bool below = tv < curve.breaks[0];
         const Nasa9Values<P>& end = below ? curve.low : curve.high;
         const P ln_t_end = std::log(below ? curve.breaks[0] : curve.breaks[last]);
-        return T(end.s_over_r + (end.cp_over_r * (ln_t - ln_t_end)));
+        return T(end.s_over_r + end.cp_over_r * (ln_t - ln_t_end));
     }
-    const std::array<P, 9> k = detail::nasa9_coefficients(curve, tv);
-    const T inv_t = T(V(1)) / t;
-    const auto s =
-      (((-(k[0] / P(2)) * inv_t) - k[1]) * inv_t) + (k[2] * ln_t) + k[8] +
-      (t * (k[3] + (t * ((k[4] / P(2)) + (t * ((k[5] / P(3)) + (t * (k[6] / P(4)))))))));
-    return T(s);
+    return curve.inside_s(t, ln_t);
 }
 
 namespace detail
@@ -240,17 +270,21 @@ template <std::floating_point P> P nasa9_parameter(long double value, const char
     return static_cast<P>(value);
 }
 
+}  // namespace detail
+
 template <std::floating_point P, std::size_t S>
-void check_nasa9_curve(const Nasa9Curve<P, S>& curve)
+    requires(S > 0)
+void Nasa9Curve<P, S>::check() const
 {
-    const auto n = static_cast<std::size_t>(curve.segments);
+    using namespace detail;
+    const auto n = static_cast<std::size_t>(segments);
     for (std::size_t i = 0; i <= n; ++i) {
-        if (!(curve.breaks[i] > P(0)) || (i > 0 && !(curve.breaks[i] > curve.breaks[i - 1]))) {
+        if (!(breaks[i] > P(0)) || (i > 0 && !(breaks[i] > breaks[i - 1]))) {
             throw ParameterError(
               std::format("converted boundary {} must be positive and strictly increasing", i));
         }
     }
-    P previous_end = curve.breaks[0];
+    P previous_end = breaks[0];
     const auto require_capacity =
       [](const CapacityPolynomial& polynomial, std::size_t region, const char* kind) {
           if (!positive_capacity(polynomial)) {
@@ -259,46 +293,44 @@ void check_nasa9_curve(const Nasa9Curve<P, S>& curve)
           }
       };
     for (std::size_t i = 1; i < n; ++i) {
-        const P width = curve.blends[i - 1];
-        const P start = curve.breaks[i] - width / P(2);
-        const P end = curve.breaks[i] + width / P(2);
+        const P width = blends[i - 1];
+        const P start = breaks[i] - width / P(2);
+        const P end = breaks[i] + width / P(2);
         if (!(width > P(0)) || !std::isfinite(start) || !std::isfinite(end) ||
-            !(start < curve.breaks[i]) || !(end > curve.breaks[i]) || start < previous_end ||
-            end > curve.breaks[n]) {
+            !(start < breaks[i]) || !(end > breaks[i]) || start < previous_end || end > breaks[n]) {
             throw ParameterError(
               std::format("converted transition {} collapses, overlaps or leaves the fit", i));
         }
-        require_capacity(capacity_polynomial(curve.b[i - 1], previous_end, start),
-                         i - 1,
-                         "segment");
-        auto lower = capacity_polynomial(curve.b[i - 1], start, end);
-        const auto upper = capacity_polynomial(curve.b[i], start, end);
+        require_capacity(capacity_polynomial(b[i - 1], previous_end, start), i - 1, "segment");
+        auto lower = capacity_polynomial(b[i - 1], start, end);
+        const auto upper = capacity_polynomial(b[i], start, end);
         const auto extent = CapacityInterval {static_cast<long double>(end)} -
                             CapacityInterval {static_cast<long double>(start)};
         const P span = end - start;
         const long double reciprocal = 1.0L / static_cast<long double>(span);
         const auto ratio = extent * capacity_bounds(reciprocal, reciprocal);
         auto blend = lower;
-        for (std::size_t k = 0; k + 1 < blend.size(); ++k) {
-            blend[k + 1] = blend[k + 1] + (upper[k] - lower[k]) * ratio;
+        const auto quadratic = CapacityInterval {3} * ratio * ratio;
+        const auto cubic = CapacityInterval {-2} * ratio * ratio * ratio;
+        for (std::size_t k = 0; k < 7; ++k) {
+            const auto delta = upper[k] - lower[k];
+            blend[k + 2] = blend[k + 2] + delta * quadratic;
+            blend[k + 3] = blend[k + 3] + delta * cubic;
         }
         require_capacity(blend, i, "transition");
         previous_end = end;
     }
-    require_capacity(capacity_polynomial(curve.b[n - 1], previous_end, curve.breaks[n]),
-                     n - 1,
-                     "segment");
+    require_capacity(capacity_polynomial(b[n - 1], previous_end, breaks[n]), n - 1, "segment");
 }
-
-}  // namespace detail
 
 // Curve of a fit in a model's temperature unit, with temperature_scale the
 // SI value of that unit in kelvin (1 in SI). The coefficients are folded in
 // long double precision and then rounded to P:
 //   b_k = a_k tau^(k - 2) for k = 0..6, b_7 = (a_7 + a_1 ln tau) / tau,
 //   b_8 = a_8 + a_2 ln tau,
-// and the breaks and blending widths are divided by tau. With tau = 1 the
-// coefficients equal a. Throws ParameterError when the scale is not finite
+// and the breaks and blending widths are divided by tau. Integration constants
+// are then shifted to integrate the blended cp continuously while preserving
+// the original evaluator at 298.15 K. Throws ParameterError when the scale is not finite
 // and positive, the segment count is not in [1, S], the used breaks are not
 // finite, positive and increasing, a blending width is not finite and
 // positive, the blending regions overlap or leave the fit, or a used
@@ -337,7 +369,61 @@ Nasa9Curve<P, S> make_nasa9_curve(const Nasa9Data<S>& data, P temperature_scale)
           detail::nasa9_parameter<P>((a[7] + (a[1] * ln_tau)) / tau, "enthalpy constant");
         curve.b[j][8] = detail::nasa9_parameter<P>(a[8] + (a[2] * ln_tau), "entropy constant");
     }
-    detail::check_nasa9_curve(curve);
+    curve.check();
+    // Host evaluation in widened arithmetic avoids cancellation when deriving
+    // regional integration constants. The reference retains the original linear
+    // coefficient blend and constant-cp continuation before constants are shifted.
+    const long double anchor_t = 298.15L / tau;
+    const auto anchor = [&](bool original) {
+        const long double t = std::clamp(anchor_t,
+                                         static_cast<long double>(curve.breaks[0]),
+                                         static_cast<long double>(curve.breaks[n]));
+        Nasa9Values<long double> out {};
+        if (original) {
+            const auto r = curve.region(t);
+            std::array<long double, 9> k {};
+            const long double u = r.transition ? (t - r.start) / P(r.end - r.start) : 0;
+            for (std::size_t j = 0; j < 9; ++j) {
+                k[j] = (1 - u) * curve.b[r.lower][j];
+                if (r.transition) { k[j] += u * curve.b[r.lower + 1][j]; }
+            }
+            out = {detail::nasa9_cp(k, t),
+                   detail::nasa9_h(k, t, std::log(t)),
+                   detail::nasa9_entropy(k, t, std::log(t))};
+        } else {
+            const auto cp_h = curve.inside_cp_h(t, std::log(t));
+            out = {cp_h.cp_over_r, cp_h.h_over_r, curve.inside_s(t, std::log(t))};
+        }
+        out.h_over_r += out.cp_over_r * (anchor_t - t);
+        out.s_over_r += out.cp_over_r * std::log(anchor_t / t);
+        return out;
+    };
+    const auto original_anchor = anchor(true);
+    for (std::size_t i = 1; i < n; ++i) {
+        const P start = curve.breaks[i] - curve.blends[i - 1] / P(2);
+        const P end = curve.breaks[i] + curve.blends[i - 1] / P(2);
+        const long double t = end;
+        const auto& lower = curve.b[i - 1];
+        auto& upper = curve.b[i];
+        const long double h = detail::nasa9_h(lower, t, std::log(t)) +
+                              detail::nasa9_integral<false>(lower, upper, t, start, end);
+        const long double s = detail::nasa9_entropy(lower, t, std::log(t)) +
+                              detail::nasa9_integral<true>(lower, upper, t, start, end);
+        upper[7] = detail::nasa9_parameter<P>(upper[7] + h - detail::nasa9_h(upper, t, std::log(t)),
+                                              "enthalpy constant");
+        upper[8] =
+          detail::nasa9_parameter<P>(upper[8] + s - detail::nasa9_entropy(upper, t, std::log(t)),
+                                     "entropy constant");
+    }
+    const auto blended_anchor = anchor(false);
+    for (std::size_t i = 0; i < n; ++i) {
+        curve.b[i][7] = detail::nasa9_parameter<P>(
+          curve.b[i][7] + (original_anchor.h_over_r - blended_anchor.h_over_r),
+          "enthalpy constant");
+        curve.b[i][8] = detail::nasa9_parameter<P>(
+          curve.b[i][8] + (original_anchor.s_over_r - blended_anchor.s_over_r),
+          "entropy constant");
+    }
     // The ends lie inside [breaks[0], breaks[segments]], so these calls
     // evaluate the polynomials and do not read low or high.
     const auto values_at = [&curve](P t) {
