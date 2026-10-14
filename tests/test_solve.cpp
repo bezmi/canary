@@ -506,6 +506,101 @@ void test_solve()
         check.template operator()<double>();
     };
 
+    "invalid solve inputs are rejected before residual evaluation"_test = [] {
+        const auto check = []<std::floating_point V>() {
+            using Dual = canary::test::Dual<V>;
+            const Bracket<V> bracket {.lower = V(0), .upper = V(2)};
+            const SolveSettings<V> limits {.relative_tolerance = V(0.01), .max_iterations = 50};
+            const auto check_invalid = [&](Bracket<V> bounds, V guess, SolveSettings<V> options) {
+                int value_calls = 0;
+                int full_calls = 0;
+                const auto f_value = [&](V x) {
+                    ++value_calls;
+                    return Residual<V> {.value = x, .derivative = V(1)};
+                };
+                const auto f_full = [&](Dual x) {
+                    ++full_calls;
+                    return Residual<Dual> {.value = x, .derivative = Dual(V(1))};
+                };
+                const auto plain = solve<V>(f_value, f_value, bounds, guess, options);
+                const auto dual = solve<Dual>(f_value, f_full, bounds, guess, options);
+                expect(plain.status == Status::Invalid);
+                expect(dual.status == Status::Invalid);
+                expect(std::isnan(guess) ? std::isnan(plain.root) : plain.root == guess);
+                expect(std::isnan(guess) ? std::isnan(dual.root.real())
+                                         : dual.root.real() == guess);
+                expect(dual.root.dual() == V(0));
+                expect(value_calls == 0_i);
+                expect(full_calls == 0_i);
+            };
+            check_invalid({.lower = V(2), .upper = V(0)}, V(1), limits);
+            check_invalid(bracket, V(1), {.relative_tolerance = V(-1), .max_iterations = 50});
+            check_invalid(bracket, V(1), {.relative_tolerance = V(0.01), .max_iterations = -1});
+            for (const V invalid : {std::numeric_limits<V>::quiet_NaN(),
+                                    -std::numeric_limits<V>::infinity(),
+                                    std::numeric_limits<V>::infinity()}) {
+                check_invalid({.lower = invalid, .upper = V(2)}, V(1), limits);
+                check_invalid({.lower = V(0), .upper = invalid}, V(1), limits);
+                check_invalid(bracket, invalid, limits);
+                check_invalid(bracket, V(1), {.relative_tolerance = invalid, .max_iterations = 50});
+            }
+        };
+        check.template operator()<float>();
+        check.template operator()<double>();
+    };
+
+    "zero tolerance accepts exact roots and rejects exhausted precision"_test = [] {
+        const auto check = []<std::floating_point V>() {
+            using Dual = canary::test::Dual<V>;
+            const SolveSettings<V> limits {.relative_tolerance = V(0), .max_iterations = 128};
+            const auto linear_value = [](V x) {
+                return Residual<V> {.value = x - V(1), .derivative = V(1)};
+            };
+            const auto linear_full = [](Dual x) {
+                return Residual<Dual> {.value = x - Dual(V(1), V(1)), .derivative = Dual(V(1))};
+            };
+            for (const Bracket<V> bracket : {Bracket<V> {.lower = V(0), .upper = V(2)},
+                                             Bracket<V> {.lower = V(0), .upper = V(1)},
+                                             Bracket<V> {.lower = V(1), .upper = V(1)}}) {
+                const auto plain = solve<V>(linear_value, linear_value, bracket, V(0.5), limits);
+                const auto dual = solve<Dual>(linear_value, linear_full, bracket, V(0.5), limits);
+                expect(plain.status == Status::Valid);
+                expect(plain.root == V(1));
+                expect(dual.status == Status::Valid);
+                expect(dual.root.real() == V(1));
+                expect(dual.root.dual() == V(1));
+            }
+            // A fused residual retains the nonzero error at every representable
+            // approximation to sqrt(2).
+            const auto quadratic_value = [](V x) {
+                return Residual<V> {.value = std::fma(x, x, V(-2)), .derivative = V(2) * x};
+            };
+            int full_calls = 0;
+            const auto quadratic_full = [&](Dual x) {
+                ++full_calls;
+                return Residual<Dual> {.value = x * x - Dual(V(2), V(1)), .derivative = V(2) * x};
+            };
+            const Bracket<V> bracket {.lower = V(1), .upper = V(2)};
+            for (const int iterations : {0, 1, limits.max_iterations}) {
+                const SolveSettings<V> options {.relative_tolerance = V(0),
+                                                .max_iterations = iterations};
+                const auto plain =
+                  solve<V>(quadratic_value, quadratic_value, bracket, V(1.5), options);
+                const auto dual =
+                  solve<Dual>(quadratic_value, quadratic_full, bracket, V(1.5), options);
+                expect(plain.status == Status::NotConverged);
+                expect(plain.root >= bracket.lower && plain.root <= bracket.upper);
+                expect(quadratic_value(plain.root).value != V(0));
+                expect(dual.status == Status::NotConverged);
+                expect(dual.root.real() == plain.root);
+                expect(dual.root.dual() == V(0));
+                expect(full_calls == 0_i);
+            }
+        };
+        check.template operator()<float>();
+        check.template operator()<double>();
+    };
+
     "a bracket without a sign change gives Invalid"_test = [] {
         const auto f = [](double x) { return cubic(x, 10.0); };
         expect(

@@ -34,7 +34,7 @@ template <std::floating_point V> struct Bracket {
 };
 
 template <std::floating_point V> struct SolveSettings {
-    V relative_tolerance;  // on the step, relative to |x|
+    V relative_tolerance;  // finite and nonnegative; zero requires an exact root
     int max_iterations;
 };
 
@@ -44,11 +44,16 @@ template <Scalar T> struct SolveResult {
 };
 
 // Root of f in the bracket, starting from guess (clamped into the bracket).
+// Bounds and guess must be finite, lower <= upper, relative_tolerance finite
+// and nonnegative, and max_iterations nonnegative. Invalid inputs return the
+// guess as a constant with Invalid before either residual function is called.
 // Exact endpoint roots are accepted before iteration. If both endpoints are
 // roots, select the one nearest the clamped guess, with the lower endpoint
 // selected on a tie. Equal finite bounds are accepted only when the endpoint
 // residual is finite and exactly zero; Dual derivative checks still apply.
 //
+// With zero relative_tolerance, only an exact finite root converges; exhausted
+// iterations or representable bracket points give NotConverged.
 // The iteration runs on value parts with f_value. When the Newton step
 // f(x) / f'(x) is at most relative_tolerance * |x|, it takes that step and
 // stops; otherwise it takes the Newton step, replaced by bisection when the
@@ -78,8 +83,13 @@ CANARY_HOST_DEVICE SolveResult<T> solve(const FValue& f_value,
                                         V guess,
                                         SolveSettings<V> settings)
 {
-    V lower = bracket.lower;
-    V upper = bracket.upper;
+    const V lower = bracket.lower;
+    const V upper = bracket.upper;
+    if (!std::isfinite(lower) || !std::isfinite(upper) || lower > upper || !std::isfinite(guess) ||
+        !std::isfinite(settings.relative_tolerance) || settings.relative_tolerance < V(0) ||
+        settings.max_iterations < 0) {
+        return {.root = T(guess), .status = Status::Invalid};
+    }
     const V f_lower = f_value(lower).value;
     const V f_upper = f_value(upper).value;
     if (!std::isfinite(f_lower) || !std::isfinite(f_upper)) {
@@ -122,7 +132,8 @@ CANARY_HOST_DEVICE SolveResult<T> solve(const FValue& f_value,
                 // test and ends the iteration, also when it rounds to x itself,
                 // which the bracket test would reject.
                 const V newton = r.value / r.derivative;
-                if (std::abs(newton) <= settings.relative_tolerance * std::abs(x)) {
+                if (settings.relative_tolerance > V(0) &&
+                    std::abs(newton) <= settings.relative_tolerance * std::abs(x)) {
                     x -= newton;
                     status = Status::Valid;
                     break;
@@ -130,9 +141,11 @@ CANARY_HOST_DEVICE SolveResult<T> solve(const FValue& f_value,
                 const V candidate = x - newton;
                 if (candidate > low && candidate < high) { next = candidate; }
             }
+            if (settings.relative_tolerance == V(0) && !(next > low && next < high)) { break; }
             const V step = next - x;
             x = next;
-            if (std::abs(step) <= settings.relative_tolerance * std::abs(x)) {
+            if (settings.relative_tolerance > V(0) &&
+                std::abs(step) <= settings.relative_tolerance * std::abs(x)) {
                 status = Status::Valid;
                 break;
             }
