@@ -2,6 +2,7 @@
 #define CANARY_STATE_HPP
 
 #include <array>
+#include <canary/config.hpp>
 #include <canary/quantity.hpp>
 #include <canary/scalar.hpp>
 #include <canary/status.hpp>
@@ -11,6 +12,21 @@
 
 namespace canary
 {
+
+// An internal energy mode identity, separate from species identities and
+// array extents. The containing model determines the mode-count bound.
+// Default construction denotes mode 0; value() is the storage-access boundary.
+class ModeIndex
+{
+  public:
+    CANARY_HOST_DEVICE constexpr ModeIndex() noexcept {}
+    CANARY_HOST_DEVICE constexpr explicit ModeIndex(std::size_t value) noexcept : value_(value) {}
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr std::size_t value() const noexcept { return value_; }
+    friend CANARY_HOST_DEVICE constexpr bool operator==(ModeIndex, ModeIndex) noexcept = default;
+
+  private:
+    std::size_t value_ {0};
+};
 
 // A thermodynamic state with value type T in unit system U: the members
 // rho, e (internal energy per unit mass), p and temp, and the member types

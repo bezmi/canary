@@ -3,9 +3,11 @@
 
 #include <boost/ut.hpp>
 #include <canary/quantity.hpp>
+#include <canary/species.hpp>
 #include <canary/state.hpp>
 #include <canary/status.hpp>
 #include <concepts>
+#include <limits>
 #include <span>
 #include <type_traits>
 
@@ -47,6 +49,21 @@ struct IncorrectAcousticProperties {
 };
 
 }  // namespace
+
+static_assert(sizeof(canary::ModeIndex) == sizeof(std::size_t));
+static_assert(std::is_trivially_copyable_v<canary::ModeIndex>);
+static_assert(std::is_standard_layout_v<canary::ModeIndex>);
+static_assert(std::is_nothrow_default_constructible_v<canary::ModeIndex>);
+static_assert(std::is_nothrow_constructible_v<canary::ModeIndex, std::size_t>);
+static_assert(!std::convertible_to<std::size_t, canary::ModeIndex>);
+static_assert(!std::convertible_to<canary::ModeIndex, std::size_t>);
+static_assert(!std::constructible_from<canary::ModeIndex, canary::SpeciesIndex>);
+static_assert(!std::constructible_from<canary::SpeciesIndex, canary::ModeIndex>);
+static_assert(canary::ModeIndex {} == canary::ModeIndex {0});
+static_assert(canary::ModeIndex {std::numeric_limits<std::size_t>::max()}.value() ==
+              std::numeric_limits<std::size_t>::max());
+static_assert(noexcept(canary::ModeIndex {1}.value()));
+static_assert(noexcept(canary::ModeIndex {1} == canary::ModeIndex {2}));
 
 static_assert(canary::ThermoStateOf<canary::ThermoState<double, si>, double, si>);
 static_assert(canary::ThermoStateOf<canary::ThermoState<D, scaled>, D, scaled>);
