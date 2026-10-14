@@ -2,11 +2,6 @@
 #define CANARY_MODELS_MULTI_TEMPERATURE_HPP
 
 #include <array>
-#include <cmath>
-#include <concepts>
-#include <cstddef>
-#include <cstdint>
-#include <format>
 #include <canary/build.hpp>
 #include <canary/config.hpp>
 #include <canary/detail/solve.hpp>
@@ -19,6 +14,11 @@
 #include <canary/status.hpp>
 #include <canary/thermo.hpp>
 #include <canary/units.hpp>
+#include <cmath>
+#include <concepts>
+#include <cstddef>
+#include <cstdint>
+#include <format>
 #include <string_view>
 
 namespace canary
@@ -466,7 +466,7 @@ CANARY_HOST_DEVICE T energy_sum(const std::array<SpecificEnergy<T, U>, M>& mode_
 }
 
 // Closure of the state with the given members. The status combines the
-// status of (rho, e, T), of (rho, e_m, T_m) for every mode (see
+// status of (rho, e, T, p), of (rho, e_m, T_m) for every mode (see
 // thermally_perfect_status) and status.
 template <Scalar T, UnitSystem U, std::size_t M>
 CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
@@ -478,7 +478,7 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
                             const std::array<ModeTemperature<T, U>, M>& mode_temp,
                             Status status)
 {
-    Status s = combine(thermally_perfect_status(rho, e, temp), status);
+    Status s = combine(thermally_perfect_status(rho, e, temp, p), status);
     for (std::size_t m = 0; m < M; ++m) {
         s = combine(
           s,
@@ -538,7 +538,8 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
                                       Density<T, U> rho,
                                       Temperature<T, U> temp,
                                       const std::array<ModeTemperature<T, U>, M>& mode_temp,
-                                      Status status)
+                                      Status status,
+                                      Pressure<T, U> p)
 {
     std::array<SpecificEnergy<T, U>, M> mode_e {};
     for (std::size_t m = 0; m < M; ++m) {
@@ -550,11 +551,39 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
     };
     return multi_temperature_closure(rho,
                                      e,
-                                     multi_temperature_pressure(gas, sums, rho, temp, mode_temp),
+                                     p,
                                      temp,
                                      mode_e,
                                      mode_temp,
                                      combine(status, mix.status));
+}
+
+template <Scalar T,
+          std::floating_point P,
+          UnitSystem U,
+          std::size_t N,
+          std::size_t M,
+          std::size_t S,
+          std::size_t L>
+    requires ScalarWith<T, P> && HasLog<T> && HasExp<T>
+CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
+  multi_temperature_from_temperatures(const MultiTemperatureMixture<P, U, N, M, S, L>& gas,
+                                      const NormalisedComposition<T, U, N>& mix,
+                                      const HeavySpeciesSums<T>& sums,
+                                      Density<T, U> rho,
+                                      Temperature<T, U> temp,
+                                      const std::array<ModeTemperature<T, U>, M>& mode_temp,
+                                      Status status)
+{
+    return multi_temperature_from_temperatures(
+      gas,
+      mix,
+      sums,
+      rho,
+      temp,
+      mode_temp,
+      status,
+      multi_temperature_pressure(gas, sums, rho, temp, mode_temp));
 }
 
 // Every mode temperature at temp.
@@ -1068,8 +1097,8 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
                                                   rho,
                                                   temp,
                                                   detail::equal_mode_temperatures<T, U, M>(temp),
-                                                  Status::Valid);
-    c.state.p = p;
+                                                  Status::Valid,
+                                                  p);
     return c;
 }
 
@@ -1120,8 +1149,8 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
                                                   rho,
                                                   temp,
                                                   detail::equal_mode_temperatures<T, U, M>(temp),
-                                                  Status::Valid);
-    c.state.p = p;
+                                                  Status::Valid,
+                                                  p);
     return c;
 }
 
@@ -1198,8 +1227,8 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
                                                          rho,
                                                          temp,
                                                          mode_temp,
-                                                         Status::Valid);
-    c.state.p = p;
+                                                         Status::Valid,
+                                                         p);
     return c;
 }
 
@@ -1260,8 +1289,8 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
                                                          rho,
                                                          temp,
                                                          mode_temp,
-                                                         Status::Valid);
-    c.state.p = p;
+                                                         Status::Valid,
+                                                         p);
     return c;
 }
 

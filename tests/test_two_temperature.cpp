@@ -4,8 +4,6 @@
 #include <algorithm>
 #include <array>
 #include <boost/ut.hpp>
-#include <cmath>
-#include <cstddef>
 #include <canary/build.hpp>
 #include <canary/data/air5.hpp>
 #include <canary/models/thermally_perfect.hpp>
@@ -16,6 +14,8 @@
 #include <canary/status.hpp>
 #include <canary/thermo.hpp>
 #include <canary/units.hpp>
+#include <cmath>
+#include <cstddef>
 #include <limits>
 #include <mdspan/mdspan.hpp>
 #include <string>
@@ -186,6 +186,35 @@ void test_two_temperature()
     const Air& gas = built.model;
     const AirSingle single = canary::make_air5<double>(canary::UnitScales<double, si> {}).model;
     const double r = gas_constant_ratio;
+
+    "two-temperature closures validate pressure with and without explicit modes"_test = [&] {
+        const auto check = [&]<typename V> {
+            const std::array<V, 5> y {V(1), V(0), V(0), V(0), V(0)};
+            const auto mix = mixture(gas, fractions(y));
+            const canary::Density<V, si> rho {std::numeric_limits<V>::max() / V(16)};
+            const canary::Temperature<V, si> temp {V(300)};
+            const std::array<V, 1> mode {V(300)};
+            const auto result = thermo_state(gas, mix, rho, temp, mode_temperatures<si>(mode));
+            expect(result.status == Status::Invalid);
+            expect(std::isinf(result.state.p.value()));
+            expect(std::isfinite(result.state.e.value()));
+            expect(std::isfinite(result.state.mode_e[0].value()));
+            expect(thermo_state(gas, mix, rho, temp).status == Status::Invalid);
+            const auto inverse =
+              thermo_state(gas, mix, rho, result.state.e, mode_temperatures<si>(mode));
+            expect(inverse.status == Status::Invalid);
+            expect(std::isinf(inverse.state.p.value()));
+            const canary::Pressure<V, si> supplied {std::numeric_limits<V>::max() / V(4)};
+            const canary::Temperature<V, si> cold {V(1) / mix.gas_constant.value()};
+            const auto retained =
+              thermo_state(gas, mix, supplied, cold, mode_temperatures<si>(mode));
+            expect(retained.status == Status::Valid);
+            expect(retained.state.p == supplied);
+            expect(thermo_state(gas, mix, supplied, cold).status == Status::Valid);
+        };
+        check.operator()<float>();
+        check.operator()<double>();
+    };
 
     "two-temperature: the builder holds the single-temperature model and the species data"_test =
       [&] {

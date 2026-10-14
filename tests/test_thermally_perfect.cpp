@@ -3,8 +3,6 @@
 
 #include <array>
 #include <boost/ut.hpp>
-#include <cmath>
-#include <cstddef>
 #include <canary/build.hpp>
 #include <canary/data/air5.hpp>
 #include <canary/models/thermally_perfect.hpp>
@@ -14,6 +12,8 @@
 #include <canary/status.hpp>
 #include <canary/thermo.hpp>
 #include <canary/units.hpp>
+#include <cmath>
+#include <cstddef>
 #include <limits>
 #include <mdspan/mdspan.hpp>
 #include <string>
@@ -84,6 +84,32 @@ void test_thermally_perfect()
     using canary::thermo_state;
     const auto built = canary::make_air5<double>(canary::UnitScales<double, si> {});
     const Air& gas = built.model;
+
+    "thermally perfect closures reject pressure overflow and retain diagnostic fields"_test = [&] {
+        const auto check = [&]<typename V> {
+            const std::array<V, 5> y {V(1), V(0), V(0), V(0), V(0)};
+            const auto mix = mixture(gas, fractions(y));
+            const canary::Density<V, si> rho {std::numeric_limits<V>::max() / V(16)};
+            const canary::Temperature<V, si> temp {V(300)};
+            const auto result = thermo_state(gas, mix, rho, temp);
+            expect(result.status == Status::Invalid);
+            expect(std::isinf(result.state.p.value()));
+            expect(result.state.rho == rho && result.state.temp == temp);
+            expect(std::isfinite(result.state.e.value()));
+            const auto inverse =
+              thermo_state(gas, mix, rho, result.state.e, canary::TemperatureGuess<V, si> {temp});
+            expect(inverse.status == Status::Invalid);
+            expect(std::isinf(inverse.state.p.value()));
+            const canary::Pressure<V, si> supplied {std::numeric_limits<V>::max() / V(4)};
+            const canary::Temperature<V, si> cold {V(1) / mix.gas_constant.value()};
+            const auto retained = thermo_state(gas, mix, supplied, cold);
+            expect(retained.status == Status::Valid);
+            expect(retained.state.p == supplied);
+            expect(std::isfinite(retained.state.rho.value()));
+        };
+        check.operator()<float>();
+        check.operator()<double>();
+    };
 
     "the builder derives gas constants, species data and settings"_test = [&] {
         const double r_u = canary::constants::universal_gas_constant<double>;

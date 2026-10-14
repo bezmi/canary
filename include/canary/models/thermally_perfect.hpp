@@ -3,10 +3,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cmath>
-#include <concepts>
-#include <cstddef>
-#include <format>
 #include <canary/build.hpp>
 #include <canary/config.hpp>
 #include <canary/detail/solve.hpp>
@@ -17,6 +13,10 @@
 #include <canary/state.hpp>
 #include <canary/status.hpp>
 #include <canary/units.hpp>
+#include <cmath>
+#include <concepts>
+#include <cstddef>
+#include <format>
 
 namespace canary
 {
@@ -231,6 +231,21 @@ CANARY_HOST_DEVICE Status thermally_perfect_status(Density<T, U> rho,
              : Status::Invalid;
 }
 
+// State validation includes the actual returned pressure. The three-field
+// overload also serves the independently evaluated energy modes.
+template <Scalar T, UnitSystem U>
+CANARY_HOST_DEVICE Status thermally_perfect_status(Density<T, U> rho,
+                                                   SpecificEnergy<T, U> e,
+                                                   Temperature<T, U> temp,
+                                                   Pressure<T, U> p)
+{
+    using V = ScalarTraits<T>::value_type;
+    const V value = ScalarTraits<T>::value(p.value());
+    const Status pressure_status =
+      std::isfinite(value) && value > V(0) ? Status::Valid : Status::Invalid;
+    return combine(thermally_perfect_status(rho, e, temp), pressure_status);
+}
+
 template <Scalar T, UnitSystem U, std::size_t N>
 CANARY_HOST_DEVICE std::array<MassFraction<typename ScalarTraits<T>::value_type>, N>
   fraction_values(const NormalisedComposition<T, U, N>& mix)
@@ -325,19 +340,42 @@ CANARY_HOST_DEVICE Closure<T, U>
     };
     const SolveResult<T> r = solve_temperature<T>(gas, f_value, f_full, guess);
     const Temperature<T, U> temp {r.root};
+    const Pressure<T, U> p {pressure(rho, mix.gas_constant, temp)};
     return {
       .state =
         {
           .rho = rho,
           .e = e,
-          .p = Pressure<T, U> {pressure(rho, mix.gas_constant, temp)},
+          .p = p,
           .temp = temp,
         },
-      .status = combine(combine(thermally_perfect_status(rho, e, temp), r.status), mix.status),
+      .status = combine(combine(thermally_perfect_status(rho, e, temp, p), r.status), mix.status),
     };
 }
 
-// State from rho and T: p = rho R T, e from the curves.
+// State from rho and T, retaining the supplied pressure; e comes from the curves.
+template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
+    requires ScalarWith<T, P> && HasLog<T>
+CANARY_HOST_DEVICE Closure<T, U>
+  thermally_perfect_from_rho_temp(const ThermallyPerfectMixture<P, U, N, S>& gas,
+                                  const NormalisedComposition<T, U, N>& mix,
+                                  Density<T, U> rho,
+                                  Temperature<T, U> temp,
+                                  Pressure<T, U> p)
+{
+    const SpecificEnergy<T, U> e {mixture_energy(gas, mix.fractions, temp.value()).e};
+    return {
+      .state =
+        {
+          .rho = rho,
+          .e = e,
+          .p = p,
+          .temp = temp,
+        },
+      .status = combine(thermally_perfect_status(rho, e, temp, p), mix.status),
+    };
+}
+
 template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
     requires ScalarWith<T, P> && HasLog<T>
 CANARY_HOST_DEVICE Closure<T, U>
@@ -346,17 +384,11 @@ CANARY_HOST_DEVICE Closure<T, U>
                                   Density<T, U> rho,
                                   Temperature<T, U> temp)
 {
-    const SpecificEnergy<T, U> e {mixture_energy(gas, mix.fractions, temp.value()).e};
-    return {
-      .state =
-        {
-          .rho = rho,
-          .e = e,
-          .p = Pressure<T, U> {pressure(rho, mix.gas_constant, temp)},
-          .temp = temp,
-        },
-      .status = combine(thermally_perfect_status(rho, e, temp), mix.status),
-    };
+    return thermally_perfect_from_rho_temp(gas,
+                                           mix,
+                                           rho,
+                                           temp,
+                                           Pressure<T, U> {pressure(rho, mix.gas_constant, temp)});
 }
 
 }  // namespace detail
@@ -432,8 +464,7 @@ CANARY_HOST_DEVICE Closure<T, U> close(const ThermallyPerfectMixture<P, U, N, S>
                                        Pressure<T, U> p)
 {
     const Temperature<T, U> temp {temperature(p, rho, mix.gas_constant)};
-    auto c = detail::thermally_perfect_from_rho_temp(gas, mix, rho, temp);
-    c.state.p = p;
+    auto c = detail::thermally_perfect_from_rho_temp(gas, mix, rho, temp, p);
     return c;
 }
 
@@ -455,8 +486,7 @@ CANARY_HOST_DEVICE Closure<T, U> close(const ThermallyPerfectMixture<P, U, N, S>
                                        Temperature<T, U> temp)
 {
     const Density<T, U> rho {density(p, mix.gas_constant, temp)};
-    auto c = detail::thermally_perfect_from_rho_temp(gas, mix, rho, temp);
-    c.state.p = p;
+    auto c = detail::thermally_perfect_from_rho_temp(gas, mix, rho, temp, p);
     return c;
 }
 

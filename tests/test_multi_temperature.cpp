@@ -4,8 +4,6 @@
 #include <algorithm>
 #include <array>
 #include <boost/ut.hpp>
-#include <cmath>
-#include <cstddef>
 #include <canary/build.hpp>
 #include <canary/data/air11.hpp>
 #include <canary/data/air11_species.hpp>
@@ -20,6 +18,8 @@
 #include <canary/status.hpp>
 #include <canary/thermo.hpp>
 #include <canary/units.hpp>
+#include <cmath>
+#include <cstddef>
 #include <limits>
 #include <mdspan/mdspan.hpp>
 #include <string>
@@ -590,6 +590,46 @@ void test_multi_temperature()
     const Air11& air11 = built11.model;
     const auto single5 = canary::make_air5<double>(si_scales).model;
     const auto single11 = canary::make_air11<double>(si_scales).model;
+
+    "multi-temperature closures reject electron pressure overflow with finite heavy pressure"_test =
+      [&] {
+          const auto check = [&]<typename V> {
+              std::array<V, 11> y {};
+              y[0] = V(0.9);
+              y[10] = V(0.1);
+              const auto mix = mixture(air11, fractions(y));
+              const canary::Density<V, si> rho {std::numeric_limits<V>::max() / V(1.0e9)};
+              const canary::Temperature<V, si> temp {V(300)};
+              const std::array<V, 2> modes {V(3000), V(10000)};
+              const V heavy_pressure =
+                rho.value() * V(V(0.9) * air11.thermally_perfect.gas_constant[0].value() * V(300));
+              expect(std::isfinite(heavy_pressure) && heavy_pressure > V(0));
+              const auto result = thermo_state(air11, mix, rho, temp, mode_temperatures<si>(modes));
+              expect(result.status == Status::Invalid);
+              expect(std::isinf(result.state.p.value()));
+              expect(result.state.rho == rho && result.state.temp == temp);
+              expect(std::isfinite(result.state.e.value()));
+              for (const auto& energy : result.state.mode_e) {
+                  expect(std::isfinite(energy.value()));
+              }
+              const auto inverse =
+                thermo_state(air11, mix, rho, result.state.e, mode_temperatures<si>(modes));
+              expect(inverse.status == Status::Invalid);
+              expect(std::isinf(inverse.state.p.value()));
+              y.fill(V(0));
+              y[0] = V(1);
+              const auto neutral = mixture(air11, fractions(y));
+              const canary::Pressure<V, si> supplied {std::numeric_limits<V>::max() / V(4)};
+              const canary::Temperature<V, si> cold {V(1) / neutral.gas_constant.value()};
+              const auto retained =
+                thermo_state(air11, neutral, supplied, cold, mode_temperatures<si>(modes));
+              expect(retained.status == Status::Valid);
+              expect(retained.state.p == supplied);
+              expect(thermo_state(air11, neutral, supplied, cold).status == Status::Valid);
+          };
+          check.operator()<float>();
+          check.operator()<double>();
+      };
 
     "multi-temperature: the builder holds the single-temperature model, levels and modes"_test =
       [&] {
