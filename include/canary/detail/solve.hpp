@@ -46,7 +46,8 @@ template <Scalar T> struct SolveResult {
 // Root of f in the bracket, starting from guess (clamped into the bracket).
 // Exact endpoint roots are accepted before iteration. If both endpoints are
 // roots, select the one nearest the clamped guess, with the lower endpoint
-// selected on a tie.
+// selected on a tie. Equal finite bounds are accepted only when the endpoint
+// residual is finite and exactly zero; Dual derivative checks still apply.
 //
 // The iteration runs on value parts with f_value. When the Newton step
 // f(x) / f'(x) is at most relative_tolerance * |x|, it takes that step and

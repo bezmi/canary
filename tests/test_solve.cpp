@@ -284,6 +284,62 @@ void test_solve()
         check.template operator()<double>();
     };
 
+    "equal finite bounds accept only an exact root"_test = [] {
+        const auto check = []<std::floating_point V>() {
+            using Dual = canary::test::Dual<V>;
+            const SolveSettings<V> limits {.relative_tolerance = V(0.1), .max_iterations = 0};
+            for (const V endpoint : {V(0),
+                                     V(-1),
+                                     V(1),
+                                     -std::numeric_limits<V>::max(),
+                                     std::numeric_limits<V>::max()}) {
+                const Bracket<V> bracket {.lower = endpoint, .upper = endpoint};
+                for (const V slope : {V(-1), V(0), V(1)}) {
+                    const auto f_value = [=](V x) {
+                        return Residual<V> {.value = slope * (x - endpoint), .derivative = slope};
+                    };
+                    const auto f_full = [=](Dual x) {
+                        return Residual<Dual> {.value = slope * (x - Dual(endpoint, V(1))),
+                                               .derivative = Dual(slope)};
+                    };
+                    for (const V guess : {V(-2), V(0), V(2)}) {
+                        const auto plain = solve<V>(f_value, f_value, bracket, guess, limits);
+                        expect(plain.status == Status::Valid);
+                        expect(plain.root == endpoint);
+                        const auto dual = solve<Dual>(f_value, f_full, bracket, guess, limits);
+                        expect(dual.status == (slope == V(0) ? Status::Invalid : Status::Valid));
+                        expect(dual.root.real() == endpoint);
+                        expect(dual.root.dual() == (slope == V(0) ? V(0) : V(1)));
+                    }
+                }
+                for (const V residual : {V(-1),
+                                         V(1),
+                                         std::numeric_limits<V>::quiet_NaN(),
+                                         -std::numeric_limits<V>::infinity(),
+                                         std::numeric_limits<V>::infinity()}) {
+                    int full_calls = 0;
+                    const auto f_value = [=](V) {
+                        return Residual<V> {.value = residual, .derivative = V(1)};
+                    };
+                    const auto f_full = [&](Dual x) {
+                        ++full_calls;
+                        return Residual<Dual> {.value = x, .derivative = Dual(V(1))};
+                    };
+                    const auto plain = solve<V>(f_value, f_value, bracket, endpoint, limits);
+                    const auto dual = solve<Dual>(f_value, f_full, bracket, endpoint, limits);
+                    expect(plain.status == Status::Invalid);
+                    expect(dual.status == Status::Invalid);
+                    expect(plain.root == endpoint);
+                    expect(dual.root.real() == endpoint);
+                    expect(dual.root.dual() == V(0));
+                    expect(full_calls == 0_i);
+                }
+            }
+        };
+        check.template operator()<float>();
+        check.template operator()<double>();
+    };
+
     "a start at the bracket edge converges"_test = [] {
         const auto f = [](double x) { return cubic(x, 10.0); };
         for (const double guess : {0.0, 5.0, -1.0, 9.0}) {
