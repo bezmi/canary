@@ -223,6 +223,21 @@ void test_calorically_perfect_mixture()
                          thermo_state(built.model, fractions(y), rho, E {1.7})));
     };
 
+    "a calorically perfect mixture preserves a supplied composition status"_test = [] {
+        const auto built = three_species();
+        const Rho rho {2.0};
+        // Valid, and outside the tolerance (CompositionViolation).
+        for (const std::array rho_i : {std::array {0.5, 1.0, 0.5}, std::array {0.5, 1.0, 0.5001}}) {
+            const auto status = canary::composition_status(partial_densities(rho_i), rho);
+            const auto computed = mixture(built.model, partial_densities(rho_i), rho);
+            const auto view = partial_densities(rho_i);
+            static_assert(noexcept(mixture(built.model, view, rho, status)));
+            const auto given = mixture(built.model, partial_densities(rho_i), rho, status);
+            expect(given.gas_constant == computed.gas_constant && given.cv == computed.cv &&
+                   given.cp == computed.cp && given.status == computed.status);
+        }
+    };
+
     "a composition view passed to thermo_state equals the mixture value"_test = [] {
         const auto built = three_species();
         const std::array y {0.2, 0.5, 0.3};

@@ -430,6 +430,28 @@ void test_thermally_perfect()
         expect(a.status == Status::Valid);
     };
 
+    "a thermally perfect mixture preserves a supplied composition status"_test = [&] {
+        const Rho rho {2.0};
+        for (const double excess : {0.0, 0.0001}) {
+            std::array<double, 5> rho_i {};
+            for (const auto i : canary::species_indices(0, rho_i.size())) {
+                rho_i[i.value()] = rho.value() * dissociated[i.value()];
+            }
+            rho_i[0] += excess;
+            const auto view = canary::as_kind<canary::kind::density, si>(
+              Kokkos::mdspan<const double, Extents>(rho_i.data(), rho_i.size()));
+            const auto status = canary::composition_status(view, rho);
+            expect(status == (excess == 0.0 ? Status::Valid : Status::CompositionViolation));
+            const auto computed = mixture(gas, view, rho);
+            static_assert(noexcept(mixture(gas, view, rho, status)));
+            const auto given = mixture(gas, view, rho, status);
+            expect(given.gas_constant == computed.gas_constant && given.status == computed.status);
+            for (const auto i : canary::species_indices(0, rho_i.size())) {
+                expect(given.fractions[i.value()] == computed.fractions[i.value()]) << i.value();
+            }
+        }
+    };
+
     "nitrogen at 300 K has gamma 1.4 within 0.1 percent"_test = [&] {
         const auto mix = mixture(gas, fractions(nitrogen));
         const auto c = thermo_state(gas, mix, Rho {1.0}, Temp {300.0});
