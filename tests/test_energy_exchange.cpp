@@ -1146,4 +1146,80 @@ void test_energy_exchange()
                      si_scales);
                }).starts_with("species \"N2\" is named twice"));
     };
+    "exchange construction rejects duplicate physical entries"_test = [&] {
+        const auto build = [&](const auto& input) {
+            return canary::make_energy_exchange(input,
+                                                canary::detail::air5_park_species_names,
+                                                built.species,
+                                                mech,
+                                                si_scales);
+        };
+        auto input = canary::air5_park_exchange;
+        input.vibration_translation[1] = input.vibration_translation[0];
+        expect(error_message([&] { (void)build(input); }).find("duplicates entry 0") !=
+               std::string::npos);
+        input.vibration_translation[1].correction.model = canary::RelaxationCorrection::none;
+        expect(error_message([&] { (void)build(input); }).find("duplicates entry 0") !=
+               std::string::npos);
+        input = canary::air5_park_exchange;
+        input.chemistry_vibration[1] = input.chemistry_vibration[0];
+        expect(error_message([&] { (void)build(input); }).find("duplicates entry 0") !=
+               std::string::npos);
+        canary::EnergyExchangeInput<2, 0> directed {};
+        directed.vibration_translation[0] = canary::air5_park_exchange.vibration_translation[3];
+        directed.vibration_translation[1] = directed.vibration_translation[0];
+        directed.vibration_translation[1].species = directed.vibration_translation[0].partner;
+        directed.vibration_translation[1].partner = directed.vibration_translation[0].species;
+        expect(nothrow([&] { (void)build(directed); }));
+        canary::EnergyExchangeInput<0, 2> reactions {};
+        reactions.chemistry_vibration[0] = canary::air5_park_exchange.chemistry_vibration[0];
+        reactions.chemistry_vibration[1] = reactions.chemistry_vibration[0];
+        reactions.chemistry_vibration[1].reaction = 4;
+        expect(nothrow([&] { (void)build(reactions); }));
+    };
+
+    "exchange construction checks stored masses and correction exponents"_test = [] {
+        const auto check = []<typename P, typename U>(const canary::UnitScales<P, U>& scales) {
+            const auto gas = canary::make_air5<P>(scales);
+            const auto mechanism = canary::make_air5_park(gas.species, scales);
+            for (P mass : {P(0),
+                           P(-1),
+                           std::numeric_limits<P>::infinity(),
+                           std::numeric_limits<P>::quiet_NaN()}) {
+                auto species = gas.species;
+                species.mass[4] = canary::ParticleMass<P, U> {mass};
+                expect(error_message([&] {
+                           (void)canary::make_air5_park_exchange(species, mechanism, scales);
+                       }).starts_with("species \"NO\": particle mass must be finite and positive"));
+            }
+            if constexpr (std::same_as<P, float>) {
+                for (double exponent : {-2.0 * std::numeric_limits<float>::max(),
+                                        2.0 * std::numeric_limits<float>::max()}) {
+                    auto input = canary::air5_park_exchange;
+                    input.vibration_translation[0].correction.model =
+                      canary::RelaxationCorrection::kim_2021;
+                    input.vibration_translation[0].correction.exponent = exponent;
+                    expect(error_message([&] {
+                               (void)canary::make_energy_exchange(
+                                 input,
+                                 canary::detail::air5_park_species_names,
+                                 gas.species,
+                                 mechanism,
+                                 scales);
+                           }).find("stored correction exponent must be finite") !=
+                           std::string::npos);
+                }
+            }
+        };
+        check(canary::UnitScales<float, si> {});
+        check(canary::UnitScales<double, si> {});
+        check(canary::UnitScales<float, scaled> {.mass = 4.65e-26F,
+                                                 .density = 1.0e-3F,
+                                                 .temperature = 1000.0F,
+                                                 .length = 1.0F});
+        check(canary::UnitScales<double, scaled> {.mass = 4.65e-26,
+                                                  .density = 1.0e-3,
+                                                  .temperature = 1000.0,
+                                                  .length = 1.0});
+    };
 }

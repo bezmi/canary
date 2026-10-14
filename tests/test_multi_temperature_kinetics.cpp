@@ -1476,4 +1476,37 @@ void test_multi_temperature_kinetics()
                                                                             si_scales);
         expect(vibration_only.electron == -1_i && vibration_only.electron_mode == -1_i);
     };
+    "multi-temperature exchange rejects duplicate physical electron processes"_test = [&] {
+        const auto build = [&](const auto& electrons) {
+            return canary::make_multi_temperature_exchange(canary::air11_kim_jo_exchange,
+                                                           electrons,
+                                                           names,
+                                                           built.species,
+                                                           mech,
+                                                           gas,
+                                                           si_scales);
+        };
+        auto electrons = canary::air11_kim_jo_exchange_electrons;
+        electrons.electron_translation[1] = electrons.electron_translation[0];
+        expect(error_message([&] {
+                   (void)build(electrons);
+               }).starts_with("electron-translation pair 1 (N2): duplicates entry 0"));
+        canary::ElectronExchangeInput<0, 2, 0> vibration {};
+        vibration.vibration_electron.fill(
+          canary::air11_kim_jo_exchange_electrons.vibration_electron[0]);
+        expect(error_message([&] {
+                   (void)build(vibration);
+               }).starts_with("vibration-electron exchange 1 (N2): duplicates entry 0"));
+        electrons = canary::air11_kim_jo_exchange_electrons;
+        electrons.electron_impact_ionisation[1] = electrons.electron_impact_ionisation[0];
+        expect(error_message([&] { (void)build(electrons); }).find("duplicates entry 0") !=
+               std::string::npos);
+        for (std::size_t i : {std::size_t(0), electron}) {
+            auto species = built.species;
+            species.mass[i] = canary::ParticleMass<double, si> {0.0};
+            expect(error_message([&] {
+                       (void)canary::make_air11_kim_jo_exchange(species, mech, gas, si_scales);
+                   }).find("particle mass must be finite and positive") != std::string::npos);
+        }
+    };
 }

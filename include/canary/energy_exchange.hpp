@@ -257,6 +257,17 @@ std::size_t known_species(const std::array<std::string_view, N>& names,
     return index;
 }
 
+// A finite value converted to P; throws ParameterError otherwise, naming
+// what.
+template <std::floating_point P> P finite_parameter(double value, std::string_view what)
+{
+    const auto converted = static_cast<P>(value);
+    if (!std::isfinite(value) || !std::isfinite(converted)) {
+        throw ParameterError(std::format("{} must be finite, got {}", what, value));
+    }
+    return converted;
+}
+
 // A finite, positive value converted to P; throws ParameterError otherwise,
 // naming what.
 template <std::floating_point P> P positive_parameter(double value, std::string_view what)
@@ -329,7 +340,7 @@ VibrationTranslationPair<P, U>
         break;
     default: throw ParameterError("unknown relaxation-time correction model");
     }
-    pair.correction_exponent = static_cast<P>(beta);
+    pair.correction_exponent = finite_parameter<P>(beta, "stored correction exponent");
     pair.correction_coefficient = P(0);
     if (correction.model != RelaxationCorrection::none) {
         const double mass_scale = scale_factor<kind::particle_mass>(s);
@@ -398,10 +409,10 @@ ChemistryVibrationCoupling<P, U>
     return coupling;
 }
 
-// Throws ParameterError when species.n is not N or a name is listed twice.
+// Throws ParameterError for a count mismatch, repeated names or invalid masses.
 template <std::floating_point P, UnitSystem U, std::size_t N>
-void check_species_names(const std::array<std::string_view, N>& names,
-                         const SpeciesData<P, U, N>& species)
+void check_exchange_species(const std::array<std::string_view, N>& names,
+                            const SpeciesData<P, U, N>& species)
 {
     if (species.n != static_cast<int>(N)) {
         throw ParameterError(
@@ -410,6 +421,21 @@ void check_species_names(const std::array<std::string_view, N>& names,
     for (std::size_t i = 0; i < N; ++i) {
         if (species_index(names, names[i]) != i) {
             throw ParameterError(std::format("species \"{}\" is named twice", names[i]));
+        }
+        if (!std::isfinite(species.mass[i].value()) || !(species.mass[i].value() > P(0))) {
+            throw ParameterError(
+              std::format("species \"{}\": particle mass must be finite and positive", names[i]));
+        }
+    }
+}
+
+// Compare the resolved physical key with earlier entries of the same process.
+template <typename Entry, std::size_t N, typename Key>
+void check_duplicate_exchange(const std::array<Entry, N>& entries, std::size_t index, Key key)
+{
+    for (std::size_t previous = 0; previous < index; ++previous) {
+        if (key(entries[previous]) == key(entries[index])) {
+            throw ParameterError(std::format("duplicates entry {}", previous));
         }
     }
 }
@@ -443,6 +469,9 @@ void make_vibrational_exchanges(
             vibration_translation[e] =
               make_vibration_translation_pair(pair, names, species, scales);
             check_species(vibration_translation[e].species);
+            check_duplicate_exchange(vibration_translation, e, [](const auto& pair) {
+                return std::pair {pair.species, pair.partner};
+            });
         } catch (const ParameterError& error) {
             throw ParameterError(std::format("vibration-translation pair {} ({}, {}): {}",
                                              e,
@@ -457,6 +486,9 @@ void make_vibrational_exchanges(
             chemistry_vibration[c] =
               make_chemistry_vibration_coupling(coupling, names, mechanism, scales);
             check_species(chemistry_vibration[c].species);
+            check_duplicate_exchange(chemistry_vibration, c, [](const auto& coupling) {
+                return std::pair {coupling.reaction, coupling.species};
+            });
         } catch (const ParameterError& error) {
             throw ParameterError(std::format("chemistry-vibration coupling {} ({}): {}",
                                              c,
@@ -472,9 +504,11 @@ void make_vibrational_exchanges(
 // its species order, with their particle masses from species, and the
 // reactions of mechanism (over the same species), in the unit system of the
 // scales. Throws ParameterError when species.n is not N or a name is listed
-// twice, and, with "vibration-translation pair <index> (<species>,
-// <partner>)" or "chemistry-vibration coupling <index> (<species>)" in the
-// message, when:
+// twice or a particle mass is not finite and positive. Duplicate directed
+// species/partner pairs and reaction/species couplings are rejected. Other
+// errors include "vibration-translation pair <index> (<species>, <partner>)"
+// or "chemistry-vibration coupling <index> (<species>)" in the message and
+// are reported when:
 // - a species or partner name is null or unknown;
 // - a Millikan-White a or b is not finite;
 // - a correction is used with a cross-section, a reference temperature
@@ -500,7 +534,7 @@ EnergyExchange<P, U, N, V, C> make_energy_exchange(const EnergyExchangeInput<V, 
                                                    const ReactionMechanism<P, U, N, R>& mechanism,
                                                    const UnitScales<P, U>& scales)
 {
-    detail::check_species_names(names, species);
+    detail::check_exchange_species(names, species);
     EnergyExchange<P, U, N, V, C> exchange {};
     detail::make_vibrational_exchanges(
       input,
@@ -949,17 +983,6 @@ struct MultiTemperatureExchange {
 namespace detail
 {
 
-// A finite value converted to P; throws ParameterError otherwise, naming
-// what.
-template <std::floating_point P> P finite_parameter(double value, std::string_view what)
-{
-    const auto converted = static_cast<P>(value);
-    if (!std::isfinite(value) || !std::isfinite(converted)) {
-        throw ParameterError(std::format("{} must be finite, got {}", what, value));
-    }
-    return converted;
-}
-
 // A quadratic on [0, maximum_temperature] has its minimum at an endpoint
 // or at its vertex when convex. Widen stored values for the host-side check.
 template <std::floating_point P>
@@ -1142,7 +1165,9 @@ ElectronImpactIonisationCoupling<P, U>
 // mode of each species is species_vibration_mode(gas); e- is the species
 // named "e-", and the model has free electrons when it has e- and
 // electron_energy_mode(gas) is not -1. Throws ParameterError for the
-// errors of make_energy_exchange (with the same entry names) and, with
+// errors of make_energy_exchange (with the same entry names). Electron-translation
+// partners, vibration-electron species and ionisation reaction/species pairs must
+// each be unique within their process. Additional errors are reported with
 // "electron-translation pair <index> (<partner>)", "vibration-electron
 // exchange <index> (<species>)" or "electron-impact ionisation <index>
 // (<species>)" in the message, when:
@@ -1183,7 +1208,7 @@ MultiTemperatureExchange<P, U, N, G::mode_count, V, C, E, VE, I>
                                   const UnitScales<P, U>& scales)
 {
     constexpr std::size_t modes = G::mode_count;
-    detail::check_species_names(names, species);
+    detail::check_exchange_species(names, species);
     MultiTemperatureExchange<P, U, N, modes, V, C, E, VE, I> exchange {};
     for (std::size_t i = 0; i < N; ++i) {
         const int mode = species_vibration_mode(gas, i);
@@ -1220,6 +1245,9 @@ MultiTemperatureExchange<P, U, N, G::mode_count, V, C, E, VE, I>
             check_electrons();
             exchange.electron_translation[k] =
               detail::make_electron_translation_pair(entry, names, species, scales);
+            detail::check_duplicate_exchange(exchange.electron_translation,
+                                             k,
+                                             [](const auto& pair) { return pair.partner; });
         } catch (const ParameterError& error) {
             throw ParameterError(std::format("electron-translation pair {} ({}): {}",
                                              k,
@@ -1234,6 +1262,9 @@ MultiTemperatureExchange<P, U, N, G::mode_count, V, C, E, VE, I>
             exchange.vibration_electron[k] =
               detail::make_vibration_electron_coupling(entry, names, scales);
             check_vibration(exchange.vibration_electron[k].species);
+            detail::check_duplicate_exchange(exchange.vibration_electron,
+                                             k,
+                                             [](const auto& coupling) { return coupling.species; });
         } catch (const ParameterError& error) {
             throw ParameterError(std::format("vibration-electron exchange {} ({}): {}",
                                              k,
@@ -1247,6 +1278,10 @@ MultiTemperatureExchange<P, U, N, G::mode_count, V, C, E, VE, I>
             check_electrons();
             exchange.electron_impact_ionisation[k] =
               detail::make_ionisation_coupling(entry, names, mechanism, scales);
+            detail::check_duplicate_exchange(
+              exchange.electron_impact_ionisation,
+              k,
+              [](const auto& coupling) { return std::pair {coupling.reaction, coupling.species}; });
         } catch (const ParameterError& error) {
             throw ParameterError(std::format("electron-impact ionisation {} ({}): {}",
                                              k,
