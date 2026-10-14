@@ -1671,12 +1671,20 @@ CANARY_HOST_DEVICE std::array<SpecificEnergy<T, U>, N> species_mode_energy(
     return out;
 }
 
+// Fractions returned by charge neutralization and the calculation status.
+// Invalid results retain the input fractions for diagnostics.
+template <Scalar T, std::size_t N> struct ChargeNeutralFractions {
+    std::array<MassFraction<T>, N> fractions;
+    Status status;
+};
+
 // Mass fractions of a charge-neutral composition. With e- at index e, its
 // fraction is replaced by a = m_e sum_{i != e} z_i y_i / m_i (z_i the charge
 // number, m_i the particle mass, from species), and every fraction is then
 // divided by a + sum_{i != e} y_i, so that the fractions sum to 1 and the
 // charge density sum(y_i q_i / m_i) is zero. Without e- the fractions are
-// returned unchanged. The fractions are not clamped.
+// returned unchanged. The fractions are not clamped. Scalar operations and
+// range access must not throw.
 template <std::floating_point P,
           UnitSystem U,
           std::size_t N,
@@ -1686,18 +1694,18 @@ template <std::floating_point P,
           typename V>
     requires SpeciesWeights<V, kind::mass_fraction, unitless, P> &&
              ScalarWith<typename range_quantity_t<V>::value_type, P>
-CANARY_HOST_DEVICE auto
+CANARY_HOST_DEVICE ChargeNeutralFractions<typename range_quantity_t<V>::value_type, N>
   charge_neutral_fractions(const MultiTemperatureMixture<P, U, N, M, S, L>& gas,
                            const SpeciesData<P, U, N>& species,
-                           const V& fractions)
+                           const V& fractions) noexcept
 {
     using T = range_quantity_t<V>::value_type;
     using Value = ScalarTraits<T>::value_type;
     // NOLINTNEXTLINE(misc-static-assert): run-time extent
     CANARY_ASSERT(static_cast<std::size_t>(fractions.extent(0)) == N);
-    std::array<MassFraction<T>, N> out {};
+    ChargeNeutralFractions<T, N> out {.fractions = {}, .status = Status::Valid};
     for (const SpeciesIndex i : species_indices(0, N)) {
-        out[i.value()] = MassFraction<T> {fractions[i.value()].value()};
+        out.fractions[i.value()] = MassFraction<T> {fractions[i.value()].value()};
     }
     if (!gas.electron) { return out; }
     const auto e = (*gas.electron).value();
@@ -1714,7 +1722,7 @@ CANARY_HOST_DEVICE auto
     const T y_e = T(-(electron_mass_per_charge * charge));
     const T total = T(heavy + y_e);
     for (const SpeciesIndex i : species_indices(0, N)) {
-        out[i.value()] =
+        out.fractions[i.value()] =
           MassFraction<T> {T((i.value() == e ? y_e : fractions[i.value()].value()) / total)};
     }
     return out;

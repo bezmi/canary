@@ -1323,16 +1323,20 @@ void test_multi_temperature()
           const auto& species = built11.species;
           const auto y =
             canary::charge_neutral_fractions(air11, species, fractions(air11_weakly_ionised_input));
+          static_assert(std::same_as<std::remove_cv_t<decltype(y)>,
+                                     canary::ChargeNeutralFractions<double, 11>>);
+          expect(y.status == Status::Valid);
           double sum = 0;
           double charge = 0;
           double charge_scale = 0;
           for (std::size_t i = 0; i < 11; ++i) {
               // Reference compositions were made by the same formula: a few
               // roundings, 8 eps.
-              expect(relative(y[i].value(), air11_weakly_ionised[i], 8.0 * eps))
-                << i << y[i].value() << air11_weakly_ionised[i];
-              sum += y[i].value();
-              const double q = y[i].value() * species.charge[i].value() / species.mass[i].value();
+              expect(relative(y.fractions[i].value(), air11_weakly_ionised[i], 8.0 * eps))
+                << i << y.fractions[i].value() << air11_weakly_ionised[i];
+              sum += y.fractions[i].value();
+              const double q =
+                y.fractions[i].value() * species.charge[i].value() / species.mass[i].value();
               charge += q;
               charge_scale += std::abs(q);
           }
@@ -1341,8 +1345,9 @@ void test_multi_temperature()
           expect(std::abs(charge) <= 16.0 * eps * charge_scale) << charge;
           const auto unchanged =
             canary::charge_neutral_fractions(air4, built4.species, fractions(air5_dissociated));
+          expect(unchanged.status == Status::Valid);
           for (std::size_t i = 0; i < 5; ++i) {
-              expect(unchanged[i].value() == air5_dissociated[i]);
+              expect(unchanged.fractions[i].value() == air5_dissociated[i]);
           }
       };
 

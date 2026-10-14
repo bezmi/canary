@@ -1104,7 +1104,8 @@ void test_multi_temperature_kinetics()
             }
             for (double& v : y) { v /= total; }
             const auto neutral = canary::charge_neutral_fractions(gas, built.species, fractions(y));
-            for (std::size_t i = 0; i < species_count; ++i) { y[i] = neutral[i].value(); }
+            expect(neutral.status == canary::Status::Valid);
+            for (std::size_t i = 0; i < species_count; ++i) { y[i] = neutral.fractions[i].value(); }
             check(y,
                   std::pow(10.0, -5.0 + (3.0 * unit(engine))),
                   1000.0 + (20000.0 * unit(engine)),
