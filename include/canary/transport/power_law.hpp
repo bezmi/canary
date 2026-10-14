@@ -1,10 +1,13 @@
 #ifndef CANARY_TRANSPORT_POWER_LAW_HPP
 #define CANARY_TRANSPORT_POWER_LAW_HPP
 
-#include <concepts>
+#include <canary/build.hpp>
 #include <canary/config.hpp>
 #include <canary/quantity.hpp>
 #include <canary/scalar.hpp>
+#include <cmath>
+#include <concepts>
+#include <format>
 
 namespace canary
 {
@@ -18,6 +21,25 @@ template <std::floating_point P, UnitSystem U> struct PowerLaw {
     Temperature<P, U> t_0;
     P exponent;
 };
+
+// Host-side construction in unit system U. Throws ParameterError when mu_0
+// is nonfinite or negative, t_0 is nonfinite or nonpositive, or exponent is
+// nonfinite. The returned law does not check evaluation temperatures.
+template <std::floating_point P, UnitSystem U>
+PowerLaw<P, U> make_power_law(DynamicViscosity<P, U> mu_0, Temperature<P, U> t_0, P exponent)
+{
+    if (!std::isfinite(mu_0.value()) || mu_0.value() < P(0)) {
+        throw ParameterError(
+          std::format("mu_0 must be finite and non-negative, got {}", mu_0.value()));
+    }
+    if (!std::isfinite(t_0.value()) || !(t_0.value() > P(0))) {
+        throw ParameterError(std::format("t_0 must be finite and positive, got {}", t_0.value()));
+    }
+    if (!std::isfinite(exponent)) {
+        throw ParameterError(std::format("exponent must be finite, got {}", exponent));
+    }
+    return {.mu_0 = mu_0, .t_0 = t_0, .exponent = exponent};
+}
 
 // The empirical fit uses the full scalar and propagates temperature derivatives.
 template <Scalar T, std::floating_point P, UnitSystem U>

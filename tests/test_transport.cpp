@@ -3,9 +3,6 @@
 
 #include <array>
 #include <boost/ut.hpp>
-#include <cmath>
-#include <concepts>
-#include <cstddef>
 #include <canary/models/calorically_perfect.hpp>
 #include <canary/quantity.hpp>
 #include <canary/species.hpp>
@@ -16,6 +13,10 @@
 #include <canary/transport/prandtl.hpp>
 #include <canary/transport/sutherland.hpp>
 #include <canary/transport/transport.hpp>
+#include <canary/units.hpp>
+#include <cmath>
+#include <concepts>
+#include <cstddef>
 #include <limits>
 #include <mdspan/mdspan.hpp>
 #include <type_traits>
@@ -75,6 +76,160 @@ static_assert(std::is_trivially_copyable_v<SutherlandAir>);
 void test_transport()
 {
     using namespace boost::ut;
+
+    "checked transport factories validate float and double parameter boundaries"_test = [] {
+        const auto check = []<typename P> {
+            using Viscosity = canary::DynamicViscosity<P, si>;
+            using Temperature = canary::Temperature<P, si>;
+            using Prandtl = canary::PrandtlNumber<P>;
+            const P nan = std::numeric_limits<P>::quiet_NaN();
+            const P inf = std::numeric_limits<P>::infinity();
+            for (const P value : {P(-1), -inf, inf, nan}) {
+                expect(throws<canary::ParameterError>(
+                  [&] { (void)canary::make_constant_viscosity(Viscosity {value}); }));
+                expect(throws<canary::ParameterError>([&] {
+                    (void)canary::make_power_law(Viscosity {value}, Temperature {P(1)}, P(0));
+                }));
+                expect(throws<canary::ParameterError>([&] {
+                    (void)canary::make_sutherland(Viscosity {value},
+                                                  Temperature {P(1)},
+                                                  Temperature {P(0)});
+                }));
+            }
+            for (const P value : {P(0), P(-0.0), P(-1), -inf, inf, nan}) {
+                expect(throws<canary::ParameterError>([&] {
+                    (void)canary::make_power_law(Viscosity {P(1)}, Temperature {value}, P(0));
+                }));
+                expect(throws<canary::ParameterError>([&] {
+                    (void)canary::make_sutherland(Viscosity {P(1)},
+                                                  Temperature {value},
+                                                  Temperature {P(0)});
+                }));
+                expect(throws<canary::ParameterError>(
+                  [&] { (void)canary::make_constant_prandtl(Prandtl {value}); }));
+            }
+            for (const P value : {-inf, inf, nan}) {
+                expect(throws<canary::ParameterError>([&] {
+                    (void)canary::make_power_law(Viscosity {P(1)}, Temperature {P(1)}, value);
+                }));
+                expect(throws<canary::ParameterError>([&] {
+                    (void)canary::make_sutherland(Viscosity {P(1)},
+                                                  Temperature {P(1)},
+                                                  Temperature {value});
+                }));
+            }
+            for (const P value : {P(-1), std::nextafter(P(-1), -inf)}) {
+                expect(throws<canary::ParameterError>([&] {
+                    (void)canary::make_sutherland(Viscosity {P(1)},
+                                                  Temperature {P(1)},
+                                                  Temperature {value});
+                }));
+            }
+            const P above = std::nextafter(P(-1), P(0));
+            expect(
+              canary::make_sutherland(Viscosity {P(1)}, Temperature {P(1)}, Temperature {above})
+                .s.value() == above);
+            for (const P value : {P(0), P(-0.0)}) {
+                expect(canary::make_constant_viscosity(Viscosity {value}).mu.value() == P(0));
+                expect(canary::make_power_law(Viscosity {value}, Temperature {P(1)}, P(-1))
+                         .mu_0.value() == P(0));
+                expect(
+                  canary::make_sutherland(Viscosity {value}, Temperature {P(1)}, Temperature {P(0)})
+                    .mu_0.value() == P(0));
+            }
+            expect(canary::make_constant_prandtl(Prandtl {std::numeric_limits<P>::min()})
+                     .prandtl.value() == std::numeric_limits<P>::min());
+        };
+        check.operator()<float>();
+        check.operator()<double>();
+    };
+
+    "checked transport factories preserve float parameter storage and scaled results"_test = [] {
+        const canary::UnitScales<double, scaled> scales {.mass = 4.65e-26,
+                                                         .density = 1.2,
+                                                         .temperature = 300.0,
+                                                         .length = 0.1};
+        const auto check = [&]<typename P> {
+            using Viscosity = canary::DynamicViscosity<P, si>;
+            using Temperature = canary::Temperature<P, si>;
+            const Viscosity mu {P(1.716e-5)};
+            const Temperature t0 {P(273.15)};
+            const Temperature offset {P(110.4)};
+            const canary::DynamicViscosity<P, scaled> scaled_mu {
+              canary::convert<scaled>(Mu {double(mu.value())}, scales)};
+            const canary::Temperature<P, scaled> scaled_t0 {
+              canary::convert<scaled>(Temp {double(t0.value())}, scales)};
+            const canary::Temperature<P, scaled> scaled_offset {
+              canary::convert<scaled>(Temp {double(offset.value())}, scales)};
+            const auto constant = canary::make_constant_viscosity(mu);
+            const auto power = canary::make_power_law(mu, t0, P(0.76));
+            const auto sutherland_law = canary::make_sutherland(mu, t0, offset);
+            const auto prandtl_law =
+              canary::make_constant_prandtl(canary::PrandtlNumber<P> {P(0.71)});
+            static_assert(std::same_as<decltype(constant), const canary::ConstantViscosity<P, si>>);
+            static_assert(std::same_as<decltype(power), const canary::PowerLaw<P, si>>);
+            static_assert(std::same_as<decltype(sutherland_law), const canary::Sutherland<P, si>>);
+            static_assert(std::same_as<decltype(prandtl_law), const canary::ConstantPrandtl<P>>);
+            static_assert(std::is_aggregate_v<canary::ConstantViscosity<P, si>>);
+            static_assert(std::is_aggregate_v<canary::PowerLaw<P, si>>);
+            static_assert(std::is_aggregate_v<canary::Sutherland<P, si>>);
+            static_assert(std::is_aggregate_v<canary::ConstantPrandtl<P>>);
+            const auto scaled_constant = canary::make_constant_viscosity(scaled_mu);
+            const auto scaled_power = canary::make_power_law(scaled_mu, scaled_t0, P(0.76));
+            const auto scaled_sutherland =
+              canary::make_sutherland(scaled_mu, scaled_t0, scaled_offset);
+            const auto close = [](double actual, double expected) {
+                return std::abs(actual - expected) <=
+                       16.0 * std::numeric_limits<P>::epsilon() * std::abs(expected);
+            };
+            for (const P t : {P(100), P(300), P(1500)}) {
+                const Temperature temp {t};
+                const canary::Temperature<P, scaled> scaled_temp {
+                  canary::convert<scaled>(Temp {double(t)}, scales)};
+                const auto compare = [&](const auto& law, const auto& scaled_law) {
+                    const auto scaled_value = canary::viscosity(scaled_law, scaled_temp);
+                    const double physical =
+                      canary::convert<si>(
+                        canary::DynamicViscosity<double, scaled> {double(scaled_value.value())},
+                        scales)
+                        .value();
+                    expect(close(physical, canary::viscosity(law, temp).value()));
+                };
+                compare(constant, scaled_constant);
+                compare(power, scaled_power);
+                compare(sutherland_law, scaled_sutherland);
+            }
+            canary::Properties<P, si> properties {};
+            properties.cp = canary::SpecificHeat<P, si> {P(1004.5)};
+            canary::Properties<P, scaled> scaled_properties {};
+            scaled_properties.cp = canary::SpecificHeat<P, scaled> {canary::convert<scaled>(
+              canary::SpecificHeat<double, si> {double(properties.cp.value())},
+              scales)};
+            const auto scaled_k = canary::conductivity(prandtl_law, scaled_mu, scaled_properties);
+            const auto physical_k = canary::convert<si>(
+              canary::ThermalConductivity<double, scaled> {double(scaled_k.value())},
+              scales);
+            expect(
+              close(physical_k.value(), canary::conductivity(prandtl_law, mu, properties).value()));
+        };
+        check.operator()<float>();
+        check.operator()<double>();
+    };
+
+    "checked transport factories retain analytic temperature derivatives"_test = [] {
+        const auto constant = canary::make_constant_viscosity(Mu {1.716e-5});
+        const auto power = canary::make_power_law(Mu {1.716e-5}, Temp {273.15}, 0.76);
+        const auto sutherland_law =
+          canary::make_sutherland(Mu {1.716e-5}, Temp {273.15}, Temp {110.4});
+        const canary::Temperature<D, si> temp {D(300.0, 1.0)};
+        expect(canary::viscosity(constant, temp).value().dual() == 0.0);
+        const auto power_mu = canary::viscosity(power, temp).value();
+        expect(within_ulp(power_mu.dual(), power_mu.real() * 0.76 / 300.0, 4.0));
+        const auto sutherland_mu = canary::viscosity(sutherland_law, temp).value();
+        expect(within_ulp(sutherland_mu.dual(),
+                          sutherland_mu.real() * (1.5 / 300.0 - 1.0 / 410.4),
+                          8.0));
+    };
 
     "Sutherland's law at T_0 gives mu_0"_test = [] {
         expect(within_ulp(canary::viscosity(sutherland, Temp {273.15}).value(), 1.716e-5, 2.0));

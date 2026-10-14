@@ -1,10 +1,13 @@
 #ifndef CANARY_TRANSPORT_CONSTANT_HPP
 #define CANARY_TRANSPORT_CONSTANT_HPP
 
-#include <concepts>
+#include <canary/build.hpp>
 #include <canary/config.hpp>
 #include <canary/quantity.hpp>
 #include <canary/scalar.hpp>
+#include <cmath>
+#include <concepts>
+#include <format>
 
 namespace canary
 {
@@ -14,6 +17,17 @@ namespace canary
 template <std::floating_point P, UnitSystem U> struct ConstantViscosity {
     DynamicViscosity<P, U> mu;
 };
+
+// Host-side construction in unit system U. Throws ParameterError when mu
+// is nonfinite or negative. Zero viscosity is permitted.
+template <std::floating_point P, UnitSystem U>
+ConstantViscosity<P, U> make_constant_viscosity(DynamicViscosity<P, U> mu)
+{
+    if (!std::isfinite(mu.value()) || mu.value() < P(0)) {
+        throw ParameterError(std::format("mu must be finite and non-negative, got {}", mu.value()));
+    }
+    return {.mu = mu};
+}
 
 template <Scalar T, std::floating_point P, UnitSystem U>
     requires ScalarWith<T, P>
