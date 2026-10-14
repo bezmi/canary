@@ -274,6 +274,42 @@ void test_units()
         check_scales.template operator()<long double>();
     };
 
+    "host derived scale helpers use at least double precision"_test = [] {
+        const auto check = []<typename P>() {
+            using W = std::common_type_t<double, P>;
+            const canary::UnitScales<P, scaled> reference {
+              {.mass = P(1), .density = P(8), .temperature = P(4), .length = P(2)}};
+            static_assert(std::same_as<decltype(canary::velocity_scale(reference)), W>);
+            static_assert(std::same_as<decltype(canary::time_scale(reference)), W>);
+            static_assert(std::same_as<decltype(canary::count_scale(reference)), W>);
+            static_assert(std::same_as<decltype(scale_factor<kind::density>(reference)), W>);
+            static_assert(
+              std::same_as<decltype(scale_factor(kind::density::dimension, reference)), W>);
+            constexpr canary::UnitScales<P, si> identity;
+            static_assert(std::same_as<decltype(scale_factor<kind::density>(identity)), W>);
+            static_assert(
+              std::same_as<decltype(scale_factor(kind::density::dimension, identity)), W>);
+            static_assert(scale_factor<kind::density>(identity) == W(1));
+            static_assert(scale_factor(kind::density::dimension, identity) == W(1));
+            expect(canary::count_scale(reference) == W(64));
+            expect(scale_factor<kind::density>(reference) == W(8));
+        };
+        check.template operator()<float>();
+        check.template operator()<double>();
+        check.template operator()<long double>();
+
+        const canary::UnitScales<float, scaled> reference {
+          {.mass = 1.0F, .density = 1.0e20F, .temperature = 1.0F, .length = 1.0e10F}};
+        const double expected_count = double(reference.density()) * double(reference.length()) *
+                                      double(reference.length()) * double(reference.length());
+        expect(canary::count_scale(reference) == expected_count);
+        expect(
+          within_ulp(scale_factor<kind::density>(reference), double(reference.density()), 4.0));
+        expect(within_ulp(scale_factor<kind::charge>(reference),
+                          canary::constants::elementary_charge<double>,
+                          4.0));
+    };
+
     "float conversion widens intermediate particle counts"_test = [] {
         const canary::UnitScales<float, scaled> reference {
           {.mass = 1.0F, .density = 1.0e20F, .temperature = 1.0F, .length = 1.0e10F}};

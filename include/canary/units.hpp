@@ -79,22 +79,30 @@ template <std::floating_point P> struct UnitScales<P, scaled>
     }
 };
 
-// Derived scales, computed in the order of cerberus's MFP::update_ref.
+// Host-side derived scales use at least double precision and retain long
+// double precision. The base scales remain stored in P.
 
 // u_ref = sqrt(k_B T_ref / m_ref) [m/s]
-template <std::floating_point P> P velocity_scale(const UnitScales<P, scaled>& s)
-{ return std::sqrt(constants::boltzmann<P> * s.temperature() / s.mass()); }
+template <std::floating_point P>
+std::common_type_t<double, P> velocity_scale(const UnitScales<P, scaled>& s)
+{
+    using W = std::common_type_t<double, P>;
+    return std::sqrt(constants::boltzmann<W> * W(s.temperature()) / W(s.mass()));
+}
 
 // t_ref = x_ref / u_ref [s]
-template <std::floating_point P> P time_scale(const UnitScales<P, scaled>& s)
+template <std::floating_point P>
+std::common_type_t<double, P> time_scale(const UnitScales<P, scaled>& s)
 { return s.length() / velocity_scale(s); }
 
 // Number of particles in a reference volume, n0 = (rho_ref / m_ref) x_ref^3.
 // It is the scale of the particle-count dimension, so that the density
 // scale is rho_ref and the particle-mass scale is m_ref.
-template <std::floating_point P> P count_scale(const UnitScales<P, scaled>& s)
+template <std::floating_point P>
+std::common_type_t<double, P> count_scale(const UnitScales<P, scaled>& s)
 {
-    const P number_density = s.density() / s.mass();
+    using W = std::common_type_t<double, P>;
+    const W number_density = W(s.density()) / W(s.mass());
     return number_density * s.length() * s.length() * s.length();
 }
 
@@ -115,36 +123,39 @@ constexpr void apply_power(P& numerator, P& denominator, P base, int exponent)
 // product of the base scales raised to the exponents of d. Throws
 // ParameterError when d has an amount of substance, which has no scaled
 // unit.
-template <std::floating_point P> P scale_factor(const Dimension& d, const UnitScales<P, scaled>& s)
+template <std::floating_point P>
+std::common_type_t<double, P> scale_factor(const Dimension& d, const UnitScales<P, scaled>& s)
 {
+    using W = std::common_type_t<double, P>;
     if (d.amount != 0) {
         throw ParameterError("a dimension with an amount of substance has no scaled unit");
     }
-    const P count = count_scale(s);
-    P numerator = P(1);
-    P denominator = P(1);
+    const W count = count_scale(s);
+    W numerator = W(1);
+    W denominator = W(1);
     detail::apply_power(numerator, denominator, s.mass() * count, d.mass);
-    detail::apply_power(numerator, denominator, s.length(), d.length);
+    detail::apply_power(numerator, denominator, W(s.length()), d.length);
     detail::apply_power(numerator, denominator, time_scale(s), d.time);
-    detail::apply_power(numerator, denominator, s.temperature(), d.temperature);
-    detail::apply_power(numerator, denominator, constants::elementary_charge<P> * count, d.charge);
+    detail::apply_power(numerator, denominator, W(s.temperature()), d.temperature);
+    detail::apply_power(numerator, denominator, constants::elementary_charge<W> * count, d.charge);
     detail::apply_power(numerator, denominator, count, d.count);
     return numerator / denominator;
 }
 
 template <std::floating_point P>
-constexpr P scale_factor(const Dimension& /*d*/, const UnitScales<P, si>& /*scales*/)
-{ return P(1); }
+constexpr std::common_type_t<double, P> scale_factor(const Dimension& /*d*/,
+                                                     const UnitScales<P, si>& /*scales*/)
+{ return std::common_type_t<double, P>(1); }
 
 // SI value of one unit of kind K in the system of the scales.
 template <KindTag K, std::floating_point P>
     requires(K::dimension.amount == 0)
-P scale_factor(const UnitScales<P, scaled>& s)
+std::common_type_t<double, P> scale_factor(const UnitScales<P, scaled>& s)
 { return scale_factor(K::dimension, s); }
 
 template <KindTag K, std::floating_point P>
-constexpr P scale_factor(const UnitScales<P, si>& /*scales*/)
-{ return P(1); }
+constexpr std::common_type_t<double, P> scale_factor(const UnitScales<P, si>& /*scales*/)
+{ return std::common_type_t<double, P>(1); }
 
 // A conversion of kind K from unit system From to To with scales of system
 // S: between SI and S, within one system, or of a dimensionless kind.
