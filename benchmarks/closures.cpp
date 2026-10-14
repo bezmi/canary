@@ -21,13 +21,15 @@
 // fastest run is reported in nanoseconds per cell.
 
 #include <array>
+#include <canary/canary.hpp>
 #include <chrono>
 #include <concepts>
 #include <cstddef>
 #include <cstdio>
-#include <canary/canary.hpp>
 #include <mdspan/mdspan.hpp>
 #include <ratio>
+#include <stdexcept>
+#include <string>
 #include <tuple>
 #include <vector>
 
@@ -53,6 +55,29 @@ template <typename Body> double time_per_cell(const char* name, Body body)
     }
     std::printf("%-40s %8.3f ns/cell   (checksum %.6e)\n", name, best, sink);
     return best;
+}
+
+template <canary::ThermoStateType S> S checked_state(const canary::ClosureOf<S>& closure)
+{
+    if (closure.status != canary::Status::Valid) {
+        throw std::runtime_error("benchmark closure returned status " +
+                                 std::to_string(static_cast<int>(closure.status)));
+    }
+    return closure.state;
+}
+
+template <canary::ThermoStateType S> double closure_checksum(const canary::ClosureOf<S>& closure)
+{
+    const auto state = checked_state(closure);
+    double sum = state.rho.value() + state.e.value() + state.p.value() + state.temp.value();
+    if constexpr (requires {
+                      state.mode_e;
+                      state.mode_temp;
+                  }) {
+        for (const auto energy : state.mode_e) { sum += energy.value(); }
+        for (const auto temperature : state.mode_temp) { sum += temperature.value(); }
+    }
+    return sum;
 }
 
 struct Cells {
@@ -119,7 +144,7 @@ template <std::size_t Capacity> double mixture_case(const char* name, const Cell
                                    fractions,
                                    canary::Density<double, si> {c.rho[i]},
                                    canary::EnergyDensity<double, si> {c.rho_e[i]});
-            sum += closure.state.p.value() + closure.state.temp.value();
+            sum += closure_checksum(closure);
         }
         return sum;
     });
@@ -148,7 +173,7 @@ double thermally_perfect_case(
                                            canary::TemperatureGuess<double, si> {previous})
                     : canary::thermo_state(gas, fractions, rho, rho_e);
             previous = closure.state.temp;
-            sum += closure.state.p.value() + closure.state.temp.value();
+            sum += closure_checksum(closure);
         }
         return sum;
     });
@@ -171,21 +196,20 @@ double two_temperature_case(const char* name,
     std::vector<double> rho_e_ve(cells);
     for (std::size_t i = 0; i < cells; ++i) {
         const canary::Density<double, si> rho {c.rho[i]};
-        const auto temp = canary::thermo_state(gas.thermally_perfect,
-                                               mix,
-                                               rho,
-                                               canary::EnergyDensity<double, si> {c.rho_e[i]})
-                            .state.temp;
+        const auto temp =
+          checked_state(canary::thermo_state(gas.thermally_perfect,
+                                             mix,
+                                             rho,
+                                             canary::EnergyDensity<double, si> {c.rho_e[i]}))
+            .temp;
         const std::array<double, 1> t_ve {0.8 * temp.value()};
-        const auto state =
-          canary::thermo_state(
-            gas,
-            mix,
-            rho,
-            temp,
-            canary::as_kind<canary::kind::mode_temperature, si>(
-              Kokkos::mdspan<const double, Kokkos::dextents<std::size_t, 1>>(t_ve.data(), 1)))
-            .state;
+        const auto state = checked_state(canary::thermo_state(
+          gas,
+          mix,
+          rho,
+          temp,
+          canary::as_kind<canary::kind::mode_temperature, si>(
+            Kokkos::mdspan<const double, Kokkos::dextents<std::size_t, 1>>(t_ve.data(), 1))));
         rho_e[i] = c.rho[i] * state.e.value();
         rho_e_ve[i] = c.rho[i] * state.mode_e[0].value();
     }
@@ -199,8 +223,7 @@ double two_temperature_case(const char* name,
                                                       canary::Density<double, si> {c.rho[i]},
                                                       canary::EnergyDensity<double, si> {rho_e[i]},
                                                       modes);
-            sum += closure.state.p.value() + closure.state.temp.value() +
-                   closure.state.mode_temp[0].value();
+            sum += closure_checksum(closure);
         }
         return sum;
     });
@@ -225,15 +248,13 @@ double multi_temperature_case(const char* name,
     for (std::size_t i = 0; i < cells; ++i) {
         std::array<double, modes> t_m {};
         t_m.fill(0.8 * temp[i]);
-        const auto state =
-          canary::thermo_state(
-            gas,
-            mix,
-            canary::Density<double, si> {c.rho[i]},
-            canary::Temperature<double, si> {temp[i]},
-            canary::as_kind<canary::kind::mode_temperature, si>(
-              Kokkos::mdspan<const double, Kokkos::dextents<std::size_t, 1>>(t_m.data(), modes)))
-            .state;
+        const auto state = checked_state(canary::thermo_state(
+          gas,
+          mix,
+          canary::Density<double, si> {c.rho[i]},
+          canary::Temperature<double, si> {temp[i]},
+          canary::as_kind<canary::kind::mode_temperature, si>(
+            Kokkos::mdspan<const double, Kokkos::dextents<std::size_t, 1>>(t_m.data(), modes))));
         rho_e[i] = c.rho[i] * state.e.value();
         for (std::size_t m = 0; m < modes; ++m) {
             rho_e_m[(i * modes) + m] = c.rho[i] * state.mode_e[m].value();
@@ -250,8 +271,7 @@ double multi_temperature_case(const char* name,
                                                       canary::Density<double, si> {c.rho[i]},
                                                       canary::EnergyDensity<double, si> {rho_e[i]},
                                                       energies);
-            sum += closure.state.p.value() + closure.state.temp.value() +
-                   closure.state.mode_temp[modes - 1].value();
+            sum += closure_checksum(closure);
         }
         return sum;
     });
@@ -341,15 +361,13 @@ double multi_temperature_sources_case(const char* name,
     for (std::size_t i = 0; i < cells; ++i) {
         const double temp = 3000.0 + (12000.0 * static_cast<double>(i % 101) / 101.0);
         const std::array<double, 2> t_m {(0.5 * temp) + 150.0, 0.8 * temp};
-        states[i] =
-          canary::thermo_state(
-            gas,
-            mix,
-            canary::Density<double, si> {1.0e-4 + (6.0e-4 * (c.rho[i] - 1.0))},
-            canary::Temperature<double, si> {temp},
-            canary::as_kind<canary::kind::mode_temperature, si>(
-              Kokkos::mdspan<const double, Kokkos::dextents<std::size_t, 1>>(t_m.data(), 2)))
-            .state;
+        states[i] = checked_state(canary::thermo_state(
+          gas,
+          mix,
+          canary::Density<double, si> {1.0e-4 + (6.0e-4 * (c.rho[i] - 1.0))},
+          canary::Temperature<double, si> {temp},
+          canary::as_kind<canary::kind::mode_temperature, si>(
+            Kokkos::mdspan<const double, Kokkos::dextents<std::size_t, 1>>(t_m.data(), 2))));
     }
     return time_per_cell(name, [&] {
         double sum = 0;
@@ -382,19 +400,17 @@ std::vector<canary::state_t<G, double>>
         const double temp = 3000.0 + (12000.0 * static_cast<double>(i % 101) / 101.0);
         const canary::Pressure<double, si> p {1.0e4 * c.rho[i]};
         if constexpr (std::same_as<canary::state_t<G, double>, canary::ThermoState<double, si>>) {
-            states[i] =
-              canary::thermo_state(gas, mix, p, canary::Temperature<double, si> {temp}).state;
+            states[i] = checked_state(
+              canary::thermo_state(gas, mix, p, canary::Temperature<double, si> {temp}));
         } else {
             const std::array<double, 1> t_ve {(0.5 * temp) + 150.0};
-            states[i] =
-              canary::thermo_state(
-                gas,
-                mix,
-                p,
-                canary::Temperature<double, si> {temp},
-                canary::as_kind<canary::kind::mode_temperature, si>(
-                  Kokkos::mdspan<const double, Kokkos::dextents<std::size_t, 1>>(t_ve.data(), 1)))
-                .state;
+            states[i] = checked_state(canary::thermo_state(
+              gas,
+              mix,
+              p,
+              canary::Temperature<double, si> {temp},
+              canary::as_kind<canary::kind::mode_temperature, si>(
+                Kokkos::mdspan<const double, Kokkos::dextents<std::size_t, 1>>(t_ve.data(), 1))));
         }
     }
     return states;
@@ -433,13 +449,14 @@ double
 }  // namespace
 
 int main()
-{
+try {
+    std::puts("Closure cases require Valid status and consume every state field.");
     const Cells c = make_cells();
     const auto air =
       canary::make_calorically_perfect(canary::SpecificGasConstant<double, si> {287.0},
                                        canary::HeatCapacityRatio {1.4});
 
-    time_per_cell("one species, plain doubles", [&] {
+    time_per_cell("one species, unchecked plain doubles", [&] {
         const double gamma = air.gamma.value();
         const double r = air.gas_constant.value();
         double sum = 0;
@@ -450,14 +467,14 @@ int main()
         }
         return sum;
     });
-    time_per_cell("one species, canary", [&] {
+    time_per_cell("one species, checked canary", [&] {
         double sum = 0;
         for (std::size_t i = 0; i < cells; ++i) {
             const auto closure =
               canary::thermo_state(air,
                                    canary::Density<double, si> {c.rho[i]},
                                    canary::EnergyDensity<double, si> {c.rho_e[i]});
-            sum += closure.state.p.value() + closure.state.temp.value();
+            sum += closure_checksum(closure);
         }
         return sum;
     });
@@ -483,13 +500,14 @@ int main()
     std::vector<double> air_temp(cells);
     for (std::size_t i = 0; i < cells; ++i) {
         air_temp[i] =
-          canary::thermo_state(
-            air5,
-            canary::as_kind<canary::kind::mass_fraction>(
-              Kokkos::mdspan<const double, Kokkos::dextents<std::size_t, 1>>(air_y.data(), 5)),
-            canary::Density<double, si> {c.rho[i]},
-            canary::EnergyDensity<double, si> {c.rho_e[i]})
-            .state.temp.value();
+          checked_state(
+            canary::thermo_state(
+              air5,
+              canary::as_kind<canary::kind::mass_fraction>(
+                Kokkos::mdspan<const double, Kokkos::dextents<std::size_t, 1>>(air_y.data(), 5)),
+              canary::Density<double, si> {c.rho[i]},
+              canary::EnergyDensity<double, si> {c.rho_e[i]}))
+            .temp.value();
     }
     multi_temperature_case("four-temperature air (5 species)",
                            c,
@@ -521,12 +539,12 @@ int main()
                            ionised_temp);
     const auto air5_built = canary::make_air5<double>(si_scales);
     const auto kim_jo = canary::make_air5_kim_jo(air5_built.species, si_scales);
-    production_case("Kim-Jo air (13 reactions) production", c, kim_jo, air5);
+    production_case("unchecked Kim-Jo air (13 reactions) production", c, kim_jo, air5);
     const auto air5_two_temperature_built = canary::make_air5_two_temperature<double>(si_scales);
     const auto park = canary::make_air5_park(air5_two_temperature_built.species, si_scales);
     const auto park_exchange =
       canary::make_air5_park_exchange(air5_two_temperature_built.species, park, si_scales);
-    sources_case("Park air (5 reactions) 2T sources",
+    sources_case("unchecked Park air (5 reactions) 2T sources",
                  c,
                  park,
                  park_exchange,
@@ -540,7 +558,7 @@ int main()
                                                                    air11_kim_jo,
                                                                    air11_built.model,
                                                                    si_scales);
-    multi_temperature_sources_case("RAM-C air (40 reactions) 3T sources",
+    multi_temperature_sources_case("unchecked RAM-C air (40 reactions) 3T sources",
                                    c,
                                    air11_kim_jo,
                                    air11_exchange,
@@ -549,16 +567,19 @@ int main()
     const auto wilke = canary::make_air5_wilke_transport(air5_built.species, si_scales);
     const auto gupta_yos =
       canary::make_air5_gupta_yos_transport(air5_two_temperature_built.species, si_scales);
-    transport_case("Wilke air (5 species) transport", c, wilke, air5, false);
-    transport_case("Gupta-Yos air (5 species) 2T transport",
+    transport_case("unchecked Wilke air (5 species) transport", c, wilke, air5, false);
+    transport_case("unchecked Gupta-Yos air (5 species) 2T transport",
                    c,
                    gupta_yos,
                    air5_two_temperature_built.model,
                    false);
-    transport_case("Wilke air (5 species) diffusion", c, wilke, air5, true);
-    transport_case("Gupta-Yos air (5 species) 2T diffusion",
+    transport_case("unchecked Wilke air (5 species) diffusion", c, wilke, air5, true);
+    transport_case("unchecked Gupta-Yos air (5 species) 2T diffusion",
                    c,
                    gupta_yos,
                    air5_two_temperature_built.model,
                    true);
+} catch (const std::exception& error) {
+    std::fprintf(stderr, "%s\n", error.what());
+    return 1;
 }
