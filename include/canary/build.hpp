@@ -9,8 +9,8 @@
 namespace canary
 {
 
-// Thrown by the make_ functions when a parameter is out of range. The
-// message names the parameter and its value.
+// Thrown during checked host construction when a parameter is out of range.
+// The message names the parameter and its value.
 class ParameterError : public std::invalid_argument
 {
   public:

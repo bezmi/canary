@@ -11,12 +11,12 @@
 
 namespace
 {
-const auto gas = canary::make_air5<double>(canary::UnitScales<double, canary::scaled> {
+const auto gas = canary::make_air5<double>(canary::UnitScales<double, canary::scaled> {{
                                              .mass = 4.65e-26,
                                              .density = 1.0e-3,
                                              .temperature = 1000.0,
                                              .length = 1.0,
-                                           })
+                                           }})
                    .model;
 const std::array<double, 5> y {0.767, 0.233, 0.0, 0.0, 0.0};
 const auto mix =

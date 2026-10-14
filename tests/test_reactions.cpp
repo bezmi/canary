@@ -45,12 +45,12 @@ constexpr double avogadro = canary::constants::avogadro<double>;
 // Universal gas constant of the reference implementation [J/(mol K)].
 constexpr double reference_gas_constant = 8.31451;
 
-const canary::UnitScales<double, scaled> reference_scales {
+const canary::UnitScales<double, scaled> reference_scales {{
   .mass = 4.65e-26,
   .density = 1.0e-3,
   .temperature = 1000.0,
   .length = 1.0,
-};
+}};
 
 template <typename T> auto fractions(const std::array<T, species_count>& y)
 {
@@ -478,12 +478,12 @@ void test_reactions()
     };
 
     "a float-parameter scaled mechanism gives the SI rates within float precision"_test = [&] {
-        const canary::UnitScales<float, scaled> scales_f {
+        const canary::UnitScales<float, scaled> scales_f {{
           .mass = 4.65e-26F,
           .density = 1.0e-3F,
           .temperature = 1000.0F,
           .length = 1.0F,
-        };
+        }};
         const auto built_f = canary::make_air5<float>(scales_f);
         const auto mech_f = canary::make_air5_kim_jo(
           built_f.species,

@@ -53,12 +53,12 @@ constexpr double boltzmann = canary::constants::boltzmann<double>;
 // Universal gas constant of the reference implementation [J/(mol K)].
 constexpr double reference_gas_constant = 8.31451;
 
-const canary::UnitScales<double, scaled> reference_scales {
+const canary::UnitScales<double, scaled> reference_scales {{
   .mass = 4.65e-26,
   .density = 1.0e-3,
   .temperature = 1000.0,
   .length = 1.0,
-};
+}};
 
 template <typename T> auto fractions(const std::array<T, species_count>& y)
 {
@@ -1009,10 +1009,8 @@ void test_energy_exchange()
                      accepted.chemistry_vibration[0].vibrational_temperature.value());
           };
           check_float(canary::UnitScales<float, si> {});
-          check_float(canary::UnitScales<float, scaled> {.mass = 4.65e-26F,
-                                                         .density = 1.0e-3F,
-                                                         .temperature = 1000.0F,
-                                                         .length = 1.0F});
+          check_float(canary::UnitScales<float, scaled> {
+            {.mass = 4.65e-26F, .density = 1.0e-3F, .temperature = 1000.0F, .length = 1.0F}});
       };
 
     "energy exchange: the builder rejects invalid input with the entry in the message"_test = [&] {
@@ -1213,13 +1211,9 @@ void test_energy_exchange()
         };
         check(canary::UnitScales<float, si> {});
         check(canary::UnitScales<double, si> {});
-        check(canary::UnitScales<float, scaled> {.mass = 4.65e-26F,
-                                                 .density = 1.0e-3F,
-                                                 .temperature = 1000.0F,
-                                                 .length = 1.0F});
-        check(canary::UnitScales<double, scaled> {.mass = 4.65e-26,
-                                                  .density = 1.0e-3,
-                                                  .temperature = 1000.0,
-                                                  .length = 1.0});
+        check(canary::UnitScales<float, scaled> {
+          {.mass = 4.65e-26F, .density = 1.0e-3F, .temperature = 1000.0F, .length = 1.0F}});
+        check(canary::UnitScales<double, scaled> {
+          {.mass = 4.65e-26, .density = 1.0e-3, .temperature = 1000.0, .length = 1.0}});
     };
 }

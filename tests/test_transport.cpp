@@ -145,10 +145,8 @@ void test_transport()
     };
 
     "checked transport factories preserve float parameter storage and scaled results"_test = [] {
-        const canary::UnitScales<double, scaled> scales {.mass = 4.65e-26,
-                                                         .density = 1.2,
-                                                         .temperature = 300.0,
-                                                         .length = 0.1};
+        const canary::UnitScales<double, scaled> scales {
+          {.mass = 4.65e-26, .density = 1.2, .temperature = 300.0, .length = 0.1}};
         const auto check = [&]<typename P> {
             using Viscosity = canary::DynamicViscosity<P, si>;
             using Temperature = canary::Temperature<P, si>;

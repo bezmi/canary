@@ -40,12 +40,12 @@ constexpr double eps = std::numeric_limits<double>::epsilon();
 // Relative tolerance of the temperature solve (the model default).
 constexpr double solve_tolerance = 1.0e-10;
 
-const canary::UnitScales<double, scaled> reference_scales {
+const canary::UnitScales<double, scaled> reference_scales {{
   .mass = 4.65e-26,
   .density = 1.0e-3,
   .temperature = 1000.0,
   .length = 1.0,
-};
+}};
 
 template <typename T> auto fractions(const std::array<T, 5>& y)
 {

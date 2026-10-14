@@ -1,11 +1,13 @@
 #ifndef CANARY_UNITS_HPP
 #define CANARY_UNITS_HPP
 
-#include <cmath>
-#include <concepts>
 #include <canary/build.hpp>
 #include <canary/quantity.hpp>
 #include <canary/scalar.hpp>
+#include <cmath>
+#include <concepts>
+#include <format>
+#include <limits>
 #include <type_traits>
 
 namespace canary
@@ -37,30 +39,62 @@ template <std::floating_point P> struct UnitScales<P, si> {};
 // T_ref [K] and length x_ref [m]. The velocity scale is sqrt(k_B T_ref /
 // m_ref), so the Boltzmann constant is 1 in this system. Charges are in
 // units of the elementary charge.
-template <std::floating_point P> struct UnitScales<P, scaled> {
-    P mass;
-    P density;
-    P temperature;
-    P length;
+// Construction requires finite, positive base scales. Input is copied;
+// subsequent changes to the input do not affect the validated value.
+template <std::floating_point P> struct UnitScales<P, scaled>
+{
+  public:
+    struct Input {
+        P mass {};
+        P density {};
+        P temperature {};
+        P length {};
+    };
+
+    // Throws ParameterError naming an invalid base scale. An omitted input
+    // field is zero and is rejected. Valid inputs permit constant evaluation.
+    constexpr explicit UnitScales(Input input) : values_(input)
+    {
+        check_base("mass", input.mass);
+        check_base("density", input.density);
+        check_base("temperature", input.temperature);
+        check_base("length", input.length);
+    }
+
+    [[nodiscard]] constexpr P mass() const { return values_.mass; }
+    [[nodiscard]] constexpr P density() const { return values_.density; }
+    [[nodiscard]] constexpr P temperature() const { return values_.temperature; }
+    [[nodiscard]] constexpr P length() const { return values_.length; }
+
+  private:
+    Input values_;
+
+    static constexpr void check_base(const char* name, P value)
+    {
+        if (!(value > P(0)) || !(value <= std::numeric_limits<P>::max())) {
+            throw ParameterError(
+              std::format("{} scale must be finite and positive, got {}", name, value));
+        }
+    }
 };
 
 // Derived scales, computed in the order of cerberus's MFP::update_ref.
 
 // u_ref = sqrt(k_B T_ref / m_ref) [m/s]
 template <std::floating_point P> P velocity_scale(const UnitScales<P, scaled>& s)
-{ return std::sqrt(constants::boltzmann<P> * s.temperature / s.mass); }
+{ return std::sqrt(constants::boltzmann<P> * s.temperature() / s.mass()); }
 
 // t_ref = x_ref / u_ref [s]
 template <std::floating_point P> P time_scale(const UnitScales<P, scaled>& s)
-{ return s.length / velocity_scale(s); }
+{ return s.length() / velocity_scale(s); }
 
 // Number of particles in a reference volume, n0 = (rho_ref / m_ref) x_ref^3.
 // It is the scale of the particle-count dimension, so that the density
 // scale is rho_ref and the particle-mass scale is m_ref.
 template <std::floating_point P> P count_scale(const UnitScales<P, scaled>& s)
 {
-    const P number_density = s.density / s.mass;
-    return number_density * s.length * s.length * s.length;
+    const P number_density = s.density() / s.mass();
+    return number_density * s.length() * s.length() * s.length();
 }
 
 namespace detail
@@ -88,10 +122,10 @@ template <std::floating_point P> P scale_factor(const Dimension& d, const UnitSc
     const P count = count_scale(s);
     P numerator = P(1);
     P denominator = P(1);
-    detail::apply_power(numerator, denominator, s.mass * count, d.mass);
-    detail::apply_power(numerator, denominator, s.length, d.length);
+    detail::apply_power(numerator, denominator, s.mass() * count, d.mass);
+    detail::apply_power(numerator, denominator, s.length(), d.length);
     detail::apply_power(numerator, denominator, time_scale(s), d.time);
-    detail::apply_power(numerator, denominator, s.temperature, d.temperature);
+    detail::apply_power(numerator, denominator, s.temperature(), d.temperature);
     detail::apply_power(numerator, denominator, constants::elementary_charge<P> * count, d.charge);
     detail::apply_power(numerator, denominator, count, d.count);
     return numerator / denominator;
@@ -149,12 +183,12 @@ template <std::floating_point P> UnitScales<double, si> double_scales(const Unit
 template <std::floating_point P>
 UnitScales<double, scaled> double_scales(const UnitScales<P, scaled>& s)
 {
-    return {
-      .mass = static_cast<double>(s.mass),
-      .density = static_cast<double>(s.density),
-      .temperature = static_cast<double>(s.temperature),
-      .length = static_cast<double>(s.length),
-    };
+    return UnitScales<double, scaled> {{
+      .mass = static_cast<double>(s.mass()),
+      .density = static_cast<double>(s.density()),
+      .temperature = static_cast<double>(s.temperature()),
+      .length = static_cast<double>(s.length()),
+    }};
 }
 }  // namespace detail
 

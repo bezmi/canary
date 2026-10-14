@@ -1,13 +1,16 @@
 #include "dual.hpp"
 #include "test_suites.hpp"
 
+#include <array>
 #include <boost/ut.hpp>
-#include <cmath>
-#include <concepts>
 #include <canary/build.hpp>
 #include <canary/quantity.hpp>
 #include <canary/units.hpp>
+#include <cmath>
+#include <concepts>
 #include <limits>
+#include <string>
+#include <type_traits>
 
 namespace
 {
@@ -19,12 +22,12 @@ namespace kind = canary::kind;
 constexpr double eps = std::numeric_limits<double>::epsilon();
 
 // Cerberus-like references: a proton mass, a low density, 1e4 K and 1 mm.
-constexpr canary::UnitScales<double, scaled> scales {
+constexpr canary::UnitScales<double, scaled> scales {{
   .mass = 1.6726e-27,
   .density = 1.0e-6,
   .temperature = 1.0e4,
   .length = 1.0e-3,
-};
+}};
 
 bool within_ulp(double a, double b, double ulps)
 { return std::abs(a - b) <= ulps * eps * std::abs(b); }
@@ -60,20 +63,81 @@ void test_units()
     using canary::convert;
     using canary::scale_factor;
 
-    const double u_ref = std::sqrt(1.380649e-23 * scales.temperature / scales.mass);
+    "unit scale construction rejects invalid or omitted base values"_test = [] {
+        const auto check = []<typename P>() {
+            using Scales = canary::UnitScales<P, scaled>;
+            using Input = typename Scales::Input;
+            const std::array members {&Input::mass,
+                                      &Input::density,
+                                      &Input::temperature,
+                                      &Input::length};
+            const std::array names {"mass", "density", "temperature", "length"};
+            for (std::size_t i = 0; i < members.size(); ++i) {
+                for (P value : {P(0),
+                                -P(0),
+                                P(-1),
+                                std::numeric_limits<P>::infinity(),
+                                -std::numeric_limits<P>::infinity(),
+                                std::numeric_limits<P>::quiet_NaN()}) {
+                    Input input {.mass = P(1),
+                                 .density = P(1),
+                                 .temperature = P(1),
+                                 .length = P(1)};
+                    input.*members[i] = value;
+                    std::string message;
+                    try {
+                        (void)Scales {input};
+                    } catch (const canary::ParameterError& error) {
+                        message = error.what();
+                    }
+                    expect(message.starts_with(std::string(names[i]) +
+                                               " scale must be finite and positive"))
+                      << message;
+                }
+            }
+            expect(throws<canary::ParameterError>(
+              [] { (void)Scales {{.mass = P(1), .density = P(1), .temperature = P(1)}}; }));
+        };
+        check.template operator()<float>();
+        check.template operator()<double>();
+        check.template operator()<long double>();
+    };
+
+    "unit scales own their validated input and retain copy and assignment"_test = [] {
+        using Scales = canary::UnitScales<double, scaled>;
+        static_assert(!std::is_aggregate_v<Scales> && !std::is_default_constructible_v<Scales>);
+        static_assert(std::is_trivially_copyable_v<Scales> && std::copyable<Scales>);
+        static_assert(sizeof(Scales) == 4 * sizeof(double));
+        static_assert(std::same_as<decltype(scales.mass()), double>);
+        static_assert(std::same_as<decltype(scales.density()), double>);
+        static_assert(std::same_as<decltype(scales.temperature()), double>);
+        static_assert(std::same_as<decltype(scales.length()), double>);
+        static_assert(scales.mass() == 1.6726e-27 && scales.density() == 1.0e-6);
+        Scales::Input input {.mass = 2.0, .density = 3.0, .temperature = 4.0, .length = 5.0};
+        const Scales original {input};
+        input.mass = 9.0;
+        const Scales copied = original;
+        Scales assigned {input};
+        assigned = copied;
+        expect(original.mass() == 2.0_d && copied.mass() == 2.0_d && assigned.mass() == 2.0_d);
+        expect(assigned.density() == 3.0_d && assigned.temperature() == 4.0_d &&
+               assigned.length() == 5.0_d);
+    };
+
+    const double u_ref = std::sqrt(1.380649e-23 * scales.temperature() / scales.mass());
     const double n0 =
-      (scales.density / scales.mass) * scales.length * scales.length * scales.length;
+      (scales.density() / scales.mass()) * scales.length() * scales.length() * scales.length();
 
     "the Boltzmann constant is exactly 1 in the scaled system"_test = [] {
         expect(canary::boltzmann_constant(scales).value() == 1.0_d);
         expect(canary::boltzmann_constant(canary::UnitScales<double, si> {}).value() ==
                1.380649e-23);
-        constexpr canary::UnitScales<float, scaled> unit_float {
+        constexpr canary::UnitScales<float, scaled> unit_float {{
           .mass = 1.0F,
           .density = 1.0F,
           .temperature = 1.0F,
           .length = 1.0F,
-        };
+        }};
         expect(canary::boltzmann_constant(unit_float).value() == 1.0_f);
     };
 
@@ -85,26 +149,26 @@ void test_units()
 
     "derived scales follow the cerberus reference definitions"_test = [u_ref, n0] {
         expect(canary::velocity_scale(scales) == u_ref);
-        expect(canary::time_scale(scales) == scales.length / u_ref);
+        expect(canary::time_scale(scales) == scales.length() / u_ref);
         expect(canary::count_scale(scales) == n0);
-        expect(within_ulp(scale_factor<kind::density>(scales), scales.density, 4.0));
-        expect(within_ulp(scale_factor<kind::particle_mass>(scales), scales.mass, 4.0));
-        expect(within_ulp(scale_factor<kind::temperature>(scales), scales.temperature, 0.0));
+        expect(within_ulp(scale_factor<kind::density>(scales), scales.density(), 4.0));
+        expect(within_ulp(scale_factor<kind::particle_mass>(scales), scales.mass(), 4.0));
+        expect(within_ulp(scale_factor<kind::temperature>(scales), scales.temperature(), 0.0));
         expect(within_ulp(scale_factor<kind::specific_energy>(scales), u_ref * u_ref, 4.0));
         expect(
-          within_ulp(scale_factor<kind::pressure>(scales), scales.density * u_ref * u_ref, 4.0));
+          within_ulp(scale_factor<kind::pressure>(scales), scales.density() * u_ref * u_ref, 4.0));
         expect(within_ulp(scale_factor<kind::energy_density>(scales),
-                          scales.density * u_ref * u_ref,
+                          scales.density() * u_ref * u_ref,
                           4.0));
         expect(within_ulp(scale_factor<kind::power_density>(scales),
-                          scales.density * u_ref * u_ref * u_ref / scales.length,
+                          scales.density() * u_ref * u_ref * u_ref / scales.length(),
                           8.0));
         expect(within_ulp(scale_factor<kind::dynamic_viscosity>(scales),
-                          scales.density * u_ref * scales.length,
+                          scales.density() * u_ref * scales.length(),
                           4.0));
         expect(within_ulp(scale_factor<kind::sound_speed>(scales), u_ref, 4.0));
         expect(within_ulp(scale_factor<kind::diffusion_coefficient>(scales),
-                          scales.length * u_ref,
+                          scales.length() * u_ref,
                           4.0));
         expect(within_ulp(scale_factor<kind::charge>(scales), 1.602176634e-19, 4.0));
         expect(scale_factor<kind::mass_fraction>(scales) == 1.0_d);
@@ -140,7 +204,7 @@ void test_units()
                scale_factor<kind::number_rate_density>(scales));
         // Rate constant of a third-order reaction, (length^3 / count)^2 / time.
         const canary::Dimension third_order {.length = 6, .time = -1, .count = -2};
-        const double x = scales.length;
+        const double x = scales.length();
         const double t_ref = x / u_ref;
         expect(within_ulp(scale_factor(third_order, scales),
                           (x * x * x * x * x * x) / (n0 * n0 * t_ref),
@@ -179,6 +243,6 @@ void test_units()
         const canary::Density<D, si> rho {D(2.0e-6, 1.0)};
         const auto rho_s = convert<scaled>(rho, scales);
         expect(within_ulp(rho_s.value().real(), 2.0, 4.0));
-        expect(within_ulp(rho_s.value().dual(), 1.0 / scales.density, 4.0));
+        expect(within_ulp(rho_s.value().dual(), 1.0 / scales.density(), 4.0));
     };
 }

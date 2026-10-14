@@ -55,12 +55,12 @@ constexpr double boltzmann = canary::constants::boltzmann<double>;
 constexpr double avogadro = canary::constants::avogadro<double>;
 
 const canary::UnitScales<double, si> si_scales {};
-const canary::UnitScales<double, scaled> reference_scales {
+const canary::UnitScales<double, scaled> reference_scales {{
   .mass = 4.65e-26,
   .density = 1.0e-3,
   .temperature = 1000.0,
   .length = 1.0,
-};
+}};
 
 constexpr Fractions cold_air {0.767, 0.233, 0.0, 0.0, 0.0};
 constexpr Fractions dissociated {0.3, 0.1, 0.3, 0.25, 0.05};

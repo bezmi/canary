@@ -62,12 +62,12 @@ constexpr double boltzmann = canary::constants::boltzmann<double>;
 // Universal gas constant of the reference implementation [J/(mol K)].
 constexpr double reference_gas_constant = 8.31451;
 
-const canary::UnitScales<double, scaled> reference_scales {
+const canary::UnitScales<double, scaled> reference_scales {{
   .mass = 4.65e-26,
   .density = 1.0e-3,
   .temperature = 1000.0,
   .length = 1.0,
-};
+}};
 
 template <typename T> auto fractions(const std::array<T, species_count>& y)
 {

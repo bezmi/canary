@@ -175,12 +175,12 @@ void test_calorically_perfect()
     };
 
     "a scaled model from cerberus-like inputs has R = k_B / m with k_B = 1"_test = [&] {
-        const canary::UnitScales<double, scaled> scales {
+        const canary::UnitScales<double, scaled> scales {{
           .mass = 1.6726e-27,
           .density = 1.0e-6,
           .temperature = 1.0e4,
           .length = 1.0e-3,
-        };
+        }};
         const auto built =
           canary::make_calorically_perfect(canary::ParticleMass<double, scaled> {2.0},
                                            canary::Charge<double, scaled> {1.0},
