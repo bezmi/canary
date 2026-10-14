@@ -885,6 +885,18 @@ void test_mixture_transport()
         }
     };
 
+    "transport curve construction retains long double scale precision"_test = [] {
+        const canary::TransportCurveInput<1> input {.segments = 1,
+                                                    .breaks = {1.0, 2.0},
+                                                    .coefficients = {{{1.0, 1.0, 1.0, 0.0}}}};
+        const long double tau = std::nextafter(1.0L, 2.0L);
+        const auto curve = canary::make_transport_curve(input, tau, 1.0L);
+        expect(curve.breaks[0] == 1.0L / tau && curve.breaks[1] == 2.0L / tau);
+        expect(curve.coefficients[0][1] == 1.0L / tau);
+        expect(curve.coefficients[0][2] == 1.0L / (tau * tau));
+        expect(curve.coefficients[0][3] == std::log(tau));
+    };
+
     "mixture transport: make_transport_curve rejects scales that are not finite and positive"_test =
       [] {
           const canary::TransportCurveInput<3> curve = canary::air5_species_transport[0].viscosity;

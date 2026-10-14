@@ -793,7 +793,7 @@ ElectronicLevels<P, U, L> make_electronic_levels(const ElectronicLevelsInput<L>&
         throw ParameterError(
           std::format("level count must be between 0 and {}, got {}", L, input.levels));
     }
-    const double tau = scale_factor<kind::temperature>(double_scales(scales));
+    const auto tau = scale_factor<kind::temperature>(scales);
     ElectronicLevels<P, U, L> out {};
     out.levels = input.levels;
     const auto n = static_cast<std::size_t>(input.levels);

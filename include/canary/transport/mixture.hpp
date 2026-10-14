@@ -69,6 +69,7 @@
 #include <format>
 #include <numbers>
 #include <string_view>
+#include <type_traits>
 
 namespace canary
 {
@@ -195,7 +196,7 @@ template <std::size_t S> void check_transport_curve(const TransportCurveInput<S>
 // Curve of a fit in a model's units, with temperature_scale tau the SI value
 // of the model's temperature unit in K and value_scale s the SI value of the
 // model's unit of the fitted quantity (both 1 in SI). The coefficients are
-// folded in double precision and then rounded to P:
+// folded in at least double precision and then rounded to P:
 //   A' = A, B' = B / tau, C' = C / tau^2, D' = D + A ln tau - ln s,
 // and the breaks are divided by tau. Throws ParameterError when a scale is
 // not finite and positive, the segment count is not in [1, S], the used
@@ -215,9 +216,10 @@ TransportCurve<P, S>
           std::format("value scale must be finite and positive, got {}", value_scale));
     }
     detail::check_transport_curve(input);
-    const auto tau = static_cast<double>(temperature_scale);
-    const double ln_tau = std::log(tau);
-    const double ln_scale = std::log(static_cast<double>(value_scale));
+    using W = std::common_type_t<double, P>;
+    const auto tau = static_cast<W>(temperature_scale);
+    const auto ln_tau = std::log(tau);
+    const auto ln_scale = std::log(static_cast<W>(value_scale));
     const auto n = static_cast<std::size_t>(input.segments);
     TransportCurve<P, S> curve {};
     curve.segments = input.segments;
@@ -406,19 +408,20 @@ WilkeTransport<P, U, N, S>
                        const UnitScales<P, U>& scales,
                        ConductivityMixing mixing)
 {
+    using W = std::common_type_t<double, P>;
     detail::check_transport_species(names, species);
     if (mixing != ConductivityMixing::conductivity_ratio &&
         mixing != ConductivityMixing::viscosity_ratio) {
         throw ParameterError("unknown conductivity mixing rule");
     }
     const std::array<std::size_t, N> entry = detail::transport_entries(input, names);
-    const UnitScales<double, U> s = detail::double_scales(scales);
-    const double tau = scale_factor<kind::temperature>(s);
+    const auto& s = scales;
+    const auto tau = scale_factor<kind::temperature>(s);
     const auto mu_scale = static_cast<P>(scale_factor<kind::dynamic_viscosity>(s));
     const auto k_scale = static_cast<P>(scale_factor<kind::thermal_conductivity>(s));
-    const double mass_scale = scale_factor<kind::particle_mass>(s);
+    const auto mass_scale = scale_factor<kind::particle_mass>(s);
     // T^(3/2) / (p D) in model units is tau^(3/2) / (p_ref D_ref) in SI.
-    const double diffusion_scale =
+    const auto diffusion_scale =
       tau * std::sqrt(tau) /
       (scale_factor<kind::pressure>(s) * scale_factor<kind::diffusion_coefficient>(s));
 
@@ -454,16 +457,16 @@ WilkeTransport<P, U, N, S>
     }
     const double boltzmann = constants::boltzmann<double>;
     for (std::size_t i = 0; i < N; ++i) {
-        const auto m_i = static_cast<double>(species.mass[i].value());
+        const auto m_i = static_cast<W>(species.mass[i].value());
         for (std::size_t j = 0; j < N; ++j) {
-            const auto m_j = static_cast<double>(species.mass[j].value());
+            const auto m_j = static_cast<W>(species.mass[j].value());
             model.mass_ratio[i][j] = static_cast<P>(std::sqrt(std::sqrt(m_j / m_i)));
             model.mixing_factor[i][j] = static_cast<P>(1.0 / std::sqrt(8.0 * (1.0 + (m_i / m_j))));
-            const double reduced_mass = mass_scale * (m_i * m_j / (m_i + m_j));
+            const auto reduced_mass = mass_scale * (m_i * m_j / (m_i + m_j));
             const double sigma = (lennard_jones[i].sigma + lennard_jones[j].sigma) / 2.0;
-            const double well_depth =
+            const auto well_depth =
               std::sqrt(lennard_jones[i].epsilon * lennard_jones[j].epsilon) / tau;
-            const double factor =
+            const auto factor =
               (3.0 / 16.0) *
               std::sqrt(2.0 * std::numbers::pi * boltzmann * boltzmann * boltzmann / reduced_mass) /
               (std::numbers::pi * sigma * sigma);
@@ -527,7 +530,9 @@ inline void check_collision_fit(const CollisionFitInput& fit, std::string_view r
 // constant ln(factor (2 mu_ij / (pi k_B))^(1/2)) - ln(Delta scale), whose
 // SI terms are in log_constant, are expanded into a cubic in L.
 template <std::floating_point P>
-CollisionTermFit<P> collision_term_fit(const CollisionFitInput& fit, double a, double log_constant)
+CollisionTermFit<P> collision_term_fit(const CollisionFitInput& fit,
+                                       std::common_type_t<double, P> a,
+                                       std::common_type_t<double, P> log_constant)
 {
     return {
       .a = static_cast<P>(fit.A),
@@ -563,6 +568,7 @@ GuptaYosTransport<P, U, N> make_gupta_yos_transport(const std::array<CollisionPa
                                                     const std::array<int, N>& rotational_degrees,
                                                     const UnitScales<P, U>& scales)
 {
+    using W = std::common_type_t<double, P>;
     detail::check_transport_species(names, species);
     for (std::size_t i = 0; i < N; ++i) {
         const int d = rotational_degrees[i];
@@ -606,12 +612,12 @@ GuptaYosTransport<P, U, N> make_gupta_yos_transport(const std::array<CollisionPa
         }
     }
 
-    const UnitScales<double, U> s = detail::double_scales(scales);
-    const double ln_tau = std::log(scale_factor<kind::temperature>(s));
-    const double mass_scale = scale_factor<kind::particle_mass>(s);
+    const auto& s = scales;
+    const auto ln_tau = std::log(scale_factor<kind::temperature>(s));
+    const auto mass_scale = scale_factor<kind::particle_mass>(s);
     // Delta has the dimension of a particle mass over a dynamic viscosity.
     const Dimension delta_dimension {.length = 1, .time = 1, .count = -1};
-    const double ln_delta_scale = std::log(scale_factor(delta_dimension, s));
+    const auto ln_delta_scale = std::log(scale_factor(delta_dimension, s));
     const double boltzmann = constants::boltzmann<double>;
 
     GuptaYosTransport<P, U, N> model {};
@@ -623,13 +629,13 @@ GuptaYosTransport<P, U, N> make_gupta_yos_transport(const std::array<CollisionPa
         model.gas_constant[i] = SpecificGasConstant<P, U> {model.boltzmann.value() / m_i};
         for (std::size_t j = 0; j < N; ++j) {
             const P m_j = species.mass[j].value();
-            const double r = static_cast<double>(m_i) / static_cast<double>(m_j);
+            const auto r = static_cast<W>(m_i) / static_cast<W>(m_j);
             model.alpha[i][j] =
               static_cast<P>(1.0 + ((1.0 - r) * (0.45 - (2.54 * r)) / ((1.0 + r) * (1.0 + r))));
-            const double a_si = mass_scale * static_cast<double>(m_i);
-            const double b_si = mass_scale * static_cast<double>(m_j);
-            const double reduced_mass = a_si * b_si / (a_si + b_si);
-            const double log_root =
+            const auto a_si = mass_scale * static_cast<W>(m_i);
+            const auto b_si = mass_scale * static_cast<W>(m_j);
+            const auto reduced_mass = a_si * b_si / (a_si + b_si);
+            const auto log_root =
               0.5 * std::log(2.0 * reduced_mass / (std::numbers::pi * boltzmann));
             const CollisionPairInput& pair = pairs[entry[i][j]];
             model.collision[i][j] = {

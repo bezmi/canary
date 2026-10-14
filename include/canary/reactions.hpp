@@ -51,6 +51,7 @@
 #include <format>
 #include <limits>
 #include <string_view>
+#include <type_traits>
 
 namespace canary
 {
@@ -306,13 +307,14 @@ inline Dimension rate_dimension(std::intmax_t order, std::string_view role)
 // A per mole in SI
 // becomes A / N_A^(order - 1) per particle; with T_SI = tau T, the model A
 // is that times tau^n divided by the scale of (length^3 / count)^(order - 1)
-// / time. The conversion is done in double.
+// / time. Conversion uses at least double precision and retains long double.
 template <std::floating_point P, UnitSystem U>
 ArrheniusRate<P, U> arrhenius_rate(const ArrheniusInput& input,
                                    std::intmax_t order,
                                    const UnitScales<P, U>& scales,
                                    std::string_view role)
 {
+    using W = std::common_type_t<double, P>;
     if (!std::isfinite(input.A) || !(input.A > 0.0)) {
         throw ParameterError(
           std::format("{} rate: A must be finite and positive, got {}", role, input.A));
@@ -333,11 +335,11 @@ ArrheniusRate<P, U> arrhenius_rate(const ArrheniusInput& input,
                       role,
                       s_t));
     }
-    const UnitScales<double, U> s = double_scales(scales);
+    const auto& s = scales;
     const Dimension dimension = rate_dimension(order, role);
-    const double tau = scale_factor<kind::temperature>(s);
-    const double per_particle =
-      input.A / std::pow(constants::avogadro<double>, static_cast<double>(order - 1));
+    const auto tau = scale_factor<kind::temperature>(s);
+    const auto per_particle =
+      input.A / std::pow(constants::avogadro<double>, static_cast<W>(order - 1));
     const auto a =
       static_cast<P>(per_particle * std::pow(tau, input.n) / scale_factor(dimension, s));
     if (!std::isfinite(a) || !(a > P(0))) {

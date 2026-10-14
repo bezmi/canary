@@ -66,6 +66,7 @@
 #include <numbers>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 
 namespace canary
@@ -259,7 +260,8 @@ std::size_t known_species(const std::array<std::string_view, N>& names,
 
 // A finite value converted to P; throws ParameterError otherwise, naming
 // what.
-template <std::floating_point P> P finite_parameter(double value, std::string_view what)
+template <std::floating_point P>
+P finite_parameter(std::common_type_t<double, P> value, std::string_view what)
 {
     const auto converted = static_cast<P>(value);
     if (!std::isfinite(value) || !std::isfinite(converted)) {
@@ -270,7 +272,8 @@ template <std::floating_point P> P finite_parameter(double value, std::string_vi
 
 // A finite, positive value converted to P; throws ParameterError otherwise,
 // naming what.
-template <std::floating_point P> P positive_parameter(double value, std::string_view what)
+template <std::floating_point P>
+P positive_parameter(std::common_type_t<double, P> value, std::string_view what)
 {
     const auto converted = static_cast<P>(value);
     if (!std::isfinite(value) || !(value > 0.0) || !std::isfinite(converted) ||
@@ -287,6 +290,7 @@ VibrationTranslationPair<P, U>
                                   const SpeciesData<P, U, N>& species,
                                   const UnitScales<P, U>& scales)
 {
+    using W = std::common_type_t<double, P>;
     VibrationTranslationPair<P, U> pair {};
     pair.species = known_species(names, input.species, "species");
     pair.partner = known_species(names, input.partner, "partner");
@@ -298,11 +302,11 @@ VibrationTranslationPair<P, U>
     if (!std::isfinite(b)) {
         throw ParameterError(std::format("Millikan-White b must be finite, got {}", b));
     }
-    const UnitScales<double, U> s = double_scales(scales);
-    const double tau = scale_factor<kind::temperature>(s);
+    const auto& s = scales;
+    const auto tau = scale_factor<kind::temperature>(s);
     // p_atm times one second, a pressure times a time.
     const Dimension pressure_time {.mass = 1, .length = -1, .time = -1};
-    const double atmosphere_second = 101325.0 / scale_factor(pressure_time, s);
+    const auto atmosphere_second = 101325.0 / scale_factor(pressure_time, s);
     pair.millikan_white_a = static_cast<P>(a / std::cbrt(tau));
     pair.millikan_white_offset = static_cast<P>(std::log(atmosphere_second) - (a * b) - 18.42);
     if (!std::isfinite(pair.millikan_white_a) || !std::isfinite(pair.millikan_white_offset)) {
@@ -343,15 +347,15 @@ VibrationTranslationPair<P, U>
     pair.correction_exponent = finite_parameter<P>(beta, "stored correction exponent");
     pair.correction_coefficient = P(0);
     if (correction.model != RelaxationCorrection::none) {
-        const double mass_scale = scale_factor<kind::particle_mass>(s);
-        const double m_p = static_cast<double>(species.mass[pair.species].value()) * mass_scale;
-        const double m_q = static_cast<double>(species.mass[pair.partner].value()) * mass_scale;
-        const double reduced_mass = m_p * m_q / (m_p + m_q);
-        const double k_si = k_factor * std::sqrt(8.0 * constants::boltzmann<double> /
-                                                 (std::numbers::pi * reduced_mass));
+        const auto mass_scale = scale_factor<kind::particle_mass>(s);
+        const auto m_p = static_cast<W>(species.mass[pair.species].value()) * mass_scale;
+        const auto m_q = static_cast<W>(species.mass[pair.partner].value()) * mass_scale;
+        const auto reduced_mass = m_p * m_q / (m_p + m_q);
+        const auto k_si = k_factor * std::sqrt(8.0 * constants::boltzmann<double> /
+                                               (std::numbers::pi * reduced_mass));
         // Number density times time.
         const Dimension density_time {.length = -3, .time = 1, .count = 1};
-        const double k_model = k_si * scale_factor(density_time, s) / std::pow(tau, beta);
+        const auto k_model = k_si * scale_factor(density_time, s) / std::pow(tau, beta);
         pair.correction_coefficient =
           positive_parameter<P>(1.0 / k_model, "correction coefficient 1 / K");
     }
@@ -388,7 +392,7 @@ ChemistryVibrationCoupling<P, U>
         throw ParameterError(
           std::format("vibrational temperature must be finite and positive, got {}", theta_v));
     }
-    const double tau = scale_factor<kind::temperature>(double_scales(scales));
+    const auto tau = scale_factor<kind::temperature>(scales);
     const double theta_d = d / constants::universal_gas_constant<double>;
     if (!(theta_d > theta_v)) {
         throw ParameterError(
@@ -1032,10 +1036,10 @@ ElectronTranslationPair<P, U>
     default: throw ParameterError("unknown electron cross-section model");
     }
     if (charged) { throw ParameterError("a gnoffo_neutral partner must be neutral"); }
-    const UnitScales<double, U> s = double_scales(scales);
-    const double tau = scale_factor<kind::temperature>(s);
+    const auto& s = scales;
+    const auto tau = scale_factor<kind::temperature>(s);
     // An area per particle.
-    const double area = scale_factor(Dimension {.length = 2, .count = -1}, s);
+    const auto area = scale_factor(Dimension {.length = 2, .count = -1}, s);
     const auto a = finite_parameter<double>(input.a, "cross-section coefficient a");
     const auto b = finite_parameter<double>(input.b, "cross-section coefficient b");
     const auto c = finite_parameter<double>(input.c, "cross-section coefficient c");
@@ -1085,11 +1089,11 @@ VibrationElectronCoupling<P, U>
                       fit.blend_lower,
                       fit.blend_upper));
     }
-    const UnitScales<double, U> s = double_scales(scales);
-    const double tau = scale_factor<kind::temperature>(s);
-    const double shift = std::log10(tau);
-    const double log_k = std::log10(scale_factor(Dimension {.time = 1}, s) *
-                                    scale_factor<kind::pressure>(s) / 101325.0);
+    const auto& s = scales;
+    const auto tau = scale_factor<kind::temperature>(s);
+    const auto shift = std::log10(tau);
+    const auto log_k = std::log10(scale_factor(Dimension {.time = 1}, s) *
+                                  scale_factor<kind::pressure>(s) / 101325.0);
     const auto convert_fit = [&](double a, double b, double c) {
         return std::array<P, 3> {
           finite_parameter<P>(a, "relaxation-time coefficient in the model's units"),
@@ -1150,9 +1154,9 @@ ElectronImpactIonisationCoupling<P, U>
     const auto energy = positive_parameter<double>(input.ionisation_energy, "ionisation energy");
     // Energy per particle.
     const Dimension particle_energy {.mass = 1, .length = 2, .time = -2, .count = -1};
-    coupling.ionisation_energy = positive_parameter<P>(
-      energy / constants::avogadro<double> / scale_factor(particle_energy, double_scales(scales)),
-      "ionisation energy in the model's units");
+    coupling.ionisation_energy = positive_parameter<P>(energy / constants::avogadro<double> /
+                                                         scale_factor(particle_energy, scales),
+                                                       "ionisation energy in the model's units");
     return coupling;
 }
 
@@ -1290,7 +1294,7 @@ MultiTemperatureExchange<P, U, N, G::mode_count, V, C, E, VE, I>
         }
     }
 
-    const UnitScales<double, U> s = detail::double_scales(scales);
+    const auto& s = scales;
     const double e_charge = constants::elementary_charge<double>;
     const double coulomb_si = e_charge * e_charge /
                               (4.0 * std::numbers::pi * constants::vacuum_permittivity<double> *

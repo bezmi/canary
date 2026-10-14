@@ -591,6 +591,21 @@ void test_multi_temperature()
     const auto single5 = canary::make_air5<double>(si_scales).model;
     const auto single11 = canary::make_air11<double>(si_scales).model;
 
+    "multi-temperature construction retains long double scale precision"_test = [] {
+        const long double tau = std::nextafter(1.0L, 2.0L);
+        const canary::UnitScales<long double, scaled> reference {
+          {.mass = 4.65e-26L, .density = 1.0e-3L, .temperature = tau, .length = 1.0L}};
+        const auto built = canary::make_air11_three_temperature<long double>(reference);
+        for (std::size_t i = 0; i < 11; ++i) {
+            const auto& input = canary::air11_electronic_levels[i];
+            for (int k = 0; k < input.levels; ++k) {
+                const auto index = static_cast<std::size_t>(k);
+                expect(built.model.electronic_levels[i].temperatures[index].value() ==
+                       static_cast<long double>(input.temperatures[index]) / tau);
+            }
+        }
+    };
+
     "multi-temperature closures reject electron pressure overflow with finite heavy pressure"_test =
       [&] {
           const auto check = [&]<typename V> {

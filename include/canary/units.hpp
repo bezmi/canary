@@ -360,25 +360,6 @@ auto convert(Quantity<K, T, From> q, const UnitScales<P, S>& scales)
     }
 }
 
-namespace detail
-{
-// The scales with double values, for converting constants whose scale
-// factors may lie outside the range of P.
-template <std::floating_point P> UnitScales<double, si> double_scales(const UnitScales<P, si>&)
-{ return {}; }
-
-template <std::floating_point P>
-UnitScales<double, scaled> double_scales(const UnitScales<P, scaled>& s)
-{
-    return UnitScales<double, scaled> {{
-      .mass = static_cast<double>(s.mass()),
-      .density = static_cast<double>(s.density()),
-      .temperature = static_cast<double>(s.temperature()),
-      .length = static_cast<double>(s.length()),
-    }};
-}
-}  // namespace detail
-
 // The Boltzmann constant in the system of the scales: the exact SI value, or
 // exactly 1 in the scaled system, where the velocity scale is defined by it.
 template <std::floating_point P>
