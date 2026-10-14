@@ -138,7 +138,7 @@ bool relative_jump(double a, double b, double bound)
 // JANAF reference row: Cp and S in J/(mol K), H - H(298.15) in kJ/mol,
 // at 1 bar.
 struct Janaf {
-    std::size_t species;
+    canary::SpeciesIndex species;
     double temp;
     double cp;
     double s;
@@ -147,16 +147,16 @@ struct Janaf {
 
 constexpr std::array<Janaf, 10> janaf {
   {
-    {.species = 0, .temp = 1000, .cp = 32.697, .s = 228.170, .dh = 21.463},
-    {.species = 0, .temp = 5000, .cp = 37.912, .s = 286.041, .dh = 167.763},
-    {.species = 1, .temp = 1000, .cp = 34.870, .s = 243.578, .dh = 22.703},
-    {.species = 1, .temp = 5000, .cp = 42.675, .s = 305.538, .dh = 180.749},
-    {.species = 4, .temp = 1000, .cp = 33.987, .s = 248.536, .dh = 22.229},
-    {.species = 4, .temp = 5000, .cp = 38.208, .s = 307.499, .dh = 170.730},
-    {.species = 2, .temp = 1000, .cp = 20.786, .s = 178.454, .dh = 14.589},
-    {.species = 2, .temp = 5000, .cp = 23.461, .s = 212.469, .dh = 100.111},
-    {.species = 3, .temp = 1000, .cp = 20.915, .s = 186.790, .dh = 14.860},
-    {.species = 3, .temp = 5000, .cp = 21.799, .s = 220.578, .dh = 99.222},
+    {.species = canary::SpeciesIndex {0}, .temp = 1000, .cp = 32.697, .s = 228.170, .dh = 21.463},
+    {.species = canary::SpeciesIndex {0}, .temp = 5000, .cp = 37.912, .s = 286.041, .dh = 167.763},
+    {.species = canary::SpeciesIndex {1}, .temp = 1000, .cp = 34.870, .s = 243.578, .dh = 22.703},
+    {.species = canary::SpeciesIndex {1}, .temp = 5000, .cp = 42.675, .s = 305.538, .dh = 180.749},
+    {.species = canary::SpeciesIndex {4}, .temp = 1000, .cp = 33.987, .s = 248.536, .dh = 22.229},
+    {.species = canary::SpeciesIndex {4}, .temp = 5000, .cp = 38.208, .s = 307.499, .dh = 170.730},
+    {.species = canary::SpeciesIndex {2}, .temp = 1000, .cp = 20.786, .s = 178.454, .dh = 14.589},
+    {.species = canary::SpeciesIndex {2}, .temp = 5000, .cp = 23.461, .s = 212.469, .dh = 100.111},
+    {.species = canary::SpeciesIndex {3}, .temp = 1000, .cp = 20.915, .s = 186.790, .dh = 14.860},
+    {.species = canary::SpeciesIndex {3}, .temp = 5000, .cp = 21.799, .s = 220.578, .dh = 99.222},
   },
 };
 
@@ -179,7 +179,7 @@ void test_nasa9()
         constexpr double dh_tolerance = 2.0e-2;
         const double r_u = canary::constants::universal_gas_constant<double>;
         for (const Janaf& row : janaf) {
-            const auto& sp = species[row.species];
+            const auto& sp = species[row.species.value()];
             const Curve curve = canary::make_nasa9_curve(sp.fit, 1.0);
             const Values v = evaluate(curve, row.temp);
             const Values v298 = evaluate(curve, 298.15);

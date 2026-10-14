@@ -192,10 +192,10 @@ namespace detail
 // Checks the entry count of a list and the names of its first count
 // entries: each known and listed once. Returns the species indices.
 template <std::size_t N, std::size_t K>
-std::array<std::size_t, K> checked_indices(const SpeciesCoefficients<K>& list,
-                                           const std::array<std::string_view, N>& names,
-                                           std::string_view role,
-                                           int min_count)
+std::array<SpeciesIndex, K> checked_indices(const SpeciesCoefficients<K>& list,
+                                            const std::array<std::string_view, N>& names,
+                                            std::string_view role,
+                                            int min_count)
 {
     if (list.count < min_count || list.count > static_cast<int>(K)) {
         throw ParameterError(std::format("number of {} must be between {} and {}, got {}",
@@ -204,22 +204,23 @@ std::array<std::size_t, K> checked_indices(const SpeciesCoefficients<K>& list,
                                          K,
                                          list.count));
     }
-    std::array<std::size_t, K> index {};
+    std::array<SpeciesIndex, K> index {};
     std::array<bool, N> seen {};
     for (std::size_t e = 0; e < static_cast<std::size_t>(list.count); ++e) {
         const char* name = list.entries[e].name;
         if (name == nullptr) {
             throw ParameterError(std::format("{} entry {} has no name", role, e));
         }
-        index[e] = species_index(names, name);
-        if (index[e] == N) {
+        const auto found = species_index(names, name);
+        if (!found) {
             throw ParameterError(std::format("unknown species \"{}\" in the {}", name, role));
         }
-        if (seen[index[e]]) {
+        index[e] = *found;
+        if (seen[index[e].value()]) {
             throw ParameterError(
               std::format("species \"{}\" is listed twice in the {}", name, role));
         }
-        seen[index[e]] = true;
+        seen[index[e].value()] = true;
     }
     return index;
 }
@@ -231,7 +232,7 @@ std::array<int, N> stoichiometric_coefficients(const SpeciesCoefficients<K>& lis
                                                const std::array<std::string_view, N>& names,
                                                std::string_view role)
 {
-    const std::array<std::size_t, K> index = checked_indices(list, names, role, 1);
+    const std::array<SpeciesIndex, K> index = checked_indices(list, names, role, 1);
     std::array<int, N> out {};
     for (std::size_t e = 0; e < static_cast<std::size_t>(list.count); ++e) {
         const double nu = list.entries[e].value;
@@ -243,7 +244,7 @@ std::array<int, N> stoichiometric_coefficients(const SpeciesCoefficients<K>& lis
                           role,
                           nu));
         }
-        out[index[e]] = static_cast<int>(nu);
+        out[index[e].value()] = static_cast<int>(nu);
     }
     return out;
 }
@@ -254,7 +255,7 @@ template <std::floating_point P, std::size_t N, std::size_t K>
 std::array<P, N> third_body_efficiencies(const SpeciesCoefficients<K>& list,
                                          const std::array<std::string_view, N>& names)
 {
-    const std::array<std::size_t, K> index =
+    const std::array<SpeciesIndex, K> index =
       checked_indices(list, names, "third-body efficiencies", 0);
     std::array<P, N> out {};
     out.fill(P(1));
@@ -266,7 +267,7 @@ std::array<P, N> third_body_efficiencies(const SpeciesCoefficients<K>& list,
                           list.entries[e].name,
                           eff));
         }
-        out[index[e]] = static_cast<P>(eff);
+        out[index[e].value()] = static_cast<P>(eff);
     }
     return out;
 }
@@ -428,9 +429,9 @@ ReactionMechanism<P, U, N, R> build_mechanism(const MechanismInput<R, K>& input,
         throw ParameterError(
           std::format("species data must have {} species, got {}", N, species.n));
     }
-    for (std::size_t i = 0; i < N; ++i) {
-        if (species_index(names, names[i]) != i) {
-            throw ParameterError(std::format("species \"{}\" is named twice", names[i]));
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        if (species_index(names, names[i.value()]) != OptionalSpeciesIndex {i}) {
+            throw ParameterError(std::format("species \"{}\" is named twice", names[i.value()]));
         }
     }
     const double lower = input.temperature_lower;
@@ -530,7 +531,7 @@ ReactionMechanism<P, U, N, R> make_reaction_mechanism(const MechanismInput<R, K>
 // electron_energy_mode(gas) the mode that holds the energy of the free
 // electrons; each is -1 when there is none.
 template <typename G>
-concept HasEnergyModes = GasModelType<G> && requires(const G& gas, std::size_t i) {
+concept HasEnergyModes = GasModelType<G> && requires(const G& gas, SpeciesIndex i) {
     { G::mode_count } -> std::convertible_to<std::size_t>;
     { species_vibration_mode(gas, i) } -> std::same_as<int>;
     { electron_energy_mode(gas) } -> std::same_as<int>;
@@ -555,8 +556,9 @@ template <HasEnergyModes G, std::size_t N> struct ModelOtherTemperature {
         if (name == nullptr) {
             if (G::mode_count == 1) { return 0; }
             for (std::size_t e = 0; e < static_cast<std::size_t>(reactants.count); ++e) {
-                const int mode =
-                  species_vibration_mode(*gas, species_index(*names, reactants.entries[e].name));
+                const auto index = species_index(*names, reactants.entries[e].name);
+                if (!index) { throw ParameterError("unknown reactant species for mode selection"); }
+                const int mode = species_vibration_mode(*gas, *index);
                 if (mode >= 0) { return static_cast<std::size_t>(mode); }
             }
             if (rate.translational_exponent != 1.0) {
@@ -575,14 +577,14 @@ template <HasEnergyModes G, std::size_t N> struct ModelOtherTemperature {
             }
             return static_cast<std::size_t>(mode);
         }
-        const std::size_t i = species_index(*names, name);
-        if (i == N) {
+        const auto i = species_index(*names, name);
+        if (!i) {
             throw ParameterError(
               std::format(R"({} rate: other temperature "{}" is not "electron" or a species)",
                           role,
                           name));
         }
-        const int mode = species_vibration_mode(*gas, i);
+        const int mode = species_vibration_mode(*gas, *i);
         if (mode < 0) {
             throw ParameterError(std::format(
               "{} rate: other temperature \"{}\": the species has no vibration component",
@@ -748,8 +750,9 @@ CANARY_HOST_DEVICE EquilibriumTerms<T, N>
     const T inv_kt = T(V(1)) / T(mech.boltzmann.value() * t);
     EquilibriumTerms<T, N> out {};
     out.ln_n0 = math::log(T(mech.standard_pressure.value() * inv_kt));
-    for (std::size_t i = 0; i < N; ++i) {
-        out.g[i] = T(props.gibbs_energy[i].value() * mech.mass[i].value() * inv_kt);
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        out.g[i.value()] =
+          T(props.gibbs_energy[i.value()].value() * mech.mass[i.value()].value() * inv_kt);
     }
     return out;
 }
@@ -765,9 +768,9 @@ CANARY_HOST_DEVICE T equilibrium_exponent(const Reaction<P, U, N>& r,
 {
     using V = ScalarTraits<T>::value_type;
     T exponent = forward_exponent - T(V(r.coefficient_change) * terms.ln_n0);
-    for (std::size_t i = 0; i < N; ++i) {
-        const int dnu = r.products[i] - r.reactants[i];
-        if (dnu != 0) { exponent = exponent + T(V(dnu) * terms.g[i]); }
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        const int dnu = r.products[i.value()] - r.reactants[i.value()];
+        if (dnu != 0) { exponent = exponent + T(V(dnu) * terms.g[i.value()]); }
     }
     return exponent;
 }
@@ -801,8 +804,9 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
 
     // Number densities n_i.
     std::array<T, N> n {};
-    for (std::size_t i = 0; i < N; ++i) {
-        n[i] = T(rho.value() * mix.fractions[i].value() / mech.mass[i].value());
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        n[i.value()] =
+          T(rho.value() * mix.fractions[i.value()].value() / mech.mass[i.value()].value());
     }
 
     // ln(T_o / T_l) of every other temperature and, at each other
@@ -867,13 +871,15 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
         T q_b = k_b;
         if (r.third_body) {
             T m = T(r.efficiencies[0] * n[0]);
-            for (std::size_t i = 1; i < N; ++i) { m = m + T(r.efficiencies[i] * n[i]); }
+            for (const SpeciesIndex i : species_indices(1, N)) {
+                m = m + T(r.efficiencies[i.value()] * n[i.value()]);
+            }
             q_f = q_f * m;
             q_b = q_b * m;
         }
-        for (std::size_t i = 0; i < N; ++i) {
-            for (int c = 0; c < r.reactants[i]; ++c) { q_f = q_f * n[i]; }
-            for (int c = 0; c < r.products[i]; ++c) { q_b = q_b * n[i]; }
+        for (const SpeciesIndex i : species_indices(0, N)) {
+            for (int c = 0; c < r.reactants[i.value()]; ++c) { q_f = q_f * n[i.value()]; }
+            for (int c = 0; c < r.products[i.value()]; ++c) { q_b = q_b * n[i.value()]; }
         }
         out.forward[k] = NumberRateDensity<T, U> {q_f};
         out.backward[k] = NumberRateDensity<T, U> {q_b};
@@ -895,14 +901,15 @@ CANARY_HOST_DEVICE std::array<MassProductionRate<T, U>, N>
     for (std::size_t k = 0; k < R; ++k) {
         const Reaction<P, U, N>& r = mech.reactions[k];
         const T rate = q.forward[k].value() - q.backward[k].value();
-        for (std::size_t i = 0; i < N; ++i) {
-            const int dnu = r.products[i] - r.reactants[i];
-            if (dnu != 0) { net[i] = net[i] + T(V(dnu) * rate); }
+        for (const SpeciesIndex i : species_indices(0, N)) {
+            const int dnu = r.products[i.value()] - r.reactants[i.value()];
+            if (dnu != 0) { net[i.value()] = net[i.value()] + T(V(dnu) * rate); }
         }
     }
     std::array<MassProductionRate<T, U>, N> out {};
-    for (std::size_t i = 0; i < N; ++i) {
-        out[i] = MassProductionRate<T, U> {T(mech.mass[i].value() * net[i])};
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        out[i.value()] =
+          MassProductionRate<T, U> {T(mech.mass[i.value()].value() * net[i.value()])};
     }
     return out;
 }

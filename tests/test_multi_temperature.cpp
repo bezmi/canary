@@ -649,9 +649,9 @@ void test_multi_temperature()
     "multi-temperature: the builder holds the single-temperature model, levels and modes"_test =
       [&] {
           expect(built11.species.n == 11_i);
-          expect(air4.electron == -1_i);
+          expect(!air4.electron);
           expect(air4.electron_mode == -1_i);
-          expect(air11.electron == 10_i);
+          expect(air11.electron == canary::OptionalSpeciesIndex {canary::SpeciesIndex {10}});
           expect(air11.electron_mode == 1_i);
           for (std::size_t i = 0; i < 11; ++i) {
               expect(air11.thermally_perfect.gas_constant[i] == single11.gas_constant[i]);
@@ -715,7 +715,8 @@ void test_multi_temperature()
                                                      levels,
                                                      modes,
                                                      canary::UnitScales<double, si> {});
-            expect(result.model.electron == static_cast<int>(electron));
+            expect(result.model.electron ==
+                   canary::OptionalSpeciesIndex {canary::SpeciesIndex {electron}});
             expect(result.model.electron_mode == 1_i);
             expect(result.model.mode_components[1][electron].electron);
             expect(!result.model.mode_components[1][2].electron);

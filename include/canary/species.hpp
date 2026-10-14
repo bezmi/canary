@@ -10,6 +10,8 @@
 #include <cmath>
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
+#include <iterator>
 #include <limits>
 #include <mdspan/mdspan.hpp>
 #include <optional>
@@ -20,6 +22,126 @@
 
 namespace canary
 {
+
+// A species identity, separate from array sizes, reaction indices and mode
+// indices. Construction requires value < UINT32_MAX; the containing model
+// determines the species-count bound. Default construction denotes species 0.
+class SpeciesIndex
+{
+  public:
+    CANARY_HOST_DEVICE constexpr SpeciesIndex() {}
+    CANARY_HOST_DEVICE constexpr explicit SpeciesIndex(std::size_t value)
+    {
+        CANARY_ASSERT(value < std::numeric_limits<std::uint32_t>::max());
+        value_ = static_cast<std::uint32_t>(value);
+    }
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr std::uint32_t value() const { return value_; }
+    friend CANARY_HOST_DEVICE constexpr bool operator==(SpeciesIndex, SpeciesIndex) = default;
+
+  private:
+    std::uint32_t value_ {0};
+};
+
+// An optional species identity in one word. Default construction denotes
+// absence. Dereferencing requires a present index; it does not check the
+// containing model's species-count bound. No allocation or throwing access.
+class OptionalSpeciesIndex
+{
+  public:
+    CANARY_HOST_DEVICE constexpr OptionalSpeciesIndex() {}
+    CANARY_HOST_DEVICE constexpr explicit OptionalSpeciesIndex(SpeciesIndex index) :
+        value_(index.value())
+    {
+    }
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr bool has_value() const
+    { return value_ != std::numeric_limits<std::uint32_t>::max(); }
+    CANARY_HOST_DEVICE constexpr explicit operator bool() const { return has_value(); }
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr SpeciesIndex operator*() const
+    {
+        CANARY_ASSERT(has_value());
+        return SpeciesIndex {value_};
+    }
+    friend CANARY_HOST_DEVICE constexpr bool operator==(OptionalSpeciesIndex,
+                                                        OptionalSpeciesIndex) = default;
+
+  private:
+    std::uint32_t value_ {std::numeric_limits<std::uint32_t>::max()};
+};
+
+// Consecutive species identities in [first, last), in storage order. The
+// iterator holds a native-size position and yields SpeciesIndex values.
+// Bounds and the end sentinel hold uint32_t values. The endpoint may be
+// UINT32_MAX; it is never yielded as a species identity.
+class SpeciesIndexRange
+{
+  public:
+    struct sentinel {
+        std::uint32_t last {0};
+    };
+
+    class iterator
+    {
+      public:
+        using value_type = SpeciesIndex;
+        using difference_type = std::ptrdiff_t;
+        using iterator_concept = std::forward_iterator_tag;
+
+        CANARY_HOST_DEVICE constexpr iterator() noexcept {}
+        [[nodiscard]] CANARY_HOST_DEVICE constexpr SpeciesIndex operator*() const noexcept
+        { return SpeciesIndex {position_}; }
+        CANARY_HOST_DEVICE constexpr iterator& operator++() noexcept
+        {
+            CANARY_ASSERT(position_ < std::numeric_limits<std::uint32_t>::max());
+            ++position_;
+            return *this;
+        }
+        CANARY_HOST_DEVICE constexpr iterator operator++(int) noexcept
+        {
+            const iterator previous = *this;
+            ++*this;
+            return previous;
+        }
+        friend CANARY_HOST_DEVICE constexpr bool operator==(iterator a, iterator b) noexcept
+        { return a.position_ == b.position_; }
+        friend CANARY_HOST_DEVICE constexpr bool operator==(iterator a, sentinel b) noexcept
+        { return a.position_ >= b.last; }
+
+      private:
+        CANARY_HOST_DEVICE constexpr explicit iterator(std::uint32_t position) noexcept :
+            position_(position)
+        {
+        }
+        friend class SpeciesIndexRange;
+        std::size_t position_ {0};
+    };
+
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr iterator begin() const noexcept
+    { return iterator {first_}; }
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr sentinel end() const noexcept
+    { return sentinel {last_}; }
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr std::uint32_t size() const noexcept
+    { return last_ - first_; }
+
+  private:
+    CANARY_HOST_DEVICE constexpr SpeciesIndexRange(std::uint32_t first, std::uint32_t last) noexcept
+        : first_(first), last_(last)
+    {
+    }
+    friend CANARY_HOST_DEVICE constexpr SpeciesIndexRange
+      species_indices(std::size_t first, std::size_t last) noexcept;
+    std::uint32_t first_;
+    std::uint32_t last_;
+};
+
+// Species identities from first up to, excluding, last. Requires
+// first <= last <= UINT32_MAX. Equal bounds produce an empty range.
+// Bounds are converted once; iteration does not allocate or throw.
+[[nodiscard]] CANARY_HOST_DEVICE constexpr SpeciesIndexRange
+  species_indices(std::size_t first, std::size_t last) noexcept
+{
+    CANARY_ASSERT(first <= last && last <= std::numeric_limits<std::uint32_t>::max());
+    return {static_cast<std::uint32_t>(first), static_cast<std::uint32_t>(last)};
+}
 
 // Host construction requires an explicit role, independent of species names
 // and ordering. The numerical mixture supports at most one free-electron species.
@@ -48,6 +170,8 @@ struct SpeciesMetadataView {
 template <std::floating_point P, UnitSystem U, std::size_t Capacity>
     requires(Capacity > 0)
 struct SpeciesData {
+    static_assert(Capacity <= std::numeric_limits<std::uint32_t>::max(),
+                  "species capacity exceeds the index range");
     int n;
     std::array<ParticleMass<P, U>, Capacity> mass;
     std::array<Charge<P, U>, Capacity> charge;
@@ -159,10 +283,10 @@ namespace detail
 // are used, so their value parts enter the mixing rules directly.
 template <SpeciesRange V, Scalar T>
     requires std::same_as<typename range_quantity_t<V>::value_type, T> && HasMin<T> && HasMax<T>
-CANARY_HOST_DEVICE constexpr T clamped_weight(const V& weights, std::size_t i, T total)
+CANARY_HOST_DEVICE constexpr T clamped_weight(const V& weights, SpeciesIndex index, T total)
 {
     using Value = ScalarTraits<T>::value_type;
-    return math::min(math::max(weights[i].value(), T(Value(0))), total);
+    return math::min(math::max(weights[index.value()].value(), T(Value(0))), total);
 }
 
 // Sums over the species of the clamped weights w, of w / m and of
@@ -184,31 +308,34 @@ CANARY_HOST_DEVICE constexpr auto
     // Number weight w / m and charge weight (w / m) q of one species.
     using Number = decltype(std::declval<T>() / std::declval<P>());
     using ChargeWeight = decltype(std::declval<Number>() * std::declval<P>());
-    const T w0 = clamped_weight(weights, 0, total);
+    const T w0 = clamped_weight(weights, SpeciesIndex {0}, total);
     const Number n0 = w0 / species.mass[0].value();
     WeightSums<T, Number, ChargeWeight> sums {
       .weight = w0,
       .number = n0,
       .charge = n0 * species.charge[0].value(),
     };
-    for (std::size_t i = 1; i < static_cast<std::size_t>(species.n); ++i) {
+    for (const SpeciesIndex i : species_indices(1, static_cast<std::size_t>(species.n))) {
         const T w = clamped_weight(weights, i, total);
-        const Number n = w / species.mass[i].value();
+        const Number n = w / species.mass[i.value()].value();
         sums.weight = sums.weight + w;
         sums.number = sums.number + n;
-        sums.charge = sums.charge + n * species.charge[i].value();
+        sums.charge = sums.charge + n * species.charge[i.value()].value();
     }
     return sums;
 }
 
-// Index of name in names; names.size() when it is not there. Host-side.
+// Index of name in names; absent when it is not there. Host-side.
 template <std::size_t N>
-std::size_t species_index(const std::array<std::string_view, N>& names, std::string_view name)
+OptionalSpeciesIndex species_index(const std::array<std::string_view, N>& names,
+                                   std::string_view name)
 {
-    for (std::size_t i = 0; i < N; ++i) {
-        if (names[i] == name) { return i; }
+    static_assert(N <= std::numeric_limits<std::uint32_t>::max(),
+                  "species capacity exceeds the index range");
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        if (names[i.value()] == name) { return OptionalSpeciesIndex {i}; }
     }
-    return N;
+    return {};
 }
 
 template <SpeciesRange V, Scalar T>
@@ -216,6 +343,7 @@ CANARY_HOST_DEVICE constexpr Status composition_status(const V& weights, T total
 {
     using Value = ScalarTraits<T>::value_type;
     const auto n = static_cast<std::size_t>(weights.extent(0));
+    if (n > std::numeric_limits<std::uint32_t>::max()) { return Status::Invalid; }
     const Value total_value = ScalarTraits<T>::value(total);
     if (!std::isfinite(total_value) || !(total_value > Value(0))) { return Status::Invalid; }
     const Value bound =
@@ -224,8 +352,8 @@ CANARY_HOST_DEVICE constexpr Status composition_status(const V& weights, T total
     Value clamped_sum = 0;
     bool finite = true;
     bool bounded = true;
-    for (std::size_t i = 0; i < n; ++i) {
-        const Value w = ScalarTraits<T>::value(weights[i].value());
+    for (const SpeciesIndex i : species_indices(0, n)) {
+        const Value w = ScalarTraits<T>::value(weights[i.value()].value());
         finite = finite && std::isfinite(w);
         bounded = bounded && w >= -bound && w <= total_value + bound;
         sum += w;
@@ -302,8 +430,8 @@ CANARY_HOST_DEVICE constexpr auto mean_charge(const SpeciesData<P, U, Capacity>&
 }
 
 // Validity of a composition, from the value parts:
-// - Invalid: a weight or the total is not finite, the total is not
-//   positive, or every clamped weight is zero.
+// - Invalid: the species count exceeds UINT32_MAX, a weight or the total
+//   is not finite, the total is not positive, or every clamped weight is zero.
 // - CompositionViolation: a weight lies outside [-b, total + b], or the
 //   weights sum to the total only within more than b, where
 //   b = 128 * epsilon * n * total.

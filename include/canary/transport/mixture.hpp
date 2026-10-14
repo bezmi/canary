@@ -329,9 +329,9 @@ void check_transport_species(const std::array<std::string_view, N>& names,
         throw ParameterError(
           std::format("species data must have {} species, got {}", N, species.n));
     }
-    for (std::size_t i = 0; i < N; ++i) {
-        if (species_index(names, names[i]) != i) {
-            throw ParameterError(std::format("species \"{}\" is named twice", names[i]));
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        if (species_index(names, names[i.value()]) != OptionalSpeciesIndex {i}) {
+            throw ParameterError(std::format("species \"{}\" is named twice", names[i.value()]));
         }
     }
 }
@@ -349,19 +349,20 @@ std::array<std::size_t, N> transport_entries(const std::array<SpeciesTransportIn
         if (name == nullptr) {
             throw ParameterError(std::format("transport data entry {} has no name", e));
         }
-        const std::size_t i = species_index(names, name);
-        if (i == N) {
+        const auto i = species_index(names, name);
+        if (!i) {
             throw ParameterError(std::format("unknown species \"{}\" in the transport data", name));
         }
-        if (entry[i] != K) {
+        if (entry[(*i).value()] != K) {
             throw ParameterError(
               std::format("species \"{}\" is listed twice in the transport data", name));
         }
-        entry[i] = e;
+        entry[(*i).value()] = e;
     }
-    for (std::size_t i = 0; i < N; ++i) {
-        if (entry[i] == K) {
-            throw ParameterError(std::format("no transport data for species \"{}\"", names[i]));
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        if (entry[i.value()] == K) {
+            throw ParameterError(
+              std::format("no transport data for species \"{}\"", names[i.value()]));
         }
     }
     return entry;
@@ -429,17 +430,17 @@ WilkeTransport<P, U, N, S>
     model.mixing = mixing;
     model.mass = species.mass;
     std::array<LennardJonesInput, N> lennard_jones {};
-    for (std::size_t i = 0; i < N; ++i) {
-        const SpeciesTransportInput<S>& data = input[entry[i]];
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        const SpeciesTransportInput<S>& data = input[entry[i.value()]];
         try {
-            model.viscosity[i] = detail::species_transport_curve(data.viscosity,
-                                                                 static_cast<P>(tau),
-                                                                 mu_scale,
-                                                                 "viscosity");
-            model.conductivity[i] = detail::species_transport_curve(data.conductivity,
-                                                                    static_cast<P>(tau),
-                                                                    k_scale,
-                                                                    "conductivity");
+            model.viscosity[i.value()] = detail::species_transport_curve(data.viscosity,
+                                                                         static_cast<P>(tau),
+                                                                         mu_scale,
+                                                                         "viscosity");
+            model.conductivity[i.value()] = detail::species_transport_curve(data.conductivity,
+                                                                            static_cast<P>(tau),
+                                                                            k_scale,
+                                                                            "conductivity");
             const LennardJonesInput& lj = data.lennard_jones;
             if (!std::isfinite(lj.sigma) || !(lj.sigma > 0.0)) {
                 throw ParameterError(
@@ -450,27 +451,30 @@ WilkeTransport<P, U, N, S>
                   std::format("Lennard-Jones epsilon must be finite and positive, got {}",
                               lj.epsilon));
             }
-            lennard_jones[i] = lj;
+            lennard_jones[i.value()] = lj;
         } catch (const ParameterError& error) {
-            throw ParameterError(std::format("species {}: {}", names[i], error.what()));
+            throw ParameterError(std::format("species {}: {}", names[i.value()], error.what()));
         }
     }
     const double boltzmann = constants::boltzmann<double>;
-    for (std::size_t i = 0; i < N; ++i) {
-        const auto m_i = static_cast<W>(species.mass[i].value());
-        for (std::size_t j = 0; j < N; ++j) {
-            const auto m_j = static_cast<W>(species.mass[j].value());
-            model.mass_ratio[i][j] = static_cast<P>(std::sqrt(std::sqrt(m_j / m_i)));
-            model.mixing_factor[i][j] = static_cast<P>(1.0 / std::sqrt(8.0 * (1.0 + (m_i / m_j))));
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        const auto m_i = static_cast<W>(species.mass[i.value()].value());
+        for (const SpeciesIndex j : species_indices(0, N)) {
+            const auto m_j = static_cast<W>(species.mass[j.value()].value());
+            model.mass_ratio[i.value()][j.value()] =
+              static_cast<P>(std::sqrt(std::sqrt(m_j / m_i)));
+            model.mixing_factor[i.value()][j.value()] =
+              static_cast<P>(1.0 / std::sqrt(8.0 * (1.0 + (m_i / m_j))));
             const auto reduced_mass = mass_scale * (m_i * m_j / (m_i + m_j));
-            const double sigma = (lennard_jones[i].sigma + lennard_jones[j].sigma) / 2.0;
+            const double sigma =
+              (lennard_jones[i.value()].sigma + lennard_jones[j.value()].sigma) / 2.0;
             const auto well_depth =
-              std::sqrt(lennard_jones[i].epsilon * lennard_jones[j].epsilon) / tau;
+              std::sqrt(lennard_jones[i.value()].epsilon * lennard_jones[j.value()].epsilon) / tau;
             const auto factor =
               (3.0 / 16.0) *
               std::sqrt(2.0 * std::numbers::pi * boltzmann * boltzmann * boltzmann / reduced_mass) /
               (std::numbers::pi * sigma * sigma);
-            model.diffusion[i][j] = {
+            model.diffusion[i.value()][j.value()] = {
               .factor = static_cast<P>(factor * diffusion_scale),
               .well_depth = Temperature<P, U> {static_cast<P>(well_depth)},
               .log_well_depth = static_cast<P>(std::log(well_depth)),
@@ -502,12 +506,12 @@ namespace detail
 // Index of the named species of a collision pair; throws ParameterError
 // when the name is null or unknown.
 template <std::size_t N>
-std::size_t pair_species(const std::array<std::string_view, N>& names, const char* name)
+SpeciesIndex pair_species(const std::array<std::string_view, N>& names, const char* name)
 {
     if (name == nullptr) { throw ParameterError("a species has no name"); }
-    const std::size_t i = species_index(names, name);
-    if (i == N) { throw ParameterError(std::format("unknown species \"{}\"", name)); }
-    return i;
+    const auto i = species_index(names, name);
+    if (!i) { throw ParameterError(std::format("unknown species \"{}\"", name)); }
+    return *i;
 }
 
 // Checks that the coefficients of a fit are finite; throws ParameterError
@@ -570,12 +574,12 @@ GuptaYosTransport<P, U, N> make_gupta_yos_transport(const std::array<CollisionPa
 {
     using W = std::common_type_t<double, P>;
     detail::check_transport_species(names, species);
-    for (std::size_t i = 0; i < N; ++i) {
-        const int d = rotational_degrees[i];
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        const int d = rotational_degrees[i.value()];
         if (d != 0 && d != 2) {
             throw ParameterError(
               std::format("species {}: rotational degrees of freedom must be 0 or 2, got {}",
-                          names[i],
+                          names[i.value()],
                           d));
         }
     }
@@ -585,16 +589,17 @@ GuptaYosTransport<P, U, N> make_gupta_yos_transport(const std::array<CollisionPa
     for (std::size_t e = 0; e < K; ++e) {
         const CollisionPairInput& pair = pairs[e];
         try {
-            const std::size_t i = detail::pair_species(names, pair.first);
-            const std::size_t j = detail::pair_species(names, pair.second);
-            if (entry[i][j] != K) {
+            const SpeciesIndex i = detail::pair_species(names, pair.first);
+            const SpeciesIndex j = detail::pair_species(names, pair.second);
+            if (entry[i.value()][j.value()] != K) {
                 throw ParameterError(
-                  std::format("the pair is listed twice, first as collision pair {}", entry[i][j]));
+                  std::format("the pair is listed twice, first as collision pair {}",
+                              entry[i.value()][j.value()]));
             }
             detail::check_collision_fit(pair.pi_omega_11, "pi Omega(1,1)");
             detail::check_collision_fit(pair.pi_omega_22, "pi Omega(2,2)");
-            entry[i][j] = e;
-            entry[j][i] = e;
+            entry[i.value()][j.value()] = e;
+            entry[j.value()][i.value()] = e;
         } catch (const ParameterError& error) {
             throw ParameterError(std::format("collision pair {} ({}, {}): {}",
                                              e,
@@ -603,11 +608,12 @@ GuptaYosTransport<P, U, N> make_gupta_yos_transport(const std::array<CollisionPa
                                              error.what()));
         }
     }
-    for (std::size_t i = 0; i < N; ++i) {
-        for (std::size_t j = i; j < N; ++j) {
-            if (entry[i][j] == K) {
-                throw ParameterError(
-                  std::format("no collision integrals for the pair ({}, {})", names[i], names[j]));
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        for (const SpeciesIndex j : species_indices(i.value(), N)) {
+            if (entry[i.value()][j.value()] == K) {
+                throw ParameterError(std::format("no collision integrals for the pair ({}, {})",
+                                                 names[i.value()],
+                                                 names[j.value()]));
             }
         }
     }
@@ -624,21 +630,21 @@ GuptaYosTransport<P, U, N> make_gupta_yos_transport(const std::array<CollisionPa
     model.mass = species.mass;
     model.rotational_degrees = rotational_degrees;
     model.boltzmann = boltzmann_constant(scales);
-    for (std::size_t i = 0; i < N; ++i) {
-        const P m_i = species.mass[i].value();
-        model.gas_constant[i] = SpecificGasConstant<P, U> {model.boltzmann.value() / m_i};
-        for (std::size_t j = 0; j < N; ++j) {
-            const P m_j = species.mass[j].value();
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        const P m_i = species.mass[i.value()].value();
+        model.gas_constant[i.value()] = SpecificGasConstant<P, U> {model.boltzmann.value() / m_i};
+        for (const SpeciesIndex j : species_indices(0, N)) {
+            const P m_j = species.mass[j.value()].value();
             const auto r = static_cast<W>(m_i) / static_cast<W>(m_j);
-            model.alpha[i][j] =
+            model.alpha[i.value()][j.value()] =
               static_cast<P>(1.0 + ((1.0 - r) * (0.45 - (2.54 * r)) / ((1.0 + r) * (1.0 + r))));
             const auto a_si = mass_scale * static_cast<W>(m_i);
             const auto b_si = mass_scale * static_cast<W>(m_j);
             const auto reduced_mass = a_si * b_si / (a_si + b_si);
             const auto log_root =
               0.5 * std::log(2.0 * reduced_mass / (std::numbers::pi * boltzmann));
-            const CollisionPairInput& pair = pairs[entry[i][j]];
-            model.collision[i][j] = {
+            const CollisionPairInput& pair = pairs[entry[i.value()][j.value()]];
+            model.collision[i.value()][j.value()] = {
               .delta_1 =
                 detail::collision_term_fit<P>(pair.pi_omega_11,
                                               ln_tau,
@@ -686,11 +692,11 @@ CANARY_HOST_DEVICE std::array<T, N> mole_fractions(const std::array<ParticleMass
     using V = ScalarTraits<T>::value_type;
     std::array<T, N> x {};
     T sum = T(V(0));
-    for (std::size_t i = 0; i < N; ++i) {
-        x[i] = T(mix.fractions[i].value() / mass[i].value());
-        sum = sum + x[i];
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        x[i.value()] = T(mix.fractions[i.value()].value() / mass[i.value()].value());
+        sum = sum + x[i.value()];
     }
-    for (std::size_t i = 0; i < N; ++i) { x[i] = x[i] / sum; }
+    for (const SpeciesIndex i : species_indices(0, N)) { x[i.value()] = x[i.value()] / sum; }
     return x;
 }
 
@@ -705,16 +711,19 @@ CANARY_HOST_DEVICE std::array<T, N> wilke_denominators(const WilkeTransport<P, U
 {
     using V = ScalarTraits<T>::value_type;
     std::array<T, N> inverse_root {};
-    for (std::size_t j = 0; j < N; ++j) { inverse_root[j] = T(V(1)) / root[j]; }
+    for (const SpeciesIndex j : species_indices(0, N)) {
+        inverse_root[j.value()] = T(V(1)) / root[j.value()];
+    }
     std::array<T, N> out {};
-    for (std::size_t i = 0; i < N; ++i) {
-        T sum = x[i];
-        for (std::size_t j = 0; j < N; ++j) {
-            if (j == i) { continue; }
-            const T w = T(V(1) + T(T(root[i] * inverse_root[j]) * model.mass_ratio[i][j]));
-            sum = sum + T(x[j] * T(T(w * w) * model.mixing_factor[i][j]));
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        T sum = x[i.value()];
+        for (const SpeciesIndex j : species_indices(0, N)) {
+            if (j.value() == i.value()) { continue; }
+            const T w = T(V(1) + T(T(root[i.value()] * inverse_root[j.value()]) *
+                                   model.mass_ratio[i.value()][j.value()]));
+            sum = sum + T(x[j.value()] * T(T(w * w) * model.mixing_factor[i.value()][j.value()]));
         }
-        out[i] = sum;
+        out[i.value()] = sum;
     }
     return out;
 }
@@ -740,22 +749,24 @@ CANARY_HOST_DEVICE ViscosityAndConductivity<T>
     std::array<T, N> mu {};
     std::array<T, N> k {};
     std::array<T, N> root {};
-    for (std::size_t i = 0; i < N; ++i) {
-        mu[i] = transport_curve_value(model.viscosity[i], t, ln_t, inv_t);
-        k[i] = transport_curve_value(model.conductivity[i], t, ln_t, inv_t);
-        root[i] = math::sqrt(mu[i]);
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        mu[i.value()] = transport_curve_value(model.viscosity[i.value()], t, ln_t, inv_t);
+        k[i.value()] = transport_curve_value(model.conductivity[i.value()], t, ln_t, inv_t);
+        root[i.value()] = math::sqrt(mu[i.value()]);
     }
     const std::array<T, N> mu_sums = wilke_denominators(model, x, root);
     std::array<T, N> k_sums = mu_sums;
     if (model.mixing == ConductivityMixing::conductivity_ratio) {
-        for (std::size_t i = 0; i < N; ++i) { root[i] = math::sqrt(k[i]); }
+        for (const SpeciesIndex i : species_indices(0, N)) {
+            root[i.value()] = math::sqrt(k[i.value()]);
+        }
         k_sums = wilke_denominators(model, x, root);
     }
     T mu_mix = T(V(0));
     T k_mix = T(V(0));
-    for (std::size_t i = 0; i < N; ++i) {
-        mu_mix = mu_mix + T(T(x[i] * mu[i]) / mu_sums[i]);
-        k_mix = k_mix + T(T(x[i] * k[i]) / k_sums[i]);
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        mu_mix = mu_mix + T(T(x[i.value()] * mu[i.value()]) / mu_sums[i.value()]);
+        k_mix = k_mix + T(T(x[i.value()] * k[i.value()]) / k_sums[i.value()]);
     }
     return {.viscosity = mu_mix, .conductivity = k_mix};
 }
@@ -787,17 +798,17 @@ CANARY_HOST_DEVICE std::array<std::array<T, N>, N> wilke_binary_diffusion(
     // T^(3/2) / p.
     const T t_over_p = T(T(t * math::sqrt(t)) / p.value());
     std::array<std::array<T, N>, N> out {};
-    for (std::size_t i = 0; i < N; ++i) {
-        for (std::size_t j = Diagonal ? i : i + 1; j < N; ++j) {
-            const BinaryDiffusionPair<P, U>& pair = model.diffusion[i][j];
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        for (const SpeciesIndex j : species_indices(Diagonal ? i.value() : i.value() + 1, N)) {
+            const BinaryDiffusionPair<P, U>& pair = model.diffusion[i.value()][j.value()];
             const T t_star = T(t / pair.well_depth.value());
             const T ln_t_star = T(ln_t - pair.log_well_depth);
             // The exponentials of -D T* etc. underflow to zero at large T*.
             const T omega =
               T(T(T(a * math::exp(T(-(b * ln_t_star)))) + T(c * math::exp(T(-(d * t_star))))) +
                 T(T(e * math::exp(T(-(f * t_star)))) + T(g * math::exp(T(-(h * t_star))))));
-            out[i][j] = T(T(pair.factor * t_over_p) / omega);
-            out[j][i] = out[i][j];
+            out[i.value()][j.value()] = T(T(pair.factor * t_over_p) / omega);
+            out[j.value()][i.value()] = out[i.value()][j.value()];
         }
     }
     return out;
@@ -828,14 +839,14 @@ CANARY_HOST_DEVICE CollisionTermValues<T, N>
 {
     const T ln_t = math::log(temp.value());
     CollisionTermValues<T, N> out {};
-    for (std::size_t i = 0; i < N; ++i) {
-        for (std::size_t j = i; j < N; ++j) {
-            const CollisionTerms<P>& terms = model.collision[i][j];
-            out.delta_1[i][j] = collision_term(terms.delta_1, ln_t);
-            out.delta_1[j][i] = out.delta_1[i][j];
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        for (const SpeciesIndex j : species_indices(i.value(), N)) {
+            const CollisionTerms<P>& terms = model.collision[i.value()][j.value()];
+            out.delta_1[i.value()][j.value()] = collision_term(terms.delta_1, ln_t);
+            out.delta_1[j.value()][i.value()] = out.delta_1[i.value()][j.value()];
             if constexpr (Viscous) {
-                out.delta_2[i][j] = collision_term(terms.delta_2, ln_t);
-                out.delta_2[j][i] = out.delta_2[i][j];
+                out.delta_2[i.value()][j.value()] = collision_term(terms.delta_2, ln_t);
+                out.delta_2[j.value()][i.value()] = out.delta_2[i.value()][j.value()];
             }
         }
     }
@@ -867,21 +878,21 @@ CANARY_HOST_DEVICE GuptaYosValues<T> gupta_yos_values(const GuptaYosTransport<P,
     T translational = T(V(0));
     T rotational = T(V(0));
     T vibrational = T(V(0));
-    for (std::size_t i = 0; i < N; ++i) {
-        T sum_1 = T(x[0] * delta.delta_1[i][0]);
-        T sum_2 = T(x[0] * delta.delta_2[i][0]);
-        T sum_alpha = T(model.alpha[i][0] * sum_2);
-        for (std::size_t j = 1; j < N; ++j) {
-            const T term_2 = T(x[j] * delta.delta_2[i][j]);
-            sum_1 = sum_1 + T(x[j] * delta.delta_1[i][j]);
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        T sum_1 = T(x[0] * delta.delta_1[i.value()][0]);
+        T sum_2 = T(x[0] * delta.delta_2[i.value()][0]);
+        T sum_alpha = T(model.alpha[i.value()][0] * sum_2);
+        for (const SpeciesIndex j : species_indices(1, N)) {
+            const T term_2 = T(x[j.value()] * delta.delta_2[i.value()][j.value()]);
+            sum_1 = sum_1 + T(x[j.value()] * delta.delta_1[i.value()][j.value()]);
             sum_2 = sum_2 + term_2;
-            sum_alpha = sum_alpha + T(model.alpha[i][j] * term_2);
+            sum_alpha = sum_alpha + T(model.alpha[i.value()][j.value()] * term_2);
         }
-        mu = mu + T(T(model.mass[i].value() * x[i]) / sum_2);
-        translational = translational + T(x[i] / sum_alpha);
-        if (model.rotational_degrees[i] > 0) {
-            const T q = T(x[i] / sum_1);
-            const T ratio = T(cp[i].value() / model.gas_constant[i].value());
+        mu = mu + T(T(model.mass[i.value()].value() * x[i.value()]) / sum_2);
+        translational = translational + T(x[i.value()] / sum_alpha);
+        if (model.rotational_degrees[i.value()] > 0) {
+            const T q = T(x[i.value()] / sum_1);
+            const T ratio = T(cp[i.value()].value() / model.gas_constant[i.value()].value());
             const T c = math::max(T(math::min(ratio, T(V(4.5))) - V(3.5)), T(V(0)));
             rotational = rotational + q;
             vibrational = vibrational + T(c * q);
@@ -904,8 +915,10 @@ CANARY_HOST_DEVICE std::array<std::array<T, N>, N> gupta_yos_binary_diffusion(
     const CollisionTermValues<T, N> delta = collision_term_values<false>(model, temp);
     const T kt_over_p = T(T(model.boltzmann.value() * temp.value()) / p.value());
     std::array<std::array<T, N>, N> out {};
-    for (std::size_t i = 0; i < N; ++i) {
-        for (std::size_t j = 0; j < N; ++j) { out[i][j] = T(kt_over_p / delta.delta_1[i][j]); }
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        for (const SpeciesIndex j : species_indices(0, N)) {
+            out[i.value()][j.value()] = T(kt_over_p / delta.delta_1[i.value()][j.value()]);
+        }
     }
     return out;
 }
@@ -918,15 +931,15 @@ CANARY_HOST_DEVICE std::array<DiffusionCoefficient<T, U>, N>
 {
     using V = ScalarTraits<T>::value_type;
     std::array<DiffusionCoefficient<T, U>, N> out {};
-    for (std::size_t i = 0; i < N; ++i) {
+    for (const SpeciesIndex i : species_indices(0, N)) {
         T others = T(V(0));
         T sum = T(V(0));
-        for (std::size_t j = 0; j < N; ++j) {
-            if (j == i) { continue; }
-            others = others + x[j];
-            sum = sum + T(x[j] / d[i][j]);
+        for (const SpeciesIndex j : species_indices(0, N)) {
+            if (j.value() == i.value()) { continue; }
+            others = others + x[j.value()];
+            sum = sum + T(x[j.value()] / d[i.value()][j.value()]);
         }
-        out[i] = DiffusionCoefficient<T, U> {
+        out[i.value()] = DiffusionCoefficient<T, U> {
           ScalarTraits<T>::value(sum) == V(0) ? T(V(0)) : T(others / sum),
         };
     }
@@ -938,8 +951,10 @@ CANARY_HOST_DEVICE BinaryDiffusionCoefficients<T, U, N>
   as_diffusion_coefficients(const std::array<std::array<T, N>, N>& d)
 {
     BinaryDiffusionCoefficients<T, U, N> out {};
-    for (std::size_t i = 0; i < N; ++i) {
-        for (std::size_t j = 0; j < N; ++j) { out[i][j] = DiffusionCoefficient<T, U> {d[i][j]}; }
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        for (const SpeciesIndex j : species_indices(0, N)) {
+            out[i.value()][j.value()] = DiffusionCoefficient<T, U> {d[i.value()][j.value()]};
+        }
     }
     return out;
 }

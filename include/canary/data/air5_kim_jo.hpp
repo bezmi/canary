@@ -809,7 +809,9 @@ namespace detail
 {
 inline constexpr auto air5_kim_jo_species_names = [] {
     std::array<std::string_view, air5_species.size()> names {};
-    for (std::size_t i = 0; i < names.size(); ++i) { names[i] = air5_species[i].name; }
+    for (const SpeciesIndex i : species_indices(0, names.size())) {
+        names[i.value()] = air5_species[i.value()].name;
+    }
     return names;
 }();
 }  // namespace detail

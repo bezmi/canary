@@ -300,9 +300,10 @@ void test_energy_exchange()
 
         // Pair 2 is N2-N2 and pair 12 NO-N.
         const auto& n2_n2 = exchange.vibration_translation[2];
-        expect(n2_n2.species == 0_ul && n2_n2.partner == 0_ul);
-        expect(exchange.vibration_translation[12].species == 4_ul);
-        expect(exchange.vibration_translation[12].partner == 2_ul);
+        expect(n2_n2.species == canary::SpeciesIndex {0} &&
+               n2_n2.partner == canary::SpeciesIndex {0});
+        expect(exchange.vibration_translation[12].species == canary::SpeciesIndex {4});
+        expect(exchange.vibration_translation[12].partner == canary::SpeciesIndex {2});
         expect(n2_n2.millikan_white_a == 221.0_d);
         expect(relative(n2_n2.millikan_white_offset,
                         std::log(atmosphere) - (221.0 * 0.029) - 18.42,
@@ -315,11 +316,11 @@ void test_energy_exchange()
         expect(n2_n2.correction_exponent == 1.5_d);
 
         const auto& n2 = exchange.chemistry_vibration[0];
-        expect(n2.reaction == 0_ul && n2.species == 0_ul);
+        expect(n2.reaction == 0_ul && n2.species == canary::SpeciesIndex {0});
         expect(relative(n2.dissociation_temperature.value(), 945360.0 / ru, 1.0e-15));
         expect(n2.vibrational_temperature.value() == 3393.44_d);
         expect(exchange.chemistry_vibration[2].reaction == 2_ul);
-        expect(exchange.chemistry_vibration[2].species == 4_ul);
+        expect(exchange.chemistry_vibration[2].species == canary::SpeciesIndex {4});
         expect(exchange.boltzmann.value() == boltzmann);
     };
 
@@ -817,7 +818,7 @@ void test_energy_exchange()
                   const double g =
                     boltzmann *
                     (c.dissociation_temperature.value() - c.vibrational_temperature.value()) / 2.0;
-                  const double dnu = coefficient_change(mech, c.reaction, c.species);
+                  const double dnu = coefficient_change(mech, c.reaction, c.species.value());
                   expected +=
                     dnu * (q.forward[c.reaction].value() - q.backward[c.reaction].value()) * g;
                   scale += std::abs(dnu) *

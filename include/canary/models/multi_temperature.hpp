@@ -122,8 +122,8 @@ struct ModeComponentSet {
 // - electronic_levels: the levels of each species, and
 //   reference_electronic_energy: eps_i(T_ref);
 // - mode_components[m][i]: the components of species i in mode m;
-// - electron: the index of e-, and electron_mode: the mode that holds its
-//   electron component; both -1 without e-.
+// - electron: the optional free-electron species index; electron_mode: its
+//   energy mode, or -1 without free electrons.
 template <std::floating_point P,
           UnitSystem U,
           std::size_t N,
@@ -144,7 +144,7 @@ struct MultiTemperatureMixture {
     std::array<ElectronicLevels<P, U, L>, N> electronic_levels;
     std::array<SpecificEnergy<P, U>, N> reference_electronic_energy;
     std::array<std::array<ModeComponentSet, N>, M> mode_components;
-    int electron;
+    OptionalSpeciesIndex electron;
     int electron_mode;
 };
 
@@ -200,8 +200,9 @@ template <std::floating_point P,
           std::size_t S,
           std::size_t L>
 CANARY_HOST_DEVICE constexpr ModeComponentSet
-  species_components(const MultiTemperatureMixture<P, U, N, M, S, L>& gas, std::size_t i)
+  species_components(const MultiTemperatureMixture<P, U, N, M, S, L>& gas, SpeciesIndex index)
 {
+    const auto i = index.value();
     ModeComponentSet all {.vibration = false, .electronic = false, .electron = false};
     for (std::size_t m = 0; m < M; ++m) {
         const ModeComponentSet c = gas.mode_components[m][i];
@@ -225,11 +226,12 @@ template <Scalar W,
     requires ScalarWith<W, P> && HasExp<W>
 CANARY_HOST_DEVICE EnergyAndCv<W>
   component_energy(const MultiTemperatureMixture<P, U, N, M, S, L>& gas,
-                   std::size_t i,
+                   SpeciesIndex index,
                    ModeComponentSet c,
                    W t,
                    W ln_t)
 {
+    const auto i = index.value();
     using V = ScalarTraits<W>::value_type;
     const auto& single = gas.thermally_perfect;
     const P r = single.gas_constant[i].value();
@@ -281,12 +283,12 @@ CANARY_HOST_DEVICE EnergyAndCv<W> mode_energy(const MultiTemperatureMixture<P, U
     const W ln_t = math::log(t);
     W e = W(V(0));
     W cv = W(V(0));
-    for (std::size_t i = 0; i < N; ++i) {
-        const ModeComponentSet c = gas.mode_components[m][i];
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        const ModeComponentSet c = gas.mode_components[m][i.value()];
         if (!holds_any(c)) { continue; }
         const EnergyAndCv<W> r = component_energy(gas, i, c, t, ln_t);
-        e = e + W(y[i].value() * r.e);
-        cv = cv + W(y[i].value() * r.cv);
+        e = e + W(y[i.value()].value() * r.e);
+        cv = cv + W(y[i.value()].value() * r.cv);
     }
     return {.e = e, .cv = cv};
 }
@@ -319,16 +321,18 @@ CANARY_HOST_DEVICE HeavySpeciesSums<W>
       .gas_constant = W(V(0)),
       .electron_gas_constant = W(V(0)),
     };
-    for (std::size_t i = 0; i < N; ++i) {
-        const P r = gas.thermally_perfect.gas_constant[i].value();
-        if (static_cast<int>(i) == gas.electron) {
-            sums.electron_gas_constant = W(y[i].value() * r);
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        const P r = gas.thermally_perfect.gas_constant[i.value()].value();
+        if (gas.electron == OptionalSpeciesIndex {i}) {
+            sums.electron_gas_constant = W(y[i.value()].value() * r);
             continue;
         }
-        sums.cp = sums.cp + W(y[i].value() * gas.translational_rotational_cp[i].value());
+        sums.cp =
+          sums.cp + W(y[i.value()].value() * gas.translational_rotational_cp[i.value()].value());
         sums.formation_enthalpy =
-          sums.formation_enthalpy + W(y[i].value() * gas.formation_enthalpy[i].value());
-        sums.gas_constant = sums.gas_constant + W(y[i].value() * r);
+          sums.formation_enthalpy +
+          W(y[i.value()].value() * gas.formation_enthalpy[i.value()].value());
+        sums.gas_constant = sums.gas_constant + W(y[i.value()].value() * r);
     }
     return sums;
 }
@@ -388,12 +392,12 @@ CANARY_HOST_DEVICE EnergyAndCv<W>
     const W ln_t = math::log(t);
     W e = translational_energy(gas, sums, t);
     W cv = W(sums.cp - sums.gas_constant);
-    for (std::size_t i = 0; i < N; ++i) {
+    for (const SpeciesIndex i : species_indices(0, N)) {
         const ModeComponentSet c = species_components(gas, i);
         if (!holds_any(c)) { continue; }
         const EnergyAndCv<W> r = component_energy(gas, i, c, t, ln_t);
-        e = e + W(y[i].value() * r.e);
-        cv = cv + W(y[i].value() * r.cv);
+        e = e + W(y[i.value()].value() * r.e);
+        cv = cv + W(y[i.value()].value() * r.cv);
     }
     return {.e = e, .cv = cv};
 }
@@ -412,8 +416,8 @@ CANARY_HOST_DEVICE bool mode_present(const MultiTemperatureMixture<P, U, N, M, S
                                      std::size_t m)
 {
     V sum = V(0);
-    for (std::size_t i = 0; i < N; ++i) {
-        if (holds_any(gas.mode_components[m][i])) { sum += y[i].value(); }
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        if (holds_any(gas.mode_components[m][i.value()])) { sum += y[i.value()].value(); }
     }
     return sum > V(0);
 }
@@ -760,23 +764,23 @@ void check_multi_temperature_species(const std::array<Nasa9Species<S>, N>& speci
                                      const std::array<std::string_view, N>& names,
                                      const std::array<int, N>& rotational_degrees)
 {
-    for (std::size_t i = 0; i < N; ++i) {
-        if (species_index(names, names[i]) != i) {
-            throw ParameterError(std::format("species {}: name given twice", names[i]));
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        if (species_index(names, names[i.value()]) != OptionalSpeciesIndex {i}) {
+            throw ParameterError(std::format("species {}: name given twice", names[i.value()]));
         }
-        const int d = rotational_degrees[i];
-        if (species[i].metadata.role == SpeciesRole::electron) {
+        const int d = rotational_degrees[i.value()];
+        if (species[i.value()].metadata.role == SpeciesRole::electron) {
             if (d != 0) {
                 throw ParameterError(
                   std::format("species {}: rotational degrees of freedom must be 0, got {}",
-                              names[i],
+                              names[i.value()],
                               d));
             }
         }
         if (d != 0 && d != 2 && d != 3) {
             throw ParameterError(
               std::format("species {}: rotational degrees of freedom must be 0, 2 or 3, got {}",
-                          names[i],
+                          names[i.value()],
                           d));
         }
     }
@@ -856,8 +860,10 @@ void fill_mode_components(MultiTemperatureMixture<P, U, N, M, S, L>& model,
                                                   mode_component_name(input.component),
                                                   reason));
             };
-            const std::size_t i = species_index(names, name);
-            if (i == N) { throw fail("unknown species"); }
+            const auto index = species_index(names, name);
+            if (!index) { throw fail("unknown species"); }
+            const SpeciesIndex species_id = *index;
+            const auto i = species_id.value();
             const bool electron = species[i].metadata.role == SpeciesRole::electron;
             switch (input.component) {
             case ModeComponent::vibration:
@@ -883,17 +889,17 @@ void fill_mode_components(MultiTemperatureMixture<P, U, N, M, S, L>& model,
             set.electron = set.electron || input.component == ModeComponent::electron;
         }
     }
-    model.electron = -1;
+    model.electron = {};
     model.electron_mode = -1;
-    for (std::size_t e = 0; e < N; ++e) {
-        if (species[e].metadata.role != SpeciesRole::electron) { continue; }
-        const int mode = owner[e][static_cast<std::size_t>(ModeComponent::electron)];
+    for (const SpeciesIndex e : species_indices(0, N)) {
+        if (species[e.value()].metadata.role != SpeciesRole::electron) { continue; }
+        const int mode = owner[e.value()][static_cast<std::size_t>(ModeComponent::electron)];
         if (mode < 0) {
             throw ParameterError(std::format(
               "species {}: free electrons must be in a mode as their electron component",
-              names[e]));
+              names[e.value()]));
         }
-        model.electron = static_cast<int>(e);
+        model.electron = OptionalSpeciesIndex {e};
         model.electron_mode = mode;
     }
 }
@@ -940,11 +946,12 @@ Built<MultiTemperatureMixture<P, U, N, M, S, L>, SpeciesData<P, U, N>>
                                  const UnitScales<P, U>& scales)
 {
     std::array<std::string_view, N> names {};
-    for (std::size_t i = 0; i < N; ++i) {
-        if (species[i].name == nullptr || species[i].name[0] == '\0') {
-            throw ParameterError(std::format("species {}: name must not be null or empty", i));
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        if (species[i.value()].name == nullptr || species[i.value()].name[0] == '\0') {
+            throw ParameterError(
+              std::format("species {}: name must not be null or empty", i.value()));
         }
-        names[i] = species[i].name;
+        names[i.value()] = species[i.value()].name;
     }
     detail::check_multi_temperature_species(species, names, rotational_degrees);
     const auto single = make_thermally_perfect_mixture(species, scales);
@@ -955,12 +962,12 @@ Built<MultiTemperatureMixture<P, U, N, M, S, L>, SpeciesData<P, U, N>>
     built.species = single.species;
     const P t_ref = single.model.reference_temperature.value();
     const P ln_t_ref = std::log(t_ref);
-    for (std::size_t i = 0; i < N; ++i) {
-        const P r = single.model.gas_constant[i].value();
-        const auto d = static_cast<P>(rotational_degrees[i]);
-        model.translational_rotational_cp[i] = SpecificHeat<P, U> {((P(5) + d) / P(2)) * r};
-        model.formation_enthalpy[i] =
-          SpecificEnthalpy<P, U> {r * nasa9_cp_h(single.model.curve[i], t_ref, ln_t_ref).h_over_r};
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        const P r = single.model.gas_constant[i.value()].value();
+        const auto d = static_cast<P>(rotational_degrees[i.value()]);
+        model.translational_rotational_cp[i.value()] = SpecificHeat<P, U> {((P(5) + d) / P(2)) * r};
+        model.formation_enthalpy[i.value()] = SpecificEnthalpy<P, U> {
+          r * nasa9_cp_h(single.model.curve[i.value()], t_ref, ln_t_ref).h_over_r};
     }
 
     std::array<bool, N> has_levels {};
@@ -968,10 +975,12 @@ Built<MultiTemperatureMixture<P, U, N, M, S, L>, SpeciesData<P, U, N>>
         const ElectronicLevelsInput<L>& input = levels[k];
         const std::string_view name =
           input.name == nullptr ? std::string_view {} : std::string_view {input.name};
-        const std::size_t i = detail::species_index(names, name);
-        if (i == N) {
+        const auto index = detail::species_index(names, name);
+        if (!index) {
             throw ParameterError(std::format("electronic levels of {}: unknown species", name));
         }
+        const SpeciesIndex species_id = *index;
+        const auto i = species_id.value();
         if (has_levels[i]) {
             throw ParameterError(std::format("electronic levels of {}: given twice", name));
         }
@@ -982,9 +991,11 @@ Built<MultiTemperatureMixture<P, U, N, M, S, L>, SpeciesData<P, U, N>>
             throw ParameterError(std::format("electronic levels of {}: {}", name, error.what()));
         }
     }
-    for (std::size_t i = 0; i < N; ++i) {
-        model.reference_electronic_energy[i] = SpecificEnergy<P, U> {
-          detail::electronic_energy(model.electronic_levels[i], single.model.gas_constant[i], t_ref)
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        model.reference_electronic_energy[i.value()] = SpecificEnergy<P, U> {
+          detail::electronic_energy(model.electronic_levels[i.value()],
+                                    single.model.gas_constant[i.value()],
+                                    t_ref)
             .e,
         };
     }
@@ -1471,7 +1482,7 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
     auto solved = detail::empty_mode_solve<T, U, M>();
     std::size_t skip = M;
     T t_e = temp.value();
-    if (gas.electron >= 0 && y[static_cast<std::size_t>(gas.electron)].value() > Value(0)) {
+    if (gas.electron.has_value() && y[(*gas.electron).value()].value() > Value(0)) {
         skip = static_cast<std::size_t>(gas.electron_mode);
         const detail::SolveResult<T> r =
           detail::electron_temperature_at_pressure(gas, mix, y, sums, p, temp, rho_e_m[skip]);
@@ -1551,8 +1562,8 @@ CANARY_HOST_DEVICE Pressure<T, U>
                     const MultiTemperatureState<T, U, M>& state)
 {
     using V = ScalarTraits<T>::value_type;
-    if (gas.electron < 0) { return Pressure<T, U> {T(V(0))}; }
-    const auto e = static_cast<std::size_t>(gas.electron);
+    if (!gas.electron) { return Pressure<T, U> {T(V(0))}; }
+    const auto e = (*gas.electron).value();
     const auto m = static_cast<std::size_t>(gas.electron_mode);
     const T y_r = T(mix.fractions[e].value() * gas.thermally_perfect.gas_constant[e].value());
     return Pressure<T, U> {T(state.rho.value() * y_r * state.mode_temp[m].value())};
@@ -1596,14 +1607,26 @@ template <std::floating_point P,
           std::size_t S,
           std::size_t L>
 CANARY_HOST_DEVICE constexpr int
-  species_vibration_mode(const MultiTemperatureMixture<P, U, N, M, S, L>& gas, std::size_t i)
+  species_vibration_mode(const MultiTemperatureMixture<P, U, N, M, S, L>& gas, SpeciesIndex index)
 {
+    const auto i = index.value();
     if (i >= N) { return -1; }
     for (std::size_t m = 0; m < M; ++m) {
         if (gas.mode_components[m][i].vibration) { return static_cast<int>(m); }
     }
     return -1;
 }
+
+// The free-electron species index resolved from host metadata, or absence.
+template <std::floating_point P,
+          UnitSystem U,
+          std::size_t N,
+          std::size_t M,
+          std::size_t S,
+          std::size_t L>
+CANARY_HOST_DEVICE constexpr OptionalSpeciesIndex
+  electron_species_index(const MultiTemperatureMixture<P, U, N, M, S, L>& gas)
+{ return gas.electron; }
 
 // The mode that holds the energy of the free electrons, or -1 without free electrons.
 template <std::floating_point P,
@@ -1638,9 +1661,9 @@ CANARY_HOST_DEVICE std::array<SpecificEnergy<T, U>, N> species_mode_energy(
     const T t = temp.value();
     const T ln_t = math::log(t);
     std::array<SpecificEnergy<T, U>, N> out {};
-    for (std::size_t i = 0; i < N; ++i) {
-        const ModeComponentSet c = gas.mode_components[m][i];
-        out[i] = SpecificEnergy<T, U> {
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        const ModeComponentSet c = gas.mode_components[m][i.value()];
+        out[i.value()] = SpecificEnergy<T, U> {
           detail::holds_any(c) ? detail::component_energy(gas, i, c, t, ln_t).e : T(V(0)),
         };
     }
@@ -1672,22 +1695,26 @@ CANARY_HOST_DEVICE auto
     // NOLINTNEXTLINE(misc-static-assert): run-time extent
     CANARY_ASSERT(static_cast<std::size_t>(fractions.extent(0)) == N);
     std::array<MassFraction<T>, N> out {};
-    for (std::size_t i = 0; i < N; ++i) { out[i] = MassFraction<T> {fractions[i].value()}; }
-    if (gas.electron < 0) { return out; }
-    const auto e = static_cast<std::size_t>(gas.electron);
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        out[i.value()] = MassFraction<T> {fractions[i.value()].value()};
+    }
+    if (!gas.electron) { return out; }
+    const auto e = (*gas.electron).value();
     T heavy = T(Value(0));
     T charge = T(Value(0));
-    for (std::size_t i = 0; i < N; ++i) {
-        if (i == e) { continue; }
-        const T y = fractions[i].value();
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        if (i.value() == e) { continue; }
+        const T y = fractions[i.value()].value();
         heavy = heavy + y;
-        charge = charge + T(y * (species.charge[i].value() / species.mass[i].value()));
+        charge =
+          charge + T(y * (species.charge[i.value()].value() / species.mass[i.value()].value()));
     }
     const P electron_mass_per_charge = species.mass[e].value() / species.charge[e].value();
     const T y_e = T(-(electron_mass_per_charge * charge));
     const T total = T(heavy + y_e);
-    for (std::size_t i = 0; i < N; ++i) {
-        out[i] = MassFraction<T> {T((i == e ? y_e : fractions[i].value()) / total)};
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        out[i.value()] =
+          MassFraction<T> {T((i.value() == e ? y_e : fractions[i.value()].value()) / total)};
     }
     return out;
 }

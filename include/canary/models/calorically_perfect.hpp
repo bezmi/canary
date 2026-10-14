@@ -329,18 +329,21 @@ Built<CaloricallyPerfectMixture<P, U, Capacity>, SpeciesData<P, U, Capacity>>
     auto mass = std::ranges::begin(masses);
     auto charge = std::ranges::begin(charges);
     auto gamma = std::ranges::begin(gammas);
-    for (std::size_t i = 0; i < n; ++i, ++mass, ++charge, ++gamma) {
+    for (const SpeciesIndex i : species_indices(0, n)) {
         try {
             const auto one = make_calorically_perfect(*mass, *charge, boltzmann, *gamma);
-            built.model.gas_constant[i] = one.model.gas_constant;
-            built.model.cv[i] = one.model.cv;
-            built.model.cp[i] = one.model.cp;
-            built.model.gamma[i] = one.model.gamma;
+            built.model.gas_constant[i.value()] = one.model.gas_constant;
+            built.model.cv[i.value()] = one.model.cv;
+            built.model.cp[i.value()] = one.model.cp;
+            built.model.gamma[i.value()] = one.model.gamma;
         } catch (const ParameterError& error) {
-            throw ParameterError(std::format("species {}: {}", i, error.what()));
+            throw ParameterError(std::format("species {}: {}", i.value(), error.what()));
         }
-        built.species.mass[i] = *mass;
-        built.species.charge[i] = *charge;
+        built.species.mass[i.value()] = *mass;
+        built.species.charge[i.value()] = *charge;
+        ++mass;
+        ++charge;
+        ++gamma;
     }
     return built;
 }
@@ -360,17 +363,17 @@ CANARY_HOST_DEVICE Mixture<T, U> mix(const CaloricallyPerfectMixture<P, U, Capac
     // NOLINTNEXTLINE(misc-static-assert): run-time species count and extent
     CANARY_ASSERT(gas.n >= 1 &&
                   static_cast<std::size_t>(gas.n) == static_cast<std::size_t>(weights.extent(0)));
-    const T w0 = clamped_weight(weights, 0, total);
+    const T w0 = clamped_weight(weights, SpeciesIndex {0}, total);
     T sum = w0;
     auto gas_constant = gas.gas_constant[0] * w0;
     auto cv = gas.cv[0] * w0;
     auto cp = gas.cp[0] * w0;
-    for (std::size_t i = 1; i < static_cast<std::size_t>(gas.n); ++i) {
+    for (const SpeciesIndex i : species_indices(1, static_cast<std::size_t>(gas.n))) {
         const T w = clamped_weight(weights, i, total);
         sum = sum + w;
-        gas_constant = gas_constant + gas.gas_constant[i] * w;
-        cv = cv + gas.cv[i] * w;
-        cp = cp + gas.cp[i] * w;
+        gas_constant = gas_constant + gas.gas_constant[i.value()] * w;
+        cv = cv + gas.cv[i.value()] * w;
+        cp = cp + gas.cp[i.value()] * w;
     }
     return {
       .gas_constant = SpecificGasConstant<T, U> {gas_constant / sum},

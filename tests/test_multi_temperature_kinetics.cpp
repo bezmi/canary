@@ -48,6 +48,25 @@ using Extents = Kokkos::dextents<std::size_t, 1>;
 using Rho = canary::Density<double, si>;
 using Temp = canary::Temperature<double, si>;
 
+// A composed model provides the species query without exposing an electron field.
+struct SpeciesQueryModel {
+    using parameter_type = double;
+    using units = si;
+    static constexpr std::size_t mode_count = Gas::mode_count;
+    Gas thermo;
+};
+
+int species_vibration_mode(const SpeciesQueryModel& gas, canary::SpeciesIndex index)
+{ return canary::species_vibration_mode(gas.thermo, index); }
+
+int electron_energy_mode(const SpeciesQueryModel& gas)
+{ return canary::electron_energy_mode(gas.thermo); }
+
+canary::OptionalSpeciesIndex electron_species_index(const SpeciesQueryModel& gas)
+{ return canary::electron_species_index(gas.thermo); }
+
+static_assert(canary::HasEnergyModes<SpeciesQueryModel>);
+
 constexpr std::size_t species_count = 11;
 constexpr std::size_t reaction_count = 40;
 constexpr std::size_t mode_count = 2;
@@ -416,6 +435,57 @@ void test_multi_temperature_kinetics()
     const std::array<std::string_view, species_count> names =
       canary::detail::air11_kim_jo_species_names;
 
+    "energy exchange resolves electron identity through the typed model query"_test = [&] {
+        auto renamed = names;
+        renamed[10] = "carrier";
+        renamed[2] = "e-";
+        const canary::EnergyExchangeInput<0, 0> input {};
+        canary::ElectronExchangeInput<1, 0, 0> electrons {};
+        electrons.electron_translation[0] =
+          canary::air11_kim_jo_exchange_electrons.electron_translation[0];
+        electrons.electron_translation[0].partner = "e-";
+        const SpeciesQueryModel custom {gas};
+        const auto result = canary::make_multi_temperature_exchange(input,
+                                                                    electrons,
+                                                                    renamed,
+                                                                    built.species,
+                                                                    mech,
+                                                                    custom,
+                                                                    si_scales);
+        expect(result.electron == canary::OptionalSpeciesIndex {canary::SpeciesIndex {10}});
+        expect(result.electron_translation[0].partner == canary::SpeciesIndex {2});
+        electrons.electron_translation[0].partner = "carrier";
+        expect(error_message([&] {
+                   canary::make_multi_temperature_exchange(input,
+                                                           electrons,
+                                                           renamed,
+                                                           built.species,
+                                                           mech,
+                                                           custom,
+                                                           si_scales);
+               })
+                 .starts_with(
+                   "electron-translation pair 0 (carrier): the partner must be a heavy species"));
+        auto invalid = custom;
+        for (const std::size_t index :
+             {std::size_t(11), std::size_t(std::numeric_limits<std::uint32_t>::max()) - 1}) {
+            invalid.thermo.electron = canary::OptionalSpeciesIndex {canary::SpeciesIndex {index}};
+            expect(error_message([&] {
+                       canary::make_multi_temperature_exchange(input,
+                                                               electrons,
+                                                               renamed,
+                                                               built.species,
+                                                               mech,
+                                                               invalid,
+                                                               si_scales);
+                   }) == "electron species index is outside the species range");
+        }
+        const canary::Air5TwoTemperature<double, si> no_electrons {};
+        expect(!canary::electron_species_index(no_electrons));
+        expect(canary::species_vibration_mode(gas, canary::SpeciesIndex {0}) == 0_i);
+        expect(canary::species_vibration_mode(gas, canary::SpeciesIndex {11}) == -1_i);
+    };
+
     "multi-temperature kinetics: the builders resolve modes and electrons"_test = [&] {
         for (std::size_t k = 0; k < reaction_count; ++k) {
             const auto& r = mech.reactions[k];
@@ -428,7 +498,8 @@ void test_multi_temperature_kinetics()
             // Dissociations of N2, O2 and NO: their vibration mode.
             if (k <= 20) { expect(r.forward.other_mode == 0_ul) << k; }
         }
-        expect(exchange.electron == 10_i && exchange.electron_mode == 1_i);
+        expect(exchange.electron == canary::OptionalSpeciesIndex {canary::SpeciesIndex {10}} &&
+               exchange.electron_mode == 1_i);
         for (const std::size_t i : std::array<std::size_t, 6> {0, 1, 4, 7, 8, 9}) {
             expect(exchange.vibration_mode[i] == 0_i) << i;
         }
@@ -436,14 +507,14 @@ void test_multi_temperature_kinetics()
             expect(exchange.vibration_mode[i] == -1) << i;
         }
         const auto& ve = exchange.vibration_electron[0];
-        expect(ve.species == 0_ul);
+        expect(ve.species == canary::SpeciesIndex {0});
         // In SI the fit is that of the input with log10(101325) added to c,
         // for p_e in Pa.
         expect(ve.relaxation_time.a_low == 7.5_d && ve.relaxation_time.b_high == -17.9_d);
         expect(relative(ve.relaxation_time.c_high, 24.35 + std::log10(atmosphere), 1.0e-15));
         expect(ve.relaxation_time.blend_lower.value() == 6950.0_d);
         const auto& ce = exchange.electron_impact_ionisation[1];
-        expect(ce.reaction == 39_ul && ce.species == 2_ul);
+        expect(ce.reaction == 39_ul && ce.species == canary::SpeciesIndex {2});
         expect(relative(ce.ionisation_energy, 1402330.360173364 / avogadro, 1.0e-15));
         // (2 pi / 9) C^2 and 9 / (4 pi C^3) with C = e^2 / (4 pi eps_0 k_B),
         // the exact e and k_B and CODATA 2018 eps_0; a few ulp.
@@ -1267,11 +1338,12 @@ void test_multi_temperature_kinetics()
 
     "multi-temperature kinetics: float rounding cannot introduce a negative cross-section minimum"_test =
       [] {
-          const std::array<std::string_view, 1> pair_names {"N2"};
-          const canary::SpeciesData<float, si, 1> species {
-            .n = 1,
-            .mass = {canary::ParticleMass<float, si> {4.65e-26F}},
-            .charge = {canary::Charge<float, si> {0.0F}}};
+          const std::array<std::string_view, 2> pair_names {"N2", "carrier"};
+          const canary::SpeciesData<float, si, 2> species {
+            .n = 2,
+            .mass = {canary::ParticleMass<float, si> {4.65e-26F},
+                     canary::ParticleMass<float, si> {9.109e-31F}},
+            .charge = {canary::Charge<float, si> {0.0F}, canary::Charge<float, si> {-1.602e-19F}}};
           const double root = 1.0 + 0.75 * std::numeric_limits<float>::epsilon();
           const canary::ElectronTranslationInput input {
             .partner = "N2",
@@ -1290,6 +1362,7 @@ void test_multi_temperature_kinetics()
                        input,
                        pair_names,
                        species,
+                       canary::SpeciesIndex {1},
                        canary::UnitScales<float, si> {});
                  }).starts_with("neutral cross-section must be finite and non-negative"));
       };
@@ -1474,7 +1547,7 @@ void test_multi_temperature_kinetics()
                                                                             air5_mech,
                                                                             air5.model,
                                                                             si_scales);
-        expect(vibration_only.electron == -1_i && vibration_only.electron_mode == -1_i);
+        expect(!vibration_only.electron && vibration_only.electron_mode == -1_i);
     };
     "multi-temperature exchange rejects duplicate physical electron processes"_test = [&] {
         const auto build = [&](const auto& electrons) {

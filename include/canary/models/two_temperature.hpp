@@ -78,19 +78,20 @@ Built<TwoTemperatureMixture<P, U, N, S>, SpeciesData<P, U, N>>
                                const std::array<int, N>& rotational_degrees,
                                const UnitScales<P, U>& scales)
 {
-    for (std::size_t i = 0; i < N; ++i) {
-        if (species[i].name == nullptr || species[i].name[0] == '\0') {
-            throw ParameterError(std::format("species {}: name must not be null or empty", i));
-        }
-        if (species[i].metadata.role == SpeciesRole::electron) {
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        if (species[i.value()].name == nullptr || species[i.value()].name[0] == '\0') {
             throw ParameterError(
-              std::format("species {}: free electrons are not supported", species[i].name));
+              std::format("species {}: name must not be null or empty", i.value()));
         }
-        const int d = rotational_degrees[i];
+        if (species[i.value()].metadata.role == SpeciesRole::electron) {
+            throw ParameterError(
+              std::format("species {}: free electrons are not supported", species[i.value()].name));
+        }
+        const int d = rotational_degrees[i.value()];
         if (d != 0 && d != 2 && d != 3) {
             throw ParameterError(
               std::format("species {}: rotational degrees of freedom must be 0, 2 or 3, got {}",
-                          species[i].name,
+                          species[i.value()].name,
                           d));
         }
     }
@@ -101,12 +102,12 @@ Built<TwoTemperatureMixture<P, U, N, S>, SpeciesData<P, U, N>>
     built.species = single.species;
     const P t_ref = single.model.reference_temperature.value();
     const P ln_t_ref = std::log(t_ref);
-    for (std::size_t i = 0; i < N; ++i) {
-        const P r = single.model.gas_constant[i].value();
-        const auto d = static_cast<P>(rotational_degrees[i]);
-        model.translational_rotational_cp[i] = SpecificHeat<P, U> {((P(5) + d) / P(2)) * r};
-        model.formation_enthalpy[i] =
-          SpecificEnthalpy<P, U> {r * nasa9_cp_h(single.model.curve[i], t_ref, ln_t_ref).h_over_r};
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        const P r = single.model.gas_constant[i.value()].value();
+        const auto d = static_cast<P>(rotational_degrees[i.value()]);
+        model.translational_rotational_cp[i.value()] = SpecificHeat<P, U> {((P(5) + d) / P(2)) * r};
+        model.formation_enthalpy[i.value()] = SpecificEnthalpy<P, U> {
+          r * nasa9_cp_h(single.model.curve[i.value()], t_ref, ln_t_ref).h_over_r};
     }
     return built;
 }
@@ -129,9 +130,9 @@ CANARY_HOST_DEVICE TranslationalRotationalSums<W>
     using V = ScalarTraits<W>::value_type;
     W cp = W(V(0));
     W h = W(V(0));
-    for (std::size_t i = 0; i < N; ++i) {
-        cp = cp + W(y[i].value() * gas.translational_rotational_cp[i].value());
-        h = h + W(y[i].value() * gas.formation_enthalpy[i].value());
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        cp = cp + W(y[i.value()].value() * gas.translational_rotational_cp[i.value()].value());
+        h = h + W(y[i.value()].value() * gas.formation_enthalpy[i.value()].value());
     }
     return {.cp = cp, .formation_enthalpy = h};
 }
@@ -142,8 +143,9 @@ CANARY_HOST_DEVICE TranslationalRotationalSums<W>
 template <Scalar W, std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
     requires ScalarWith<W, P>
 CANARY_HOST_DEVICE EnergyAndCv<W> species_vibrational_electronic_energy(
-  const TwoTemperatureMixture<P, U, N, S>& gas, std::size_t i, W t, W ln_t)
+  const TwoTemperatureMixture<P, U, N, S>& gas, SpeciesIndex index, W t, W ln_t)
 {
+    const auto i = index.value();
     const auto& single = gas.thermally_perfect;
     const P t_ref = single.reference_temperature.value();
     const Nasa9CpH<W> c = nasa9_cp_h(single.curve[i], t, ln_t);
@@ -171,13 +173,13 @@ CANARY_HOST_DEVICE EnergyAndCv<W> vibrational_electronic_energy(
     const W ln_t = math::log(t);
     W e = W(V(0));
     W cv = W(V(0));
-    for (std::size_t i = 0; i < N; ++i) {
-        const Nasa9CpH<W> c = nasa9_cp_h(single.curve[i], t, ln_t);
-        const P r = single.gas_constant[i].value();
-        const P cp_tr = gas.translational_rotational_cp[i].value();
-        const P h_f = gas.formation_enthalpy[i].value();
-        e = e + W(y[i].value() * ((r * c.h_over_r) - (cp_tr * (t - t_ref)) - h_f));
-        cv = cv + W(y[i].value() * ((r * c.cp_over_r) - cp_tr));
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        const Nasa9CpH<W> c = nasa9_cp_h(single.curve[i.value()], t, ln_t);
+        const P r = single.gas_constant[i.value()].value();
+        const P cp_tr = gas.translational_rotational_cp[i.value()].value();
+        const P h_f = gas.formation_enthalpy[i.value()].value();
+        e = e + W(y[i.value()].value() * ((r * c.h_over_r) - (cp_tr * (t - t_ref)) - h_f));
+        cv = cv + W(y[i.value()].value() * ((r * c.cp_over_r) - cp_tr));
     }
     return {.e = e, .cv = cv};
 }
@@ -670,8 +672,8 @@ CANARY_HOST_DEVICE std::array<SpecificEnergy<T, U>, N>
     const T t = temp.value();
     const T ln_t = math::log(t);
     std::array<SpecificEnergy<T, U>, N> out {};
-    for (std::size_t i = 0; i < N; ++i) {
-        out[i] =
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        out[i.value()] =
           SpecificEnergy<T, U> {detail::species_vibrational_electronic_energy(gas, i, t, ln_t).e};
     }
     return out;
@@ -681,8 +683,17 @@ CANARY_HOST_DEVICE std::array<SpecificEnergy<T, U>, N>
 // holds the vibrational-electronic energy of every species.
 template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
 CANARY_HOST_DEVICE constexpr int
-  species_vibration_mode(const TwoTemperatureMixture<P, U, N, S>& /*gas*/, std::size_t i)
-{ return i < N ? 0 : -1; }
+  species_vibration_mode(const TwoTemperatureMixture<P, U, N, S>& /*gas*/, SpeciesIndex index)
+{
+    const auto i = index.value();
+    return i < N ? 0 : -1;
+}
+
+// The model has no free-electron species.
+template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
+CANARY_HOST_DEVICE constexpr OptionalSpeciesIndex
+  electron_species_index(const TwoTemperatureMixture<P, U, N, S>& /*gas*/)
+{ return {}; }
 
 // -1: the model has no free electrons.
 template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>

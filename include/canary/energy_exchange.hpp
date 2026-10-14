@@ -209,8 +209,8 @@ template <std::size_t E, std::size_t VE, std::size_t I> struct ElectronExchangeI
 //   and K_SI = sigma_0 sqrt(8 k_B / (pi mu_pq)) (times T_ref^2 for
 //   park_1993) in SI; 0 without a correction.
 template <std::floating_point P, UnitSystem U> struct VibrationTranslationPair {
-    std::size_t species;
-    std::size_t partner;
+    SpeciesIndex species;
+    SpeciesIndex partner;
     P millikan_white_a;
     P millikan_white_offset;
     P correction_exponent;
@@ -221,7 +221,7 @@ template <std::floating_point P, UnitSystem U> struct VibrationTranslationPair {
 // species index, theta_D = D / R_u and theta_v.
 template <std::floating_point P, UnitSystem U> struct ChemistryVibrationCoupling {
     std::size_t reaction;
-    std::size_t species;
+    SpeciesIndex species;
     Temperature<P, U> dissociation_temperature;
     Temperature<P, U> vibrational_temperature;
 };
@@ -248,14 +248,14 @@ namespace detail
 // Index of the named species, checked: throws ParameterError when name is
 // null or unknown.
 template <std::size_t N>
-std::size_t known_species(const std::array<std::string_view, N>& names,
-                          const char* name,
-                          std::string_view role)
+SpeciesIndex known_species(const std::array<std::string_view, N>& names,
+                           const char* name,
+                           std::string_view role)
 {
     if (name == nullptr) { throw ParameterError(std::format("{} has no name", role)); }
-    const std::size_t index = species_index(names, name);
-    if (index == N) { throw ParameterError(std::format("unknown {} \"{}\"", role, name)); }
-    return index;
+    const auto index = species_index(names, name);
+    if (!index) { throw ParameterError(std::format("unknown {} \"{}\"", role, name)); }
+    return *index;
 }
 
 // A finite value converted to P; throws ParameterError otherwise, naming
@@ -348,8 +348,8 @@ VibrationTranslationPair<P, U>
     pair.correction_coefficient = P(0);
     if (correction.model != RelaxationCorrection::none) {
         const auto mass_scale = scale_factor<kind::particle_mass>(s);
-        const auto m_p = static_cast<W>(species.mass[pair.species].value()) * mass_scale;
-        const auto m_q = static_cast<W>(species.mass[pair.partner].value()) * mass_scale;
+        const auto m_p = static_cast<W>(species.mass[pair.species.value()].value()) * mass_scale;
+        const auto m_q = static_cast<W>(species.mass[pair.partner.value()].value()) * mass_scale;
         const auto reduced_mass = m_p * m_q / (m_p + m_q);
         const auto k_si = k_factor * std::sqrt(8.0 * constants::boltzmann<double> /
                                                (std::numbers::pi * reduced_mass));
@@ -377,7 +377,7 @@ ChemistryVibrationCoupling<P, U>
     coupling.reaction = static_cast<std::size_t>(input.reaction);
     coupling.species = known_species(names, input.species, "species");
     const Reaction<P, U, N>& r = mechanism.reactions[coupling.reaction];
-    if (r.products[coupling.species] == r.reactants[coupling.species]) {
+    if (r.products[coupling.species.value()] == r.reactants[coupling.species.value()]) {
         throw ParameterError(std::format("species \"{}\" has no net change in reaction {}",
                                          input.species,
                                          input.reaction));
@@ -422,13 +422,15 @@ void check_exchange_species(const std::array<std::string_view, N>& names,
         throw ParameterError(
           std::format("species data must have {} species, got {}", N, species.n));
     }
-    for (std::size_t i = 0; i < N; ++i) {
-        if (species_index(names, names[i]) != i) {
-            throw ParameterError(std::format("species \"{}\" is named twice", names[i]));
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        if (species_index(names, names[i.value()]) != OptionalSpeciesIndex {i}) {
+            throw ParameterError(std::format("species \"{}\" is named twice", names[i.value()]));
         }
-        if (!std::isfinite(species.mass[i].value()) || !(species.mass[i].value() > P(0))) {
+        if (!std::isfinite(species.mass[i.value()].value()) ||
+            !(species.mass[i.value()].value() > P(0))) {
             throw ParameterError(
-              std::format("species \"{}\": particle mass must be finite and positive", names[i]));
+              std::format("species \"{}\": particle mass must be finite and positive",
+                          names[i.value()]));
         }
     }
 }
@@ -546,7 +548,7 @@ EnergyExchange<P, U, N, V, C> make_energy_exchange(const EnergyExchangeInput<V, 
       species,
       mechanism,
       scales,
-      [](std::size_t /*i*/) {},
+      [](SpeciesIndex /*i*/) {},
       exchange.vibration_translation,
       exchange.chemistry_vibration);
     exchange.mass = species.mass;
@@ -680,8 +682,9 @@ CANARY_HOST_DEVICE std::array<T, N>
             }
             correction = T(pair.correction_coefficient * power);
         }
-        inverse_tau[pair.species] =
-          inverse_tau[pair.species] + T(n[pair.partner] / T(millikan_white + correction));
+        inverse_tau[pair.species.value()] =
+          inverse_tau[pair.species.value()] +
+          T(n[pair.partner.value()] / T(millikan_white + correction));
     }
     return inverse_tau;
 }
@@ -709,7 +712,7 @@ CANARY_HOST_DEVICE T coupling_energy_rate(const ChemistryVibrationCoupling<P, U>
     // NOLINTNEXTLINE(misc-static-assert): run-time reaction index
     CANARY_ASSERT(coupling.reaction < R);
     const Reaction<P, U, N>& r = mechanism.reactions[coupling.reaction];
-    const int dnu = r.products[coupling.species] - r.reactants[coupling.species];
+    const int dnu = r.products[coupling.species.value()] - r.reactants[coupling.species.value()];
     const auto made = static_cast<Real>(dnu > 0 ? dnu : 0);
     const auto destroyed = static_cast<Real>(dnu < 0 ? -dnu : 0);
     const T q_f = rates.forward[coupling.reaction].value();
@@ -738,9 +741,9 @@ CANARY_HOST_DEVICE PartialDensities<T, N>
                     Density<T, U> rho)
 {
     PartialDensities<T, N> out {};
-    for (std::size_t i = 0; i < N; ++i) {
-        out.mass[i] = T(rho.value() * mix.fractions[i].value());
-        out.number[i] = T(out.mass[i] / mass[i].value());
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        out.mass[i.value()] = T(rho.value() * mix.fractions[i.value()].value());
+        out.number[i.value()] = T(out.mass[i.value()] / mass[i.value()].value());
     }
     return out;
 }
@@ -781,8 +784,9 @@ CANARY_HOST_DEVICE PowerDensity<T, U>
     const std::array<SpecificEnergy<T, U>, N> e_ve =
       species_vibrational_electronic_energy(gas, temp_ve);
     T q = T(Real(0));
-    for (std::size_t i = 0; i < N; ++i) {
-        q = q + T(d.mass[i] * T(e_t[i].value() - e_ve[i].value()) * inverse_tau[i]);
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        q = q + T(d.mass[i.value()] * T(e_t[i.value()].value() - e_ve[i.value()].value()) *
+                  inverse_tau[i.value()]);
     }
     return PowerDensity<T, U> {q};
 }
@@ -898,7 +902,7 @@ CANARY_HOST_DEVICE TwoTemperatureSources<T, U, N>
 // an area per particle (length^2 / count of U) and T' in the temperature
 // unit of U.
 template <std::floating_point P, UnitSystem U> struct ElectronTranslationPair {
-    std::size_t partner;
+    SpeciesIndex partner;
     ElectronCrossSection cross_section;
     P a;
     P b;
@@ -928,7 +932,7 @@ template <std::floating_point P, UnitSystem U> struct CandlerFit {
 // One vibration-electron exchange in model units: the index of the species
 // and its relaxation time.
 template <std::floating_point P, UnitSystem U> struct VibrationElectronCoupling {
-    std::size_t species;
+    SpeciesIndex species;
     CandlerFit<P, U> relaxation_time;
 };
 
@@ -937,7 +941,7 @@ template <std::floating_point P, UnitSystem U> struct VibrationElectronCoupling 
 // I / N_A, in the energy unit of U.
 template <std::floating_point P, UnitSystem U> struct ElectronImpactIonisationCoupling {
     std::size_t reaction;
-    std::size_t species;
+    SpeciesIndex species;
     P ionisation_energy;
 };
 
@@ -947,7 +951,7 @@ template <std::floating_point P, UnitSystem U> struct ElectronImpactIonisationCo
 // electron-heavy pairs, VE vibration-electron exchanges and I
 // electron-impact ionisations; the vibration mode of every species (-1
 // without one); the particle mass of every species; the Boltzmann constant;
-// the index of e- and the mode that holds its energy (both -1 without
+// the optional free-electron species index and its energy mode (-1 without
 // free electrons); the constants of the Coulomb cross-section
 // sigma = (coulomb_cross_section / T_e^2) ln(coulomb_logarithm_factor T_e^3
 // / n_e'), that is (2 pi / 9) C^2 and 9 / (4 pi C^3) with
@@ -977,7 +981,7 @@ struct MultiTemperatureExchange {
     std::array<int, N> vibration_mode;
     std::array<ParticleMass<P, U>, N> mass;
     BoltzmannConstant<P, U> boltzmann;
-    int electron;
+    OptionalSpeciesIndex electron;
     int electron_mode;
     P coulomb_cross_section;
     P coulomb_logarithm_factor;
@@ -1019,14 +1023,13 @@ ElectronTranslationPair<P, U>
   make_electron_translation_pair(const ElectronTranslationInput& input,
                                  const std::array<std::string_view, N>& names,
                                  const SpeciesData<P, U, N>& species,
+                                 SpeciesIndex electron,
                                  const UnitScales<P, U>& scales)
 {
     ElectronTranslationPair<P, U> pair {};
     pair.partner = known_species(names, input.partner, "partner");
-    if (names[pair.partner] == "e-") {
-        throw ParameterError("the partner must be a heavy species, not e-");
-    }
-    const bool charged = species.charge[pair.partner].value() != P(0);
+    if (pair.partner == electron) { throw ParameterError("the partner must be a heavy species"); }
+    const bool charged = species.charge[pair.partner.value()].value() != P(0);
     pair.cross_section = input.cross_section;
     switch (input.cross_section) {
     case ElectronCrossSection::coulomb:
@@ -1137,14 +1140,14 @@ ElectronImpactIonisationCoupling<P, U>
     coupling.reaction = static_cast<std::size_t>(input.reaction);
     coupling.species = known_species(names, input.species, "species");
     const std::string ion = std::format("{}+", input.species);
-    const std::size_t ion_index = species_index(names, ion);
-    if (ion_index == N) {
+    const auto ion_index = species_index(names, ion);
+    if (!ion_index) {
         throw ParameterError(
           std::format(R"(species "{}" has no singly charged ion "{}")", input.species, ion));
     }
     const Reaction<P, U, N>& r = mechanism.reactions[coupling.reaction];
-    const int lost = r.reactants[coupling.species] - r.products[coupling.species];
-    const int gained = r.products[ion_index] - r.reactants[ion_index];
+    const int lost = r.reactants[coupling.species.value()] - r.products[coupling.species.value()];
+    const int gained = r.products[(*ion_index).value()] - r.reactants[(*ion_index).value()];
     if (lost != 1 || gained != 1) {
         throw ParameterError(std::format(R"(reaction {} does not turn one "{}" into one "{}")",
                                          input.reaction,
@@ -1166,9 +1169,10 @@ ElectronImpactIonisationCoupling<P, U>
 // model gas with energy modes, named in its species order, with their
 // particle masses and charges from species and the reactions of mechanism
 // (over the same species), in the unit system of the scales. The vibration
-// mode of each species is species_vibration_mode(gas); e- is the species
-// named "e-", and the model has free electrons when it has e- and
-// electron_energy_mode(gas) is not -1. Throws ParameterError for the
+// mode of each species is species_vibration_mode(gas); electron_species_index(gas)
+// supplies its optional free-electron species index. A present index must be
+// within the species range. The model has free electrons when that index is
+// present and electron_energy_mode(gas) is not -1. Throws ParameterError for the
 // errors of make_energy_exchange (with the same entry names). Electron-translation
 // partners, vibration-electron species and ionisation reaction/species pairs must
 // each be unique within their process. Additional errors are reported with
@@ -1178,7 +1182,7 @@ ElectronImpactIonisationCoupling<P, U>
 // - a vibration-translation, chemistry-vibration or vibration-electron
 //   species has no vibration mode;
 // - an electron exchange is given and the model has no free electrons;
-// - a name is null or unknown; an electron-translation partner is e-, is
+// - a name is null or unknown; an electron-translation partner is the electron, is
 //   not charged for coulomb or is charged for gnoffo_neutral, or the
 //   cross-section model is unknown;
 // - a gnoffo_neutral coefficient is not finite, its maximum temperature
@@ -1201,7 +1205,9 @@ template <std::floating_point P,
           std::size_t VE,
           std::size_t I,
           HasEnergyModes G>
-    requires(N > 0 && R > 0) && std::same_as<typename G::units, U>
+    requires(N > 0 && R > 0) && std::same_as<typename G::units, U> && requires(const G& gas) {
+        { electron_species_index(gas) } -> std::same_as<OptionalSpeciesIndex>;
+    }
 MultiTemperatureExchange<P, U, N, G::mode_count, V, C, E, VE, I>
   make_multi_temperature_exchange(const EnergyExchangeInput<V, C>& input,
                                   const ElectronExchangeInput<E, VE, I>& electrons,
@@ -1214,12 +1220,13 @@ MultiTemperatureExchange<P, U, N, G::mode_count, V, C, E, VE, I>
     constexpr std::size_t modes = G::mode_count;
     detail::check_exchange_species(names, species);
     MultiTemperatureExchange<P, U, N, modes, V, C, E, VE, I> exchange {};
-    for (std::size_t i = 0; i < N; ++i) {
+    for (const SpeciesIndex i : species_indices(0, N)) {
         const int mode = species_vibration_mode(gas, i);
-        exchange.vibration_mode[i] =
+        exchange.vibration_mode[i.value()] =
           std::cmp_greater_equal(mode, 0) && std::cmp_less(mode, modes) ? mode : -1;
     }
-    const auto check_vibration = [&](std::size_t i) {
+    const auto check_vibration = [&](SpeciesIndex index) {
+        const auto i = index.value();
         if (exchange.vibration_mode[i] < 0) {
             throw ParameterError(
               std::format("species \"{}\" has no vibration component in a mode", names[i]));
@@ -1234,11 +1241,14 @@ MultiTemperatureExchange<P, U, N, G::mode_count, V, C, E, VE, I>
                                        exchange.vibration_translation,
                                        exchange.chemistry_vibration);
 
-    const std::size_t e = detail::species_index(names, "e-");
+    const OptionalSpeciesIndex e = electron_species_index(gas);
+    if (e && (*e).value() >= N) {
+        throw ParameterError("electron species index is outside the species range");
+    }
     const int electron_mode = electron_energy_mode(gas);
-    const bool has_electrons =
-      e < N && std::cmp_greater_equal(electron_mode, 0) && std::cmp_less(electron_mode, modes);
-    exchange.electron = has_electrons ? static_cast<int>(e) : -1;
+    const bool has_electrons = e.has_value() && std::cmp_greater_equal(electron_mode, 0) &&
+                               std::cmp_less(electron_mode, modes);
+    exchange.electron = has_electrons ? e : OptionalSpeciesIndex {};
     exchange.electron_mode = has_electrons ? electron_mode : -1;
     const auto check_electrons = [&] {
         if (!has_electrons) { throw ParameterError("the model has no free electrons"); }
@@ -1248,7 +1258,7 @@ MultiTemperatureExchange<P, U, N, G::mode_count, V, C, E, VE, I>
         try {
             check_electrons();
             exchange.electron_translation[k] =
-              detail::make_electron_translation_pair(entry, names, species, scales);
+              detail::make_electron_translation_pair(entry, names, species, *e, scales);
             detail::check_duplicate_exchange(exchange.electron_translation,
                                              k,
                                              [](const auto& pair) { return pair.partner; });
@@ -1372,14 +1382,14 @@ CANARY_HOST_DEVICE RelaxationEnergies<T, N>
     std::array<bool, M> electron_mode {};
     if constexpr (Translation) {
         for (const VibrationTranslationPair<P, U>& pair : exchange.vibration_translation) {
-            translation_mode[static_cast<std::size_t>(exchange.vibration_mode[pair.species])] =
-              true;
+            translation_mode[static_cast<std::size_t>(
+              exchange.vibration_mode[pair.species.value()])] = true;
         }
     }
     if constexpr (Electron) {
         for (const VibrationElectronCoupling<P, U>& coupling : exchange.vibration_electron) {
-            electron_mode[static_cast<std::size_t>(exchange.vibration_mode[coupling.species])] =
-              true;
+            electron_mode[static_cast<std::size_t>(
+              exchange.vibration_mode[coupling.species.value()])] = true;
         }
     }
     RelaxationEnergies<T, N> out {};
@@ -1392,9 +1402,10 @@ CANARY_HOST_DEVICE RelaxationEnergies<T, N>
         if (translation_mode[m]) {
             const std::array<SpecificEnergy<T, U>, N> at_t =
               species_mode_energy(gas, m, state.temp);
-            for (std::size_t i = 0; i < N; ++i) {
-                if (exchange.vibration_mode[i] == static_cast<int>(m)) {
-                    out.translation[i] = T(at_t[i].value() - at_mode[i].value());
+            for (const SpeciesIndex i : species_indices(0, N)) {
+                if (exchange.vibration_mode[i.value()] == static_cast<int>(m)) {
+                    out.translation[i.value()] =
+                      T(at_t[i.value()].value() - at_mode[i.value()].value());
                 }
             }
         }
@@ -1404,9 +1415,10 @@ CANARY_HOST_DEVICE RelaxationEnergies<T, N>
             const auto e = static_cast<std::size_t>(exchange.electron_mode);
             const std::array<SpecificEnergy<T, U>, N> at_e =
               species_mode_energy(gas, m, Temperature<T, U> {state.mode_temp[e].value()});
-            for (std::size_t i = 0; i < N; ++i) {
-                if (exchange.vibration_mode[i] == static_cast<int>(m)) {
-                    out.electron[i] = T(at_e[i].value() - at_mode[i].value());
+            for (const SpeciesIndex i : species_indices(0, N)) {
+                if (exchange.vibration_mode[i.value()] == static_cast<int>(m)) {
+                    out.electron[i.value()] =
+                      T(at_e[i.value()].value() - at_mode[i.value()].value());
                 }
             }
         }
@@ -1444,12 +1456,12 @@ CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M>
     // t_bath = (T sum over heavy j of n_j + T_e n_e) / sum_j n_j.
     const T t = state.temp.value();
     T t_bath = t;
-    if (exchange.electron >= 0) {
-        const auto e = static_cast<std::size_t>(exchange.electron);
+    if (exchange.electron.has_value()) {
+        const auto e = (*exchange.electron).value();
         const T t_e = state.mode_temp[static_cast<std::size_t>(exchange.electron_mode)].value();
         T heavy = T(Real(0));
-        for (std::size_t i = 0; i < N; ++i) {
-            if (i != e) { heavy = heavy + d.number[i]; }
+        for (const SpeciesIndex i : species_indices(0, N)) {
+            if (i.value() != e) { heavy = heavy + d.number[i.value()]; }
         }
         const T total = T(heavy + d.number[e]);
         t_bath = T(T(T(heavy * t) + T(d.number[e] * t_e)) / total);
@@ -1461,11 +1473,11 @@ CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M>
                                                                   t_bath);
     std::array<T, M> q {};
     q.fill(T(Real(0)));
-    for (std::size_t i = 0; i < N; ++i) {
-        const int m = exchange.vibration_mode[i];
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        const int m = exchange.vibration_mode[i.value()];
         if (m < 0) { continue; }
         const auto k = static_cast<std::size_t>(m);
-        q[k] = q[k] + T(d.mass[i] * energy_difference[i] * inverse_tau[i]);
+        q[k] = q[k] + T(d.mass[i.value()] * energy_difference[i.value()] * inverse_tau[i.value()]);
     }
     std::array<PowerDensity<T, U>, M> out {};
     for (std::size_t m = 0; m < M; ++m) { out[m] = PowerDensity<T, U> {q[m]}; }
@@ -1517,8 +1529,8 @@ CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M>
 {
     using Real = ScalarTraits<T>::value_type;
     // NOLINTNEXTLINE(misc-static-assert): run-time electron index
-    CANARY_ASSERT(exchange.electron >= 0 && exchange.electron_mode >= 0);
-    const auto e = static_cast<std::size_t>(exchange.electron);
+    CANARY_ASSERT(exchange.electron.has_value() && exchange.electron_mode >= 0);
+    const auto e = (*exchange.electron).value();
     const auto e_mode = static_cast<std::size_t>(exchange.electron_mode);
     const T t_e = state.mode_temp[e_mode].value();
     const T p_e = T(T(d.number[e] * exchange.boltzmann.value()) * t_e);
@@ -1527,7 +1539,7 @@ CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M>
     std::array<T, M> q {};
     q.fill(T(Real(0)));
     for (const VibrationElectronCoupling<P, U>& coupling : exchange.vibration_electron) {
-        const std::size_t p = coupling.species;
+        const auto p = coupling.species.value();
         const T f = candler_exponent(coupling.relaxation_time, x, t_e);
         const T inverse_tau = T(p_e * math::exp(T(-(f * T(ln10)))));
         const T rate = T(d.mass[p] * energy_difference[p] * inverse_tau);
@@ -1599,7 +1611,7 @@ CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M>
     std::array<T, M> q {};
     q.fill(T(Real(0)));
     for (const ChemistryVibrationCoupling<P, U>& coupling : exchange.chemistry_vibration) {
-        const auto m = static_cast<std::size_t>(exchange.vibration_mode[coupling.species]);
+        const auto m = static_cast<std::size_t>(exchange.vibration_mode[coupling.species.value()]);
         q[m] = q[m] + detail::coupling_energy_rate(coupling,
                                                    mechanism,
                                                    rates,
@@ -1636,8 +1648,8 @@ CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M>
 {
     using Real = ScalarTraits<T>::value_type;
     std::array<PowerDensity<T, U>, M> out = detail::zero_mode_sources<T, U, M>();
-    if (E == 0 || exchange.electron < 0) { return out; }
-    const auto e = static_cast<std::size_t>(exchange.electron);
+    if (E == 0 || !exchange.electron) { return out; }
+    const auto e = (*exchange.electron).value();
     const auto e_mode = static_cast<std::size_t>(exchange.electron_mode);
     const P m_e = exchange.mass[e].value();
     const P k = exchange.boltzmann.value();
@@ -1662,8 +1674,9 @@ CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M>
             const T t_limited = t_e_value > t_max ? T(t_max) : t_e;
             sigma = T(T(T(pair.c * t_limited) + pair.b) * t_limited) + pair.a;
         }
-        sum =
-          sum + T(T((m_e / exchange.mass[pair.partner].value()) * d.number[pair.partner]) * sigma);
+        sum = sum + T(T((m_e / exchange.mass[pair.partner.value()].value()) *
+                        d.number[pair.partner.value()]) *
+                      sigma);
     }
     const T c_e = math::sqrt(T(T((Real(8) * k) * t_e) / (std::numbers::pi_v<Real> * m_e)));
     out[e_mode] = PowerDensity<T, U> {
@@ -1699,7 +1712,7 @@ CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M>
                             const MultiTemperatureState<T, U, M>& state)
 {
     std::array<PowerDensity<T, U>, M> out = detail::zero_mode_sources<T, U, M>();
-    if (VE == 0 || exchange.electron < 0) { return out; }
+    if (VE == 0 || !exchange.electron) { return out; }
     const detail::RelaxationEnergies<T, N> energies =
       detail::relaxation_energies<false, true>(exchange, gas, state);
     return detail::vibration_electron_terms(
@@ -1730,7 +1743,7 @@ CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M> electron_impact_ionisation_
 {
     using Real = ScalarTraits<T>::value_type;
     std::array<PowerDensity<T, U>, M> out = detail::zero_mode_sources<T, U, M>();
-    if (I == 0 || exchange.electron < 0) { return out; }
+    if (I == 0 || !exchange.electron) { return out; }
     T q = T(Real(0));
     for (const ElectronImpactIonisationCoupling<P, U>& coupling :
          exchange.electron_impact_ionisation) {
@@ -1790,7 +1803,7 @@ CANARY_HOST_DEVICE MultiTemperatureSources<T, U, N, M>
     const auto cv = chemistry_vibration_source(exchange, mechanism, rates, state);
     const auto et = electron_translation_source(exchange, mix, state);
     std::array<PowerDensity<T, U>, M> ve = detail::zero_mode_sources<T, U, M>();
-    if (exchange.electron >= 0) {
+    if (exchange.electron.has_value()) {
         ve = detail::vibration_electron_terms(exchange, d, energies.electron, state);
     }
     const auto ce = electron_impact_ionisation_source(exchange, rates);

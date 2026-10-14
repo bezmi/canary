@@ -123,10 +123,11 @@ inline void check_species_metadata(const SpeciesMetadataView& metadata, double c
 template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
 void fill_thermally_perfect_species(ThermallyPerfectMixture<P, U, N, S>& model,
                                     SpeciesData<P, U, N>& species,
-                                    std::size_t i,
+                                    SpeciesIndex index,
                                     const Nasa9Species<S>& input,
                                     const UnitScales<P, U>& scales)
 {
+    const auto i = index.value();
     if (!std::isfinite(input.molar_mass) || !(input.molar_mass > 0.0)) {
         throw ParameterError(
           std::format("molar mass must be finite and positive, got {}", input.molar_mass));
@@ -183,18 +184,24 @@ Built<ThermallyPerfectMixture<P, U, N, S>, SpeciesData<P, U, N>>
     model.relative_tolerance = P(1.0e-10);
     model.max_iterations = 30;
     bool has_electron = false;
-    for (std::size_t i = 0; i < N; ++i) {
-        if (species[i].name == nullptr || species[i].name[0] == '\0') {
-            throw ParameterError(std::format("species {}: name must not be null or empty", i));
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        if (species[i.value()].name == nullptr || species[i.value()].name[0] == '\0') {
+            throw ParameterError(
+              std::format("species {}: name must not be null or empty", i.value()));
         }
         try {
-            if (species[i].metadata.role == SpeciesRole::electron) {
+            if (species[i.value()].metadata.role == SpeciesRole::electron) {
                 if (has_electron) { throw ParameterError("more than one electron-role species"); }
                 has_electron = true;
             }
-            detail::fill_thermally_perfect_species(model, built.species, i, species[i], scales);
+            detail::fill_thermally_perfect_species(model,
+                                                   built.species,
+                                                   i,
+                                                   species[i.value()],
+                                                   scales);
         } catch (const ParameterError& error) {
-            throw ParameterError(std::format("species {}: {}", species[i].name, error.what()));
+            throw ParameterError(
+              std::format("species {}: {}", species[i.value()].name, error.what()));
         }
     }
     return built;
@@ -219,17 +226,20 @@ CANARY_HOST_DEVICE NormalisedComposition<T, U, N> normalise(
     CANARY_ASSERT(static_cast<std::size_t>(weights.extent(0)) == N);
     std::array<T, N> w {};
     T sum = T(typename ScalarTraits<T>::value_type(0));
-    for (std::size_t i = 0; i < N; ++i) {
-        w[i] = clamped_weight(weights, i, total);
-        sum = sum + w[i];
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        w[i.value()] = clamped_weight(weights, i, total);
+        sum = sum + w[i.value()];
     }
     NormalisedComposition<T, U, N> mix {};
     mix.n = gas.n;
     mix.status = status;
-    for (std::size_t i = 0; i < N; ++i) { mix.fractions[i] = MassFraction<T> {w[i] / sum}; }
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        mix.fractions[i.value()] = MassFraction<T> {w[i.value()] / sum};
+    }
     auto gas_constant = gas.gas_constant[0] * mix.fractions[0].value();
-    for (std::size_t i = 1; i < N; ++i) {
-        gas_constant = gas_constant + (gas.gas_constant[i] * mix.fractions[i].value());
+    for (const SpeciesIndex i : species_indices(1, N)) {
+        gas_constant =
+          gas_constant + (gas.gas_constant[i.value()] * mix.fractions[i.value()].value());
     }
     mix.gas_constant = SpecificGasConstant<T, U> {gas_constant};
     return mix;
@@ -255,11 +265,11 @@ CANARY_HOST_DEVICE EnergyAndCv<W> mixture_energy(const ThermallyPerfectMixture<P
     const W ln_t = math::log(t);
     W e = W(V(0));
     W cv = W(V(0));
-    for (std::size_t i = 0; i < N; ++i) {
-        const Nasa9CpH<W> c = nasa9_cp_h(gas.curve[i], t, ln_t);
-        const P r = gas.gas_constant[i].value();
-        e = e + W(y[i].value() * (r * (c.h_over_r - t)));
-        cv = cv + W(y[i].value() * (r * (c.cp_over_r - P(1))));
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        const Nasa9CpH<W> c = nasa9_cp_h(gas.curve[i.value()], t, ln_t);
+        const P r = gas.gas_constant[i.value()].value();
+        e = e + W(y[i.value()].value() * (r * (c.h_over_r - t)));
+        cv = cv + W(y[i.value()].value() * (r * (c.cp_over_r - P(1))));
     }
     return {.e = e, .cv = cv};
 }
@@ -302,8 +312,8 @@ CANARY_HOST_DEVICE std::array<MassFraction<typename ScalarTraits<T>::value_type>
 {
     using V = ScalarTraits<T>::value_type;
     std::array<MassFraction<V>, N> y {};
-    for (std::size_t i = 0; i < N; ++i) {
-        y[i] = MassFraction<V> {ScalarTraits<T>::value(mix.fractions[i].value())};
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        y[i.value()] = MassFraction<V> {ScalarTraits<T>::value(mix.fractions[i.value()].value())};
     }
     return y;
 }
@@ -317,9 +327,9 @@ CANARY_HOST_DEVICE V default_temperature_guess(const ThermallyPerfectMixture<P, 
 {
     V e_ref = V(0);
     V cv_ref = V(0);
-    for (std::size_t i = 0; i < N; ++i) {
-        e_ref += y[i].value() * static_cast<V>(gas.reference_energy[i].value());
-        cv_ref += y[i].value() * static_cast<V>(gas.reference_cv[i].value());
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        e_ref += y[i.value()].value() * static_cast<V>(gas.reference_energy[i.value()].value());
+        cv_ref += y[i.value()].value() * static_cast<V>(gas.reference_cv[i.value()].value());
     }
     return static_cast<V>(gas.reference_temperature.value()) + ((e - e_ref) / cv_ref);
 }
@@ -585,17 +595,17 @@ CANARY_HOST_DEVICE SpeciesProperties<T, U, N>
     const T ln_t = math::log(t);
     SpeciesProperties<T, U, N> out {};
     out.n = gas.n;
-    for (std::size_t i = 0; i < N; ++i) {
-        const Nasa9CpH<T> c = nasa9_cp_h(gas.curve[i], t, ln_t);
-        const T s_over_r = nasa9_s(gas.curve[i], t, ln_t);
-        const P r = gas.gas_constant[i].value();
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        const Nasa9CpH<T> c = nasa9_cp_h(gas.curve[i.value()], t, ln_t);
+        const T s_over_r = nasa9_s(gas.curve[i.value()], t, ln_t);
+        const P r = gas.gas_constant[i.value()].value();
         const T h = T(r * c.h_over_r);
         const T s = T(r * s_over_r);
-        out.energy[i] = SpecificEnergy<T, U> {T(r * (c.h_over_r - t))};
-        out.cv[i] = SpecificHeat<T, U> {T(r * (c.cp_over_r - P(1)))};
-        out.enthalpy[i] = SpecificEnthalpy<T, U> {h};
-        out.entropy[i] = SpecificEntropy<T, U> {s};
-        out.gibbs_energy[i] = SpecificGibbsEnergy<T, U> {h - (t * s)};
+        out.energy[i.value()] = SpecificEnergy<T, U> {T(r * (c.h_over_r - t))};
+        out.cv[i.value()] = SpecificHeat<T, U> {T(r * (c.cp_over_r - P(1)))};
+        out.enthalpy[i.value()] = SpecificEnthalpy<T, U> {h};
+        out.entropy[i.value()] = SpecificEntropy<T, U> {s};
+        out.gibbs_energy[i.value()] = SpecificGibbsEnergy<T, U> {h - (t * s)};
     }
     return out;
 }
@@ -611,9 +621,9 @@ CANARY_HOST_DEVICE std::array<SpecificHeat<T, U>, N>
     const T t = temp.value();
     const T ln_t = math::log(t);
     std::array<SpecificHeat<T, U>, N> out {};
-    for (std::size_t i = 0; i < N; ++i) {
-        const T cp_over_r = nasa9_cp_h(gas.curve[i], t, ln_t).cp_over_r;
-        out[i] = SpecificHeat<T, U> {T(gas.gas_constant[i].value() * cp_over_r)};
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        const T cp_over_r = nasa9_cp_h(gas.curve[i.value()], t, ln_t).cp_over_r;
+        out[i.value()] = SpecificHeat<T, U> {T(gas.gas_constant[i.value()].value() * cp_over_r)};
     }
     return out;
 }

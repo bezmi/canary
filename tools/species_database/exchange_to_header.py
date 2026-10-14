@@ -133,7 +133,7 @@ def main():
 {{
 inline constexpr auto {args.name}_species_names = [] {{
     std::array<std::string_view, {args.species_array}.size()> names {{}};
-    for (std::size_t i = 0; i < names.size(); ++i) {{ names[i] = {args.species_array}[i].name; }}
+    for (const SpeciesIndex i : species_indices(0, names.size())) {{ names[i.value()] = {args.species_array}[i.value()].name; }}
     return names;
 }}();
 }}  // namespace detail"""

@@ -658,13 +658,13 @@ std::array<Nasa9Species<S>, N> nasa9_species(const SpeciesFile& file,
                                              const std::array<std::string_view, N>& names)
 {
     std::array<Nasa9Species<S>, N> out {};
-    for (std::size_t i = 0; i < N; ++i) {
-        const auto entry = file.species.find(std::string(names[i]));
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        const auto entry = file.species.find(std::string(names[i.value()]));
         if (entry == file.species.end()) {
-            throw DatabaseError(std::format("species \"{}\" is not in the file", names[i]));
+            throw DatabaseError(std::format("species \"{}\" is not in the file", names[i.value()]));
         }
         try {
-            out[i] = Nasa9Species<S> {
+            out[i.value()] = Nasa9Species<S> {
               .name = entry->first.c_str(),
               .molar_mass = entry->second.molar_mass,
               .charge = entry->second.charge,
@@ -1001,10 +1001,10 @@ std::array<SpeciesTransportInput<S>, N>
   species_transport(const SpeciesFile& file, const std::array<std::string_view, N>& names)
 {
     std::array<SpeciesTransportInput<S>, N> out {};
-    for (std::size_t i = 0; i < N; ++i) {
-        const auto entry = file.species.find(std::string(names[i]));
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        const auto entry = file.species.find(std::string(names[i.value()]));
         if (entry == file.species.end()) {
-            throw DatabaseError(std::format("species \"{}\" is not in the file", names[i]));
+            throw DatabaseError(std::format("species \"{}\" is not in the file", names[i.value()]));
         }
         const std::optional<TransportRecord>& transport = entry->second.transport;
         try {
@@ -1013,7 +1013,7 @@ std::array<SpeciesTransportInput<S>, N>
                 throw ParameterError("needs viscosity, thermal_conductivity and lennard_jones "
                                      "transport records");
             }
-            out[i] = SpeciesTransportInput<S> {
+            out[i.value()] = SpeciesTransportInput<S> {
               .name = entry->first.c_str(),
               .viscosity = detail::transport_curve<S>(*transport->viscosity, "viscosity"),
               .conductivity = detail::transport_curve<S>(*transport->thermal_conductivity,
@@ -1043,12 +1043,12 @@ std::array<ElectronicLevelsInput<L>, N>
   electronic_levels(const SpeciesFile& file, const std::array<std::string_view, N>& names)
 {
     std::array<ElectronicLevelsInput<L>, N> out {};
-    for (std::size_t i = 0; i < N; ++i) {
-        const auto entry = file.species.find(std::string(names[i]));
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        const auto entry = file.species.find(std::string(names[i.value()]));
         if (entry == file.species.end()) {
-            throw DatabaseError(std::format("species \"{}\" is not in the file", names[i]));
+            throw DatabaseError(std::format("species \"{}\" is not in the file", names[i.value()]));
         }
-        out[i].name = entry->first.c_str();
+        out[i.value()].name = entry->first.c_str();
         if (!entry->second.electronic_levels) { continue; }
         const ElectronicLevelsRecord& levels = *entry->second.electronic_levels;
         const std::size_t count = levels.degeneracies.size();
@@ -1061,10 +1061,10 @@ std::array<ElectronicLevelsInput<L>, N>
                           count,
                           levels.temperatures.size()));
         }
-        out[i].levels = static_cast<int>(count);
+        out[i.value()].levels = static_cast<int>(count);
         for (std::size_t k = 0; k < count; ++k) {
-            out[i].degeneracies[k] = levels.degeneracies[k];
-            out[i].temperatures[k] = levels.temperatures[k];
+            out[i.value()].degeneracies[k] = levels.degeneracies[k];
+            out[i.value()].temperatures[k] = levels.temperatures[k];
         }
     }
     return out;
