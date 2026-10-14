@@ -17,6 +17,7 @@
 #include <concepts>
 #include <cstddef>
 #include <format>
+#include <limits>
 
 namespace canary
 {
@@ -118,6 +119,26 @@ inline void check_species_metadata(const SpeciesMetadataView& metadata, double c
     }
 }
 
+// Narrow only after unit conversion, preserving the quantity's kind and units.
+template <std::floating_point P, KindTag K, std::floating_point W, UnitTag U>
+Quantity<K, P, U> thermodynamic_parameter(Quantity<K, W, U> value, const char* name)
+{
+    if (!std::isfinite(value.value()) || std::abs(value.value()) > std::numeric_limits<P>::max()) {
+        throw ParameterError(std::format("{} is outside the finite parameter range", name));
+    }
+    return Quantity<K, P, U> {value};
+}
+
+template <std::floating_point P, KindTag K, std::floating_point W, UnitTag U>
+Quantity<K, P, U> positive_thermodynamic_parameter(Quantity<K, W, U> value, const char* name)
+{
+    const auto stored = thermodynamic_parameter<P>(value, name);
+    if (!(stored.value() > P(0))) {
+        throw ParameterError(std::format("{} must remain positive after conversion", name));
+    }
+    return stored;
+}
+
 // Fills entry i of the model and of the species data from one species, after
 // the model's reference temperature is set. Throws ParameterError.
 template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
@@ -137,20 +158,33 @@ void fill_thermally_perfect_species(ThermallyPerfectMixture<P, U, N, S>& model,
     }
     check_species_metadata(input.metadata, input.charge);
     const P tau = scale_factor<kind::temperature>(scales);
-    const auto gas_constant =
-      static_cast<P>(constants::universal_gas_constant<double> / input.molar_mass);
-    const auto mass = static_cast<P>(input.molar_mass / constants::avogadro<double>);
-    const auto charge = static_cast<P>(input.charge * constants::elementary_charge<double>);
-    model.gas_constant[i] = convert<U>(SpecificGasConstant<P, si> {gas_constant}, scales);
+    const auto molar_mass = static_cast<long double>(input.molar_mass);
+    const SpecificGasConstant<long double, si> gas_constant {
+      constants::universal_gas_constant<long double> / molar_mass};
+    const ParticleMass<long double, si> mass {molar_mass / constants::avogadro<long double>};
+    const Charge<long double, si> charge {static_cast<long double>(input.charge) *
+                                          constants::elementary_charge<long double>};
+    model.gas_constant[i] =
+      positive_thermodynamic_parameter<P>(convert<U>(gas_constant, scales), "stored gas constant");
+    species.mass[i] =
+      positive_thermodynamic_parameter<P>(convert<U>(mass, scales), "stored particle mass");
+    species.charge[i] = thermodynamic_parameter<P>(convert<U>(charge, scales), "stored charge");
+    if (input.charge != 0.0 && species.charge[i].value() == P(0)) {
+        throw ParameterError("nonzero charge rounds to zero in the model's units");
+    }
     model.curve[i] = make_nasa9_curve(input.fit, tau);
-    species.mass[i] = convert<U>(ParticleMass<P, si> {mass}, scales);
-    species.charge[i] = convert<U>(Charge<P, si> {charge}, scales);
 
     const P t_ref = model.reference_temperature.value();
     const Nasa9CpH<P> ref = nasa9_cp_h(model.curve[i], t_ref, std::log(t_ref));
     const P r = model.gas_constant[i].value();
-    model.reference_energy[i] = SpecificEnergy<P, U> {r * (ref.h_over_r - t_ref)};
-    model.reference_cv[i] = SpecificHeat<P, U> {r * (ref.cp_over_r - P(1))};
+    static_cast<void>(positive_thermodynamic_parameter<P>(SpecificHeat<P, U> {r * ref.cp_over_r},
+                                                          "reference isobaric specific heat"));
+    model.reference_energy[i] =
+      thermodynamic_parameter<P>(SpecificEnergy<P, U> {r * (ref.h_over_r - t_ref)},
+                                 "reference specific energy");
+    model.reference_cv[i] =
+      positive_thermodynamic_parameter<P>(SpecificHeat<P, U> {r * (ref.cp_over_r - P(1))},
+                                          "reference isochoric specific heat");
 }
 
 }  // namespace detail
@@ -166,7 +200,10 @@ void fill_thermally_perfect_species(ThermallyPerfectMixture<P, U, N, S>& model,
 // distinct element identifiers and positive element counts. A free electron
 // requires charge -1 and empty composition when supplied. At most one species
 // may have the electron role. Names must be non-null and nonempty; a name
-// error gives the species index.
+// error gives the species index. Stored masses, gas constants and reference
+// cp/cv must be finite and positive; reference energies must be finite. Nonzero
+// charges must remain nonzero and finite in the model's units. Default
+// temperatures and bracket width must remain finite and positive after conversion.
 template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
     requires(N > 0 && S > 0)
 Built<ThermallyPerfectMixture<P, U, N, S>, SpeciesData<P, U, N>>
@@ -177,10 +214,18 @@ Built<ThermallyPerfectMixture<P, U, N, S>, SpeciesData<P, U, N>>
     auto& model = built.model;
     model.n = static_cast<int>(N);
     built.species.n = static_cast<int>(N);
-    model.reference_temperature = convert<U>(Temperature<P, si> {P(298.15)}, scales);
-    model.temperature_min = convert<U>(Temperature<P, si> {P(10)}, scales);
-    model.temperature_max = convert<U>(Temperature<P, si> {P(100000)}, scales);
-    model.bracket_width = convert<U>(Temperature<P, si> {P(1000)}, scales);
+    model.reference_temperature = detail::positive_thermodynamic_parameter<P>(
+      convert<U>(Temperature<long double, si> {298.15L}, scales),
+      "reference temperature");
+    model.temperature_min = detail::positive_thermodynamic_parameter<P>(
+      convert<U>(Temperature<long double, si> {10}, scales),
+      "minimum temperature");
+    model.temperature_max = detail::positive_thermodynamic_parameter<P>(
+      convert<U>(Temperature<long double, si> {100000}, scales),
+      "maximum temperature");
+    model.bracket_width = detail::positive_thermodynamic_parameter<P>(
+      convert<U>(Temperature<long double, si> {1000}, scales),
+      "temperature bracket width");
     model.relative_tolerance = P(1.0e-10);
     model.max_iterations = 30;
     bool has_electron = false;

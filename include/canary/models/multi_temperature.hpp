@@ -938,6 +938,8 @@ void fill_mode_components(MultiTemperatureMixture<P, U, N, M, S, L>& model,
 //   non-negative; the first level temperature is not 0; a degeneracy is not
 //   positive; a converted temperature is nonfinite or a positive input rounds
 //   to zero; a stored reference electronic energy is nonfinite or negative;
+// - a stored translational/rotational cp is nonfinite or nonpositive, or
+//   a stored reference formation enthalpy is nonfinite;
 // - a mode has a component count not in [1, C]; a component names an
 //   unknown species; it is vibration of an atom (d_i = 0) or a free electron,
 //   electronic of a free electron, electron of a heavy species, or not one of
@@ -979,9 +981,18 @@ Built<MultiTemperatureMixture<P, U, N, M, S, L>, SpeciesData<P, U, N>>
     for (const SpeciesIndex i : species_indices(0, N)) {
         const P r = single.model.gas_constant[i.value()].value();
         const auto d = static_cast<P>(rotational_degrees[i.value()]);
-        model.translational_rotational_cp[i.value()] = SpecificHeat<P, U> {((P(5) + d) / P(2)) * r};
-        model.formation_enthalpy[i.value()] = SpecificEnthalpy<P, U> {
-          r * nasa9_cp_h(single.model.curve[i.value()], t_ref, ln_t_ref).h_over_r};
+        try {
+            model.translational_rotational_cp[i.value()] =
+              detail::positive_thermodynamic_parameter<P>(
+                SpecificHeat<P, U> {((P(5) + d) / P(2)) * r},
+                "translational/rotational specific heat");
+            model.formation_enthalpy[i.value()] = detail::thermodynamic_parameter<P>(
+              SpecificEnthalpy<P, U> {
+                r * nasa9_cp_h(single.model.curve[i.value()], t_ref, ln_t_ref).h_over_r},
+              "reference formation enthalpy");
+        } catch (const ParameterError& error) {
+            throw ParameterError(std::format("species {}: {}", names[i.value()], error.what()));
+        }
     }
 
     std::array<bool, N> has_levels {};

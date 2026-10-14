@@ -676,6 +676,57 @@ void test_multi_temperature()
           }
       };
 
+    "multi-temperature construction validates stored heat capacity and formation enthalpy"_test =
+      [] {
+          const auto check = []<typename V> {
+              const std::array<canary::Nasa9Species<1>, 1> species {{{
+                .name = "test",
+                .molar_mass = 0.028,
+                .charge = 0,
+                .metadata = {.role = canary::SpeciesRole::heavy},
+                .fit = {.segments = 1,
+                        .breaks = {200, 20000},
+                        .blends = {},
+                        .a = {{{0, 0, 1.5, 0, 0, 0, 0, -0.5 * 298.15, 0}}}},
+              }}};
+              const std::array<int, 1> rotations {0};
+              const std::array<canary::ElectronicLevelsInput<1>, 0> levels {};
+              const std::array<canary::EnergyModeInput<1>, 1> modes {{{
+                .count = 1,
+                .components = {{{.species = "test",
+                                 .component = canary::ModeComponent::electronic}}},
+              }}};
+              const V mass = V(species[0].molar_mass / canary::constants::avogadro<double>);
+              const auto build = [&](V divisor) {
+                  const canary::UnitScales<V, scaled> scales {
+                    {.mass = (std::numeric_limits<V>::max() / divisor) * mass,
+                     .density = V(1),
+                     .temperature = V(1),
+                     .length = V(1)}};
+                  return canary::make_multi_temperature_mixture(species,
+                                                                rotations,
+                                                                levels,
+                                                                modes,
+                                                                scales);
+              };
+              for (const auto& [divisor, reason] : std::array {
+                     std::pair {V(2), "species test: translational/rotational specific heat"},
+                     std::pair {V(100), "species test: reference formation enthalpy"}}) {
+                  bool rejected = false;
+                  try {
+                      static_cast<void>(build(divisor));
+                  } catch (const canary::ParameterError& error) {
+                      rejected = true;
+                      expect(std::string_view(error.what()).starts_with(reason)) << error.what();
+                  }
+                  expect(rejected) << reason;
+              }
+              expect(nothrow([&] { static_cast<void>(build(V(10000))); }));
+          };
+          check.template operator()<float>();
+          check.template operator()<double>();
+      };
+
     "multi-temperature construction rejects reference electronic energy overflow"_test = [] {
         const auto check = []<typename T>(T mass_scale) {
             const canary::UnitScales<T, scaled> scales {

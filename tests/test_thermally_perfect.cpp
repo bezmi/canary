@@ -85,6 +85,135 @@ void test_thermally_perfect()
     const auto built = canary::make_air5<double>(canary::UnitScales<double, si> {});
     const Air& gas = built.model;
 
+    "thermally perfect construction validates stored species and reference parameters"_test = [] {
+        const auto check = []<typename V> {
+            const std::array<canary::Nasa9Species<1>, 1> good {{{
+              .name = "test",
+              .molar_mass = 0.028,
+              .charge = 0,
+              .metadata = {.role = canary::SpeciesRole::heavy},
+              .fit = {.segments = 1,
+                      .breaks = {200, 20000},
+                      .blends = {},
+                      .a = {{{0, 0, 3, 0, 0, 0, 0, 0, 0}}}},
+            }}};
+            const auto rejects =
+              [](const auto& inputs, const auto& scales, std::string_view reason) {
+                  bool rejected = false;
+                  try {
+                      static_cast<void>(canary::make_thermally_perfect_mixture(inputs, scales));
+                  } catch (const canary::ParameterError& error) {
+                      rejected = true;
+                      const std::string_view message {error.what()};
+                      expect(message.starts_with("species test: ")) << message;
+                      expect(message.find(reason) != std::string_view::npos) << message << reason;
+                  }
+                  expect(rejected) << reason;
+              };
+            const canary::UnitScales<V, si> si_scales {};
+            auto inputs = good;
+            inputs[0].molar_mass = std::numeric_limits<double>::denorm_min();
+            rejects(inputs, si_scales, "stored gas constant");
+            inputs[0].molar_mass = std::same_as<V, float> ? 1.0e-30 : 1.0e-301;
+            rejects(inputs, si_scales, "stored particle mass");
+            inputs = good;
+            inputs[0].charge = std::numeric_limits<double>::denorm_min();
+            rejects(inputs, si_scales, "nonzero charge rounds to zero");
+            if constexpr (std::same_as<V, float>) {
+                inputs[0].charge = 1.0e60;
+                rejects(inputs, si_scales, "stored charge");
+            }
+            const canary::UnitScales<V, scaled> large_mass {
+              {.mass = V(1), .density = V(1), .temperature = V(1), .length = V(1)}};
+            inputs = good;
+            if constexpr (std::same_as<V, float>) {
+                inputs[0].molar_mass = 1.0e64;
+                rejects(inputs, large_mass, "stored particle mass");
+            }
+            inputs[0].molar_mass = std::numeric_limits<double>::max();
+            const canary::UnitScales<V, scaled> small_mass {{.mass = std::numeric_limits<V>::min(),
+                                                             .density = V(1),
+                                                             .temperature = V(1),
+                                                             .length = V(1)}};
+            rejects(inputs, small_mass, "stored gas constant");
+
+            // A one-kilogram particle makes the scaled gas constant equal the mass scale.
+            inputs = good;
+            inputs[0].molar_mass = canary::constants::avogadro<double>;
+            inputs[0].fit.a[0][2] = std::nextafter(V(1), V(2));
+            const canary::UnitScales<V, scaled> small_capacity {
+              {.mass = V(1.25) / std::numeric_limits<V>::max(),
+               .density = V(1),
+               .temperature = V(1),
+               .length = V(1)}};
+            rejects(inputs, small_capacity, "reference isochoric specific heat");
+
+            inputs = good;
+            const V particle_mass = V(inputs[0].molar_mass / canary::constants::avogadro<double>);
+            const canary::UnitScales<V, scaled> large_capacity {
+              {.mass = (std::numeric_limits<V>::max() / V(2)) * particle_mass,
+               .density = V(1),
+               .temperature = V(1),
+               .length = V(1)}};
+            rejects(inputs, large_capacity, "reference isobaric specific heat");
+            const canary::UnitScales<V, scaled> large_energy {
+              {.mass = (std::numeric_limits<V>::max() / V(100)) * particle_mass,
+               .density = V(1),
+               .temperature = V(1),
+               .length = V(1)}};
+            rejects(inputs, large_energy, "reference specific energy");
+            const canary::UnitScales<V, scaled> small_temperature {
+              {.mass = particle_mass,
+               .density = V(1),
+               .temperature = std::numeric_limits<V>::min(),
+               .length = V(1)}};
+            bool rejected = false;
+            try {
+                static_cast<void>(canary::make_thermally_perfect_mixture(good, small_temperature));
+            } catch (const canary::ParameterError& error) {
+                rejected = true;
+                expect(std::string_view(error.what()).starts_with("reference temperature"))
+                  << error.what();
+            }
+            expect(rejected);
+        };
+        check.template operator()<float>();
+        check.template operator()<double>();
+    };
+
+    "thermally perfect construction scales before narrowing species parameters"_test = [] {
+        const auto check = []<typename V>(double molar_mass, V mass_scale, double charge) {
+            const std::array<canary::Nasa9Species<1>, 1> inputs {{{
+              .name = "test",
+              .molar_mass = molar_mass,
+              .charge = charge,
+              .metadata = {.role = canary::SpeciesRole::heavy},
+              .fit = {.segments = 1,
+                      .breaks = {200, 20000},
+                      .blends = {},
+                      .a = {{{0, 0, 3, 0, 0, 0, 0, 0, 0}}}},
+            }}};
+            const canary::UnitScales<V, scaled> scales {
+              {.mass = mass_scale, .density = V(1), .temperature = V(1), .length = V(1)}};
+            const auto built = canary::make_thermally_perfect_mixture(inputs, scales);
+            const long double expected_mass =
+              static_cast<long double>(molar_mass) /
+              (canary::constants::avogadro<long double> * static_cast<long double>(mass_scale));
+            const auto close = [](V actual, long double expected) {
+                return std::abs(static_cast<long double>(actual) - expected) <=
+                       4 * std::numeric_limits<V>::epsilon() * std::abs(expected);
+            };
+            expect(close(built.species.mass[0].value(), expected_mass));
+            expect(close(built.model.gas_constant[0].value(), 1 / expected_mass));
+            expect(built.species.charge[0].value() == V(charge));
+            expect(std::isfinite(built.model.reference_energy[0].value()));
+            expect(std::isfinite(built.model.reference_cv[0].value()));
+            expect(built.model.reference_cv[0].value() > V(0));
+        };
+        check(1.0e-40, 1.0e-30F, 1.0e-30);
+        check(1.0e-310, 1.0e-300, std::numeric_limits<double>::denorm_min());
+    };
+
     "thermally perfect construction validates explicit species metadata"_test = [] {
         const auto check = [](const auto& inputs, std::string_view expected) {
             try {
