@@ -960,6 +960,33 @@ template <std::floating_point P> P finite_parameter(double value, std::string_vi
     return converted;
 }
 
+// A quadratic on [0, maximum_temperature] has its minimum at an endpoint
+// or at its vertex when convex. Widen stored values for the host-side check.
+template <std::floating_point P>
+void check_neutral_cross_section(P a, P b, P c, P maximum_temperature)
+{
+    const long double wa = a;
+    const long double wb = b;
+    const long double wc = c;
+    const long double upper = maximum_temperature;
+    const auto check = [&](long double temperature) {
+        const long double sigma = std::fma(std::fma(wc, temperature, wb), temperature, wa);
+        if (!std::isfinite(sigma) || sigma < 0.0L) {
+            throw ParameterError(
+              std::format("neutral cross-section must be finite and non-negative over its "
+                          "temperature interval, got {} at {}",
+                          sigma,
+                          temperature));
+        }
+    };
+    check(0.0L);
+    check(upper);
+    if (wc > 0.0L && wb < 0.0L) {
+        const long double vertex = (-0.5L * wb) / wc;
+        if (vertex > 0.0L && vertex < upper) { check(vertex); }
+    }
+}
+
 template <std::floating_point P, UnitSystem U, std::size_t N>
 ElectronTranslationPair<P, U>
   make_electron_translation_pair(const ElectronTranslationInput& input,
@@ -991,6 +1018,7 @@ ElectronTranslationPair<P, U>
     const auto c = finite_parameter<double>(input.c, "cross-section coefficient c");
     const auto t_max =
       positive_parameter<double>(input.maximum_temperature, "cross-section maximum temperature");
+    check_neutral_cross_section(a, b, c, t_max);
     pair.a = finite_parameter<P>(a / area, "cross-section coefficient a in the model's units");
     pair.b =
       finite_parameter<P>(b * tau / area, "cross-section coefficient b in the model's units");
@@ -999,6 +1027,7 @@ ElectronTranslationPair<P, U>
     pair.maximum_temperature = Temperature<P, U> {
       positive_parameter<P>(t_max / tau, "cross-section maximum temperature in the model's units"),
     };
+    check_neutral_cross_section(pair.a, pair.b, pair.c, pair.maximum_temperature.value());
     return pair;
 }
 
@@ -1123,8 +1152,9 @@ ElectronImpactIonisationCoupling<P, U>
 // - a name is null or unknown; an electron-translation partner is e-, is
 //   not charged for coulomb or is charged for gnoffo_neutral, or the
 //   cross-section model is unknown;
-// - a gnoffo_neutral coefficient is not finite or its maximum temperature
-//   is not finite and positive;
+// - a gnoffo_neutral coefficient is not finite, its maximum temperature
+//   is not finite and positive, or its quadratic is negative/nonfinite on
+//   [0, maximum_temperature] before or after parameter conversion;
 // - a relaxation-time parameter is not finite or blend_upper <=
 //   blend_lower;
 // - an ionisation's reaction index is outside [0, R), the species named

@@ -4,9 +4,6 @@
 #include <algorithm>
 #include <array>
 #include <boost/ut.hpp>
-#include <cmath>
-#include <concepts>
-#include <cstddef>
 #include <canary/build.hpp>
 #include <canary/data/air11.hpp>
 #include <canary/data/air11_kim_jo.hpp>
@@ -25,6 +22,9 @@
 #include <canary/state.hpp>
 #include <canary/thermo.hpp>
 #include <canary/units.hpp>
+#include <cmath>
+#include <concepts>
+#include <cstddef>
 #include <initializer_list>
 #include <limits>
 #include <mdspan/mdspan.hpp>
@@ -1222,6 +1222,77 @@ void test_multi_temperature_kinetics()
             }
         }
     };
+
+    "multi-temperature kinetics: neutral cross-sections are non-negative throughout the interval"_test =
+      [&] {
+          struct Case {
+              double a;
+              double b;
+              double c;
+              bool valid;
+          };
+          for (const Case value : std::array {
+                 Case {-1.0, 0.0, 0.0, false},
+                 Case {1.0, -1.0, 0.0, false},
+                 Case {0.75, -2.0, 1.0, false},
+                 Case {1.0, -2.0, 1.0, true},
+                 Case {0.0, 0.0, 0.0, true},
+                 Case {0.0, 2.0, -1.0, true},
+                 Case {9.0, -6.0, 1.0, true},
+               }) {
+              auto electrons = canary::air11_kim_jo_exchange_electrons;
+              auto& pair = electrons.electron_translation[0];
+              pair.a = value.a;
+              pair.b = value.b;
+              pair.c = value.c;
+              pair.maximum_temperature = 2.0;
+              const auto message = error_message([&] {
+                  (void)canary::make_multi_temperature_exchange(canary::air11_kim_jo_exchange,
+                                                                electrons,
+                                                                names,
+                                                                built.species,
+                                                                mech,
+                                                                gas,
+                                                                si_scales);
+              });
+              if (value.valid) {
+                  expect(message == "no exception") << message;
+              } else {
+                  expect(message.starts_with("electron-translation pair 0 (N2): neutral "
+                                             "cross-section must be finite and non-negative"))
+                    << message;
+              }
+          }
+      };
+
+    "multi-temperature kinetics: float rounding cannot introduce a negative cross-section minimum"_test =
+      [] {
+          const std::array<std::string_view, 1> pair_names {"N2"};
+          const canary::SpeciesData<float, si, 1> species {
+            .n = 1,
+            .mass = {canary::ParticleMass<float, si> {4.65e-26F}},
+            .charge = {canary::Charge<float, si> {0.0F}}};
+          const double root = 1.0 + 0.75 * std::numeric_limits<float>::epsilon();
+          const canary::ElectronTranslationInput input {
+            .partner = "N2",
+            .cross_section = canary::ElectronCrossSection::gnoffo_neutral,
+            .a = root * root + 1.0e-12,
+            .b = -2.0 * root,
+            .c = 1.0,
+            .maximum_temperature = 2.0};
+          // The input minimum is positive; rounding a and b to float makes it negative.
+          expect(std::fma(-root, root, input.a) > 0.0);
+          expect(std::fma(-0.5 * double(float(input.b)),
+                          0.5 * double(float(input.b)),
+                          double(float(input.a))) < 0.0);
+          expect(error_message([&] {
+                     (void)canary::detail::make_electron_translation_pair(
+                       input,
+                       pair_names,
+                       species,
+                       canary::UnitScales<float, si> {});
+                 }).starts_with("neutral cross-section must be finite and non-negative"));
+      };
 
     "multi-temperature kinetics: the builder rejects invalid input with the entry in the "
     "message"_test = [&] {
