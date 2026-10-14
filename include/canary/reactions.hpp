@@ -1047,6 +1047,137 @@ CANARY_HOST_DEVICE std::array<MassProductionRate<T, U>, N>
                    Temperature<T, U> temp)
 { return detail::mass_production_rates(mech, rates_of_progress(mech, gas, mix, rho, temp)); }
 
+namespace detail
+{
+
+template <> struct InputStorage<ArrheniusInput> {
+    double A {};
+    double n {};
+    double activation_temperature {};
+    double translational_exponent {};
+    OwnedTemperatureLabel other_temperature {};
+    using Scratch = std::tuple<>;
+    InputStorage() = default;
+    explicit InputStorage(const ArrheniusInput& input) :
+        A(input.A), n(input.n), activation_temperature(input.activation_temperature),
+        translational_exponent(input.translational_exponent),
+        other_temperature(input.other_temperature)
+    {
+    }
+    ArrheniusInput borrow([[maybe_unused]] Scratch& scratch) const
+    {
+        return {
+          .A = A,
+          .n = n,
+          .activation_temperature = activation_temperature,
+          .translational_exponent = translational_exponent,
+          .other_temperature = other_temperature.c_str(),
+        };
+    }
+};
+
+template <> struct InputStorage<SpeciesCoefficient> {
+    OwnedSpeciesName name {};
+    double value {};
+    using Scratch = std::tuple<>;
+    InputStorage() = default;
+    explicit InputStorage(const SpeciesCoefficient& input) : name(input.name), value(input.value) {}
+    SpeciesCoefficient borrow([[maybe_unused]] Scratch& scratch) const
+    {
+        return {
+          .name = name.c_str(),
+          .value = value,
+        };
+    }
+};
+
+template <std::size_t K> struct InputStorage<SpeciesCoefficients<K>> {
+    int count {};
+    InputStorage<std::array<SpeciesCoefficient, K>> entries {};
+    using Scratch = std::tuple<typename InputStorage<std::array<SpeciesCoefficient, K>>::Scratch>;
+    InputStorage() = default;
+    explicit InputStorage(const SpeciesCoefficients<K>& input) :
+        count(input.count), entries(input.entries)
+    {
+    }
+    SpeciesCoefficients<K> borrow([[maybe_unused]] Scratch& scratch) const
+    {
+        return {
+          .count = count,
+          .entries = entries.borrow(std::get<0>(scratch)),
+        };
+    }
+};
+
+template <std::size_t K> struct InputStorage<ReactionInput<K>> {
+    OwnedReactionEquation equation {};
+    InputStorage<SpeciesCoefficients<K>> reactants {};
+    InputStorage<SpeciesCoefficients<K>> products {};
+    InputStorage<ArrheniusInput> forward {};
+    BackwardRateModel backward_model {};
+    InputStorage<ArrheniusInput> backward {};
+    bool third_body {};
+    InputStorage<SpeciesCoefficients<K>> efficiencies {};
+    using Scratch = std::tuple<typename InputStorage<SpeciesCoefficients<K>>::Scratch,
+                               typename InputStorage<SpeciesCoefficients<K>>::Scratch,
+                               typename InputStorage<ArrheniusInput>::Scratch,
+                               typename InputStorage<ArrheniusInput>::Scratch,
+                               typename InputStorage<SpeciesCoefficients<K>>::Scratch>;
+    InputStorage() = default;
+    explicit InputStorage(const ReactionInput<K>& input) :
+        equation(input.equation), reactants(input.reactants), products(input.products),
+        forward(input.forward), backward_model(input.backward_model), backward(input.backward),
+        third_body(input.third_body), efficiencies(input.efficiencies)
+    {
+    }
+    ReactionInput<K> borrow([[maybe_unused]] Scratch& scratch) const
+    {
+        return {
+          .equation = equation.c_str(),
+          .reactants = reactants.borrow(std::get<0>(scratch)),
+          .products = products.borrow(std::get<1>(scratch)),
+          .forward = forward.borrow(std::get<2>(scratch)),
+          .backward_model = backward_model,
+          .backward = backward.borrow(std::get<3>(scratch)),
+          .third_body = third_body,
+          .efficiencies = efficiencies.borrow(std::get<4>(scratch)),
+        };
+    }
+};
+
+template <std::size_t R, std::size_t K> struct InputStorage<MechanismInput<R, K>> {
+    double temperature_lower {};
+    double temperature_upper {};
+    InputStorage<std::array<ReactionInput<K>, R>> reactions {};
+    using Scratch = std::tuple<typename InputStorage<std::array<ReactionInput<K>, R>>::Scratch>;
+    InputStorage() = default;
+    explicit InputStorage(const MechanismInput<R, K>& input) :
+        temperature_lower(input.temperature_lower), temperature_upper(input.temperature_upper),
+        reactions(input.reactions)
+    {
+    }
+    MechanismInput<R, K> borrow([[maybe_unused]] Scratch& scratch) const
+    {
+        return {
+          .temperature_lower = temperature_lower,
+          .temperature_upper = temperature_upper,
+          .reactions = reactions.borrow(std::get<0>(scratch)),
+        };
+    }
+};
+
+}  // namespace detail
+
+// Builds from owned and direct inputs, keeping borrowed views inside this call.
+template <typename... Explicit, typename... Inputs>
+    requires detail::HasOwnedInput<Inputs...>
+auto make_reaction_mechanism(const Inputs&... inputs)
+{
+    return detail::with_inputs(
+      [](const auto&... borrowed) { return make_reaction_mechanism<Explicit...>(borrowed...); },
+      inputs...);
+}
+
 }  // namespace canary
 
 #endif  // CANARY_REACTIONS_HPP

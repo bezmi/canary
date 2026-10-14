@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <array>
+#include <canary/build.hpp>
 #include <canary/config.hpp>
 #include <canary/quantity.hpp>
 #include <canary/scalar.hpp>
@@ -19,6 +20,7 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace canary
 {
@@ -453,6 +455,45 @@ template <typename V, Scalar T, UnitSystem U>
 CANARY_HOST_DEVICE constexpr Status composition_status(const V& partial_densities,
                                                        Density<T, U> rho)
 { return detail::composition_status(partial_densities, rho.value()); }
+
+namespace detail
+{
+
+struct OwnedElementCount {
+    OwnedElementName element;
+    unsigned count;
+};
+
+template <> struct InputStorage<SpeciesMetadataView> {
+    SpeciesRole role {};
+    std::optional<std::vector<OwnedElementCount>> elements;
+    using Scratch = std::vector<ElementCount>;
+    InputStorage() = default;
+    explicit InputStorage(const SpeciesMetadataView& input) : role(input.role)
+    {
+        if (input.elements) {
+            elements.emplace();
+            elements->reserve(input.elements->size());
+            for (const ElementCount& item : *input.elements) {
+                elements->push_back({OwnedElementName {item.element}, item.count});
+            }
+        }
+    }
+    SpeciesMetadataView borrow(Scratch& scratch) const
+    {
+        SpeciesMetadataView input {.role = role};
+        if (elements) {
+            scratch.reserve(elements->size());
+            for (const OwnedElementCount& item : *elements) {
+                scratch.push_back({*item.element.value, item.count});
+            }
+            input.elements = std::span<const ElementCount> {scratch};
+        }
+        return input;
+    }
+};
+
+}  // namespace detail
 
 }  // namespace canary
 

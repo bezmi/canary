@@ -644,18 +644,17 @@ template <std::size_t S> Nasa9Data<S> nasa9_data(const ThermoRecord& thermo)
     return data;
 }
 
-// Converted model inputs can contain pointers into file-owned strings.
-// Keep each source file alive and its records unmodified until model
-// construction from those inputs finishes.
+// Converted inputs own their numeric values and all required names/labels.
+// Source files may be modified or destroyed after conversion. Builders accept
+// these owners directly; borrowed views are internal to construction.
 //
 // Model inputs for the named species of file, in the given order, for
-// make_thermally_perfect_mixture. Each name points to the species' key in
-// file, so the result is valid while file exists and its records remain unmodified. Throws
+// make_thermally_perfect_mixture. The result owns its names and data. Throws
 // DatabaseError for a name that file lacks, and ParameterError (with the species name) for a thermo
 // record that nasa9_data rejects.
 template <std::size_t S, std::size_t N>
-std::array<Nasa9Species<S>, N> nasa9_species(const SpeciesFile& file,
-                                             const std::array<std::string_view, N>& names)
+OwnedInput<std::array<Nasa9Species<S>, N>>
+  nasa9_species(const SpeciesFile& file, const std::array<std::string_view, N>& names)
 {
     std::array<Nasa9Species<S>, N> out {};
     for (const SpeciesIndex i : species_indices(0, N)) {
@@ -675,7 +674,7 @@ std::array<Nasa9Species<S>, N> nasa9_species(const SpeciesFile& file,
             throw ParameterError(std::format("species {}: {}", entry->first, error.what()));
         }
     }
-    return out;
+    return OwnedInput {out};
 }
 
 namespace detail
@@ -724,15 +723,15 @@ inline ArrheniusInput arrhenius_input(const RateRecord& rate, std::string_view r
 
 // Model inputs of the R reactions of file, in file order, with at most K
 // species in each list of species coefficients, for
-// make_reaction_mechanism. Names and equations point into file, so the
-// result is valid while file exists and its records remain unmodified. Throws ParameterError when
+// make_reaction_mechanism. The result owns names, equations, temperature labels
+// and numeric data. Throws ParameterError when
 // file does not have R reactions, and (with the reaction index and equation) when a list has more
 // than K species, the forward rate is not an Arrhenius rate with A, n and activation_temperature,
 // or the backward rate is neither such a rate nor "equilibrium" without parameters. The values
 // themselves are checked by make_reaction_mechanism.
 template <std::size_t R, std::size_t K>
     requires(R > 0 && K > 0)
-MechanismInput<R, K> mechanism_input(const ReactionsFile& file)
+OwnedInput<MechanismInput<R, K>> mechanism_input(const ReactionsFile& file)
 {
     if (file.reactions.size() != R) {
         throw ParameterError(
@@ -776,18 +775,18 @@ MechanismInput<R, K> mechanism_input(const ReactionsFile& file)
               std::format("reaction {} ({}): {}", k, record.equation, error.what()));
         }
     }
-    return out;
+    return OwnedInput {out};
 }
 
 // Model inputs of the V vibration-translation pairs and C chemistry-vibration
-// couplings of file, in file order, for make_energy_exchange. Names point
-// into file, so the result is valid while file exists and its records remain unmodified. Throws
+// couplings of file, in file order, for make_energy_exchange. The result owns
+// its names and numeric data. Throws
 // ParameterError when file does not have V pairs and C couplings, and (with the entry's list, index
 // and species) when a model is not "landau_teller", "millikan_white", one of the correction models
 // or "impartial_dissociation" where each is expected. The values themselves are checked by
 // make_energy_exchange.
 template <std::size_t V, std::size_t C>
-EnergyExchangeInput<V, C> energy_exchange_input(const EnergyExchangeFile& file)
+OwnedInput<EnergyExchangeInput<V, C>> energy_exchange_input(const EnergyExchangeFile& file)
 {
     if (file.vibration_translation.size() != V || file.chemistry_vibration.size() != C) {
         throw ParameterError(std::format(
@@ -864,20 +863,19 @@ EnergyExchangeInput<V, C> energy_exchange_input(const EnergyExchangeFile& file)
           .vibrational_temperature = record.vibrational_temperature,
         };
     }
-    return out;
+    return OwnedInput {out};
 }
 
 // Model inputs of the E elastic electron-heavy pairs, VE vibration-electron
 // exchanges and I electron-impact ionisations of file, in file order, for
 // make_multi_temperature_exchange, with the ionisation energies from
-// species. Names point into file, so the result is valid while file exists and its records remain
-// unmodified. Throws ParameterError when the counts differ, a model is not "elastic" with
-// "gnoffo_neutral" (a, b, c and maximum_temperature given) or "coulomb", or "landau_teller" with
-// "candler", or (with the species) when an ionised species has no ionisation_energy in species;
-// DatabaseError when that species is not in species.
+// species. The result owns its names and numeric data. Throws ParameterError when the counts
+// differ, a model is not "elastic" with "gnoffo_neutral" (a, b, c and maximum_temperature given) or
+// "coulomb", or "landau_teller" with "candler", or (with the species) when an ionised species has
+// no ionisation_energy in species; DatabaseError when that species is not in species.
 template <std::size_t E, std::size_t VE, std::size_t I>
-ElectronExchangeInput<E, VE, I> electron_exchange_input(const EnergyExchangeFile& file,
-                                                        const SpeciesFile& species)
+OwnedInput<ElectronExchangeInput<E, VE, I>> electron_exchange_input(const EnergyExchangeFile& file,
+                                                                    const SpeciesFile& species)
 {
     if (file.electron_translation.size() != E || file.vibration_electron.size() != VE ||
         file.electron_impact_ionisation.size() != I) {
@@ -956,7 +954,7 @@ ElectronExchangeInput<E, VE, I> electron_exchange_input(const EnergyExchangeFile
           .ionisation_energy = *found->second.ionisation_energy,
         };
     }
-    return out;
+    return OwnedInput {out};
 }
 
 namespace detail
@@ -991,13 +989,12 @@ TransportCurveInput<S> transport_curve(const TransportCurveRecord& curve, std::s
 }  // namespace detail
 
 // Transport inputs for the named species of file, in the given order, for
-// make_wilke_transport, with at most S segments per curve. Each name points
-// to the species' key in file, so the result is valid while file exists and its records remain
-// unmodified. Throws DatabaseError for a name that file lacks, and ParameterError (with the species
-// name) when a species has no transport record, lacks its viscosity, thermal conductivity or
-// Lennard-Jones record, or has a curve that detail::transport_curve rejects.
+// make_wilke_transport, with at most S segments per curve. The result owns its
+// names and numeric data. Throws DatabaseError for a name that file lacks, and ParameterError (with
+// the species name) when a species has no transport record, lacks its viscosity, thermal
+// conductivity or Lennard-Jones record, or has a curve that detail::transport_curve rejects.
 template <std::size_t S, std::size_t N>
-std::array<SpeciesTransportInput<S>, N>
+OwnedInput<std::array<SpeciesTransportInput<S>, N>>
   species_transport(const SpeciesFile& file, const std::array<std::string_view, N>& names)
 {
     std::array<SpeciesTransportInput<S>, N> out {};
@@ -1028,18 +1025,17 @@ std::array<SpeciesTransportInput<S>, N>
             throw ParameterError(std::format("species {}: {}", entry->first, error.what()));
         }
     }
-    return out;
+    return OwnedInput {out};
 }
 
 // Electronic levels of the named species of file, in the given order, for
 // make_multi_temperature_mixture, with at most L levels each; a species
-// without an electronic_levels record has zero levels. Each name points to
-// the species' key in file, so the result is valid while file exists and its records remain
-// unmodified. Throws DatabaseError for a name that file lacks, and ParameterError (with the species
-// name) when a species has more than L levels or different numbers of degeneracies and
+// without an electronic_levels record has zero levels. The result owns its
+// names and numeric data. Throws DatabaseError for a name that file lacks, and ParameterError (with
+// the species name) when a species has more than L levels or different numbers of degeneracies and
 // temperatures. The values themselves are checked by make_multi_temperature_mixture.
 template <std::size_t L, std::size_t N>
-std::array<ElectronicLevelsInput<L>, N>
+OwnedInput<std::array<ElectronicLevelsInput<L>, N>>
   electronic_levels(const SpeciesFile& file, const std::array<std::string_view, N>& names)
 {
     std::array<ElectronicLevelsInput<L>, N> out {};
@@ -1067,14 +1063,15 @@ std::array<ElectronicLevelsInput<L>, N>
             out[i.value()].temperatures[k] = levels.temperatures[k];
         }
     }
-    return out;
+    return OwnedInput {out};
 }
 
 // Model inputs of the K pairs of file, in file order, for
-// make_gupta_yos_transport. Names point into file, so the result is valid while file exists and its
-// records remain unmodified. Throws ParameterError when file does not have K pairs.
+// make_gupta_yos_transport. The result owns its names and numeric data. Throws ParameterError when
+// file does not have K pairs.
 template <std::size_t K>
-std::array<CollisionPairInput, K> collision_integral_pairs(const CollisionIntegralsFile& file)
+OwnedInput<std::array<CollisionPairInput, K>>
+  collision_integral_pairs(const CollisionIntegralsFile& file)
 {
     if (file.pairs.size() != K) {
         throw ParameterError(
@@ -1093,7 +1090,7 @@ std::array<CollisionPairInput, K> collision_integral_pairs(const CollisionIntegr
           .pi_omega_22 = fit(pair.pi_omega_22),
         };
     }
-    return out;
+    return OwnedInput {out};
 }
 
 }  // namespace canary::database

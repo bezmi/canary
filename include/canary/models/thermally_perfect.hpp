@@ -628,6 +628,48 @@ CANARY_HOST_DEVICE std::array<SpecificHeat<T, U>, N>
     return out;
 }
 
+namespace detail
+{
+
+template <std::size_t S> struct InputStorage<Nasa9Species<S>> {
+    OwnedSpeciesName name {};
+    double molar_mass {};
+    double charge {};
+    InputStorage<SpeciesMetadataView> metadata {};
+    Nasa9Data<S> fit {};
+    using Scratch = std::tuple<typename InputStorage<SpeciesMetadataView>::Scratch>;
+    InputStorage() = default;
+    explicit InputStorage(const Nasa9Species<S>& input) :
+        name(input.name), molar_mass(input.molar_mass), charge(input.charge),
+        metadata(input.metadata), fit(input.fit)
+    {
+    }
+    Nasa9Species<S> borrow([[maybe_unused]] Scratch& scratch) const
+    {
+        return {
+          .name = name.c_str(),
+          .molar_mass = molar_mass,
+          .charge = charge,
+          .metadata = metadata.borrow(std::get<0>(scratch)),
+          .fit = fit,
+        };
+    }
+};
+
+}  // namespace detail
+
+// Builds from owned and direct inputs, keeping borrowed views inside this call.
+template <typename... Explicit, typename... Inputs>
+    requires detail::HasOwnedInput<Inputs...>
+auto make_thermally_perfect_mixture(const Inputs&... inputs)
+{
+    return detail::with_inputs(
+      [](const auto&... borrowed) {
+          return make_thermally_perfect_mixture<Explicit...>(borrowed...);
+      },
+      inputs...);
+}
+
 }  // namespace canary
 
 #endif  // CANARY_MODELS_THERMALLY_PERFECT_HPP

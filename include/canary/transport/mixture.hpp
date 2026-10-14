@@ -1144,6 +1144,77 @@ CANARY_HOST_DEVICE std::array<DiffusionCoefficient<T, U>, N>
       detail::gupta_yos_binary_diffusion(model, state.temp, state.p));
 }
 
+namespace detail
+{
+
+template <std::size_t S> struct InputStorage<SpeciesTransportInput<S>> {
+    OwnedSpeciesName name {};
+    TransportCurveInput<S> viscosity {};
+    TransportCurveInput<S> conductivity {};
+    LennardJonesInput lennard_jones {};
+    using Scratch = std::tuple<>;
+    InputStorage() = default;
+    explicit InputStorage(const SpeciesTransportInput<S>& input) :
+        name(input.name), viscosity(input.viscosity), conductivity(input.conductivity),
+        lennard_jones(input.lennard_jones)
+    {
+    }
+    SpeciesTransportInput<S> borrow([[maybe_unused]] Scratch& scratch) const
+    {
+        return {
+          .name = name.c_str(),
+          .viscosity = viscosity,
+          .conductivity = conductivity,
+          .lennard_jones = lennard_jones,
+        };
+    }
+};
+
+template <> struct InputStorage<CollisionPairInput> {
+    OwnedSpeciesName first {};
+    OwnedSpeciesName second {};
+    CollisionFitInput pi_omega_11 {};
+    CollisionFitInput pi_omega_22 {};
+    using Scratch = std::tuple<>;
+    InputStorage() = default;
+    explicit InputStorage(const CollisionPairInput& input) :
+        first(input.first), second(input.second), pi_omega_11(input.pi_omega_11),
+        pi_omega_22(input.pi_omega_22)
+    {
+    }
+    CollisionPairInput borrow([[maybe_unused]] Scratch& scratch) const
+    {
+        return {
+          .first = first.c_str(),
+          .second = second.c_str(),
+          .pi_omega_11 = pi_omega_11,
+          .pi_omega_22 = pi_omega_22,
+        };
+    }
+};
+
+}  // namespace detail
+
+// Builds from owned and direct inputs, keeping borrowed views inside this call.
+template <typename... Explicit, typename... Inputs>
+    requires detail::HasOwnedInput<Inputs...>
+auto make_wilke_transport(const Inputs&... inputs)
+{
+    return detail::with_inputs(
+      [](const auto&... borrowed) { return make_wilke_transport<Explicit...>(borrowed...); },
+      inputs...);
+}
+
+// Builds from owned and direct inputs, keeping borrowed views inside this call.
+template <typename... Explicit, typename... Inputs>
+    requires detail::HasOwnedInput<Inputs...>
+auto make_gupta_yos_transport(const Inputs&... inputs)
+{
+    return detail::with_inputs(
+      [](const auto&... borrowed) { return make_gupta_yos_transport<Explicit...>(borrowed...); },
+      inputs...);
+}
+
 }  // namespace canary
 
 #endif  // CANARY_TRANSPORT_MIXTURE_HPP

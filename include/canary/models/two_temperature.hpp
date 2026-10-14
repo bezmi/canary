@@ -739,6 +739,18 @@ CANARY_HOST_DEVICE Properties<T, U> properties(const TwoTemperatureMixture<P, U,
     };
 }
 
+// Builds from owned and direct inputs, keeping borrowed views inside this call.
+template <typename... Explicit, typename... Inputs>
+    requires detail::HasOwnedInput<Inputs...>
+auto make_two_temperature_mixture(const Inputs&... inputs)
+{
+    return detail::with_inputs(
+      [](const auto&... borrowed) {
+          return make_two_temperature_mixture<Explicit...>(borrowed...);
+      },
+      inputs...);
+}
+
 }  // namespace canary
 
 #endif  // CANARY_MODELS_TWO_TEMPERATURE_HPP

@@ -1817,6 +1817,192 @@ CANARY_HOST_DEVICE MultiTemperatureSources<T, U, N, M>
     return out;
 }
 
+namespace detail
+{
+
+template <> struct InputStorage<VibrationTranslationInput> {
+    OwnedSpeciesName species {};
+    OwnedSpeciesName partner {};
+    MillikanWhiteInput millikan_white {};
+    RelaxationCorrectionInput correction {};
+    using Scratch = std::tuple<>;
+    InputStorage() = default;
+    explicit InputStorage(const VibrationTranslationInput& input) :
+        species(input.species), partner(input.partner), millikan_white(input.millikan_white),
+        correction(input.correction)
+    {
+    }
+    VibrationTranslationInput borrow([[maybe_unused]] Scratch& scratch) const
+    {
+        return {
+          .species = species.c_str(),
+          .partner = partner.c_str(),
+          .millikan_white = millikan_white,
+          .correction = correction,
+        };
+    }
+};
+
+template <> struct InputStorage<ChemistryVibrationInput> {
+    int reaction {};
+    OwnedSpeciesName species {};
+    double dissociation_energy {};
+    double vibrational_temperature {};
+    using Scratch = std::tuple<>;
+    InputStorage() = default;
+    explicit InputStorage(const ChemistryVibrationInput& input) :
+        reaction(input.reaction), species(input.species),
+        dissociation_energy(input.dissociation_energy),
+        vibrational_temperature(input.vibrational_temperature)
+    {
+    }
+    ChemistryVibrationInput borrow([[maybe_unused]] Scratch& scratch) const
+    {
+        return {
+          .reaction = reaction,
+          .species = species.c_str(),
+          .dissociation_energy = dissociation_energy,
+          .vibrational_temperature = vibrational_temperature,
+        };
+    }
+};
+
+template <std::size_t V, std::size_t C> struct InputStorage<EnergyExchangeInput<V, C>> {
+    InputStorage<std::array<VibrationTranslationInput, V>> vibration_translation {};
+    InputStorage<std::array<ChemistryVibrationInput, C>> chemistry_vibration {};
+    using Scratch =
+      std::tuple<typename InputStorage<std::array<VibrationTranslationInput, V>>::Scratch,
+                 typename InputStorage<std::array<ChemistryVibrationInput, C>>::Scratch>;
+    InputStorage() = default;
+    explicit InputStorage(const EnergyExchangeInput<V, C>& input) :
+        vibration_translation(input.vibration_translation),
+        chemistry_vibration(input.chemistry_vibration)
+    {
+    }
+    EnergyExchangeInput<V, C> borrow([[maybe_unused]] Scratch& scratch) const
+    {
+        return {
+          .vibration_translation = vibration_translation.borrow(std::get<0>(scratch)),
+          .chemistry_vibration = chemistry_vibration.borrow(std::get<1>(scratch)),
+        };
+    }
+};
+
+template <> struct InputStorage<ElectronTranslationInput> {
+    OwnedSpeciesName partner {};
+    ElectronCrossSection cross_section {};
+    double a {};
+    double b {};
+    double c {};
+    double maximum_temperature {};
+    using Scratch = std::tuple<>;
+    InputStorage() = default;
+    explicit InputStorage(const ElectronTranslationInput& input) :
+        partner(input.partner), cross_section(input.cross_section), a(input.a), b(input.b),
+        c(input.c), maximum_temperature(input.maximum_temperature)
+    {
+    }
+    ElectronTranslationInput borrow([[maybe_unused]] Scratch& scratch) const
+    {
+        return {
+          .partner = partner.c_str(),
+          .cross_section = cross_section,
+          .a = a,
+          .b = b,
+          .c = c,
+          .maximum_temperature = maximum_temperature,
+        };
+    }
+};
+
+template <> struct InputStorage<VibrationElectronInput> {
+    OwnedSpeciesName species {};
+    CandlerFitInput relaxation_time {};
+    using Scratch = std::tuple<>;
+    InputStorage() = default;
+    explicit InputStorage(const VibrationElectronInput& input) :
+        species(input.species), relaxation_time(input.relaxation_time)
+    {
+    }
+    VibrationElectronInput borrow([[maybe_unused]] Scratch& scratch) const
+    {
+        return {
+          .species = species.c_str(),
+          .relaxation_time = relaxation_time,
+        };
+    }
+};
+
+template <> struct InputStorage<ElectronImpactIonisationInput> {
+    int reaction {};
+    OwnedSpeciesName species {};
+    double ionisation_energy {};
+    using Scratch = std::tuple<>;
+    InputStorage() = default;
+    explicit InputStorage(const ElectronImpactIonisationInput& input) :
+        reaction(input.reaction), species(input.species), ionisation_energy(input.ionisation_energy)
+    {
+    }
+    ElectronImpactIonisationInput borrow([[maybe_unused]] Scratch& scratch) const
+    {
+        return {
+          .reaction = reaction,
+          .species = species.c_str(),
+          .ionisation_energy = ionisation_energy,
+        };
+    }
+};
+
+template <std::size_t E, std::size_t VE, std::size_t I>
+struct InputStorage<ElectronExchangeInput<E, VE, I>> {
+    InputStorage<std::array<ElectronTranslationInput, E>> electron_translation {};
+    InputStorage<std::array<VibrationElectronInput, VE>> vibration_electron {};
+    InputStorage<std::array<ElectronImpactIonisationInput, I>> electron_impact_ionisation {};
+    using Scratch =
+      std::tuple<typename InputStorage<std::array<ElectronTranslationInput, E>>::Scratch,
+                 typename InputStorage<std::array<VibrationElectronInput, VE>>::Scratch,
+                 typename InputStorage<std::array<ElectronImpactIonisationInput, I>>::Scratch>;
+    InputStorage() = default;
+    explicit InputStorage(const ElectronExchangeInput<E, VE, I>& input) :
+        electron_translation(input.electron_translation),
+        vibration_electron(input.vibration_electron),
+        electron_impact_ionisation(input.electron_impact_ionisation)
+    {
+    }
+    ElectronExchangeInput<E, VE, I> borrow([[maybe_unused]] Scratch& scratch) const
+    {
+        return {
+          .electron_translation = electron_translation.borrow(std::get<0>(scratch)),
+          .vibration_electron = vibration_electron.borrow(std::get<1>(scratch)),
+          .electron_impact_ionisation = electron_impact_ionisation.borrow(std::get<2>(scratch)),
+        };
+    }
+};
+
+}  // namespace detail
+
+// Builds from owned and direct inputs, keeping borrowed views inside this call.
+template <typename... Explicit, typename... Inputs>
+    requires detail::HasOwnedInput<Inputs...>
+auto make_energy_exchange(const Inputs&... inputs)
+{
+    return detail::with_inputs(
+      [](const auto&... borrowed) { return make_energy_exchange<Explicit...>(borrowed...); },
+      inputs...);
+}
+
+// Builds from owned and direct inputs, keeping borrowed views inside this call.
+template <typename... Explicit, typename... Inputs>
+    requires detail::HasOwnedInput<Inputs...>
+auto make_multi_temperature_exchange(const Inputs&... inputs)
+{
+    return detail::with_inputs(
+      [](const auto&... borrowed) {
+          return make_multi_temperature_exchange<Explicit...>(borrowed...);
+      },
+      inputs...);
+}
+
 }  // namespace canary
 
 #endif  // CANARY_ENERGY_EXCHANGE_HPP

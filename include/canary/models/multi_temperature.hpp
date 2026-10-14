@@ -1895,6 +1895,46 @@ CANARY_HOST_DEVICE ChargeNeutralFractions<typename range_quantity_t<V>::value_ty
     return out;
 }
 
+namespace detail
+{
+
+template <std::size_t L> struct InputStorage<ElectronicLevelsInput<L>> {
+    OwnedSpeciesName name {};
+    int levels {};
+    std::array<int, L> degeneracies {};
+    std::array<double, L> temperatures {};
+    using Scratch = std::tuple<>;
+    InputStorage() = default;
+    explicit InputStorage(const ElectronicLevelsInput<L>& input) :
+        name(input.name), levels(input.levels), degeneracies(input.degeneracies),
+        temperatures(input.temperatures)
+    {
+    }
+    ElectronicLevelsInput<L> borrow([[maybe_unused]] Scratch& scratch) const
+    {
+        return {
+          .name = name.c_str(),
+          .levels = levels,
+          .degeneracies = degeneracies,
+          .temperatures = temperatures,
+        };
+    }
+};
+
+}  // namespace detail
+
+// Builds from owned and direct inputs, keeping borrowed views inside this call.
+template <typename... Explicit, typename... Inputs>
+    requires detail::HasOwnedInput<Inputs...>
+auto make_multi_temperature_mixture(const Inputs&... inputs)
+{
+    return detail::with_inputs(
+      [](const auto&... borrowed) {
+          return make_multi_temperature_mixture<Explicit...>(borrowed...);
+      },
+      inputs...);
+}
+
 }  // namespace canary
 
 #endif  // CANARY_MODELS_MULTI_TEMPERATURE_HPP

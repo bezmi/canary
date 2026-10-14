@@ -37,6 +37,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <type_traits>
 #include <utility>
 
 namespace
@@ -239,6 +240,235 @@ int main()
 {
     using namespace boost::ut;
 
+    "converted owners survive source destruction and value operations"_test = [] {
+        const canary::UnitScales<double, canary::si> scales {};
+        const auto gas5 = canary::make_air5<double>(scales);
+        const auto mechanism5 = canary::make_air5_park(gas5.species, scales);
+        const auto gas11 = canary::make_air11_three_temperature(scales);
+        const auto mechanism11 =
+          canary::make_air11_kim_jo(gas11.species,
+                                    scales,
+                                    canary::Pressure<double, canary::si> {1e5},
+                                    gas11.model);
+        const auto exercise = [](const auto& factory, const auto& consume) {
+            using Owner = decltype(factory());
+            static_assert(std::is_copy_constructible_v<Owner> && std::is_copy_assignable_v<Owner>);
+            static_assert(std::is_move_constructible_v<Owner> && std::is_move_assignable_v<Owner>);
+            consume(factory());
+            const auto copied = [&] {
+                const auto source = factory();
+                return Owner(source);
+            }();
+            consume(copied);
+            auto copy_assigned = factory();
+            {
+                const auto source = factory();
+                copy_assigned = source;
+            }
+            consume(copy_assigned);
+            const auto moved = [&] {
+                auto source = factory();
+                return Owner(std::move(source));
+            }();
+            consume(moved);
+            auto move_assigned = factory();
+            {
+                auto source = factory();
+                move_assigned = std::move(source);
+            }
+            consume(move_assigned);
+        };
+        exercise(
+          [] {
+              auto file = db::read_species_file(air5_path());
+              auto owner = db::nasa9_species<4>(file, air5_names);
+              file.species.clear();
+              return owner;
+          },
+          [&](const auto& owner) {
+              const auto built =
+                canary::make_thermally_perfect_mixture<double, canary::si>(owner, scales);
+              expect(built.species.mass == gas5.species.mass);
+              const auto two = canary::make_two_temperature_mixture(owner,
+                                                                    canary::air5_rotational_degrees,
+                                                                    scales);
+              expect(two.species.mass == gas5.species.mass);
+          });
+        exercise(
+          [] { return db::mechanism_input<40, 11>(db::read_reactions_file(air11_kim_jo_path())); },
+          [&](const auto& owner) {
+              const auto built =
+                canary::make_reaction_mechanism(owner,
+                                                air11_names,
+                                                gas11.species,
+                                                scales,
+                                                canary::Pressure<double, canary::si> {1e5},
+                                                gas11.model);
+              expect(built.reactions[21].reactants == mechanism11.reactions[21].reactants);
+              expect(built.reactions[38].backward.A == mechanism11.reactions[38].backward.A);
+          });
+        exercise(
+          [] {
+              return db::energy_exchange_input<15, 3>(
+                db::read_energy_exchange_file(exchange_path()));
+          },
+          [&](const auto& owner) {
+              const auto built =
+                canary::make_energy_exchange(owner, air5_names, gas5.species, mechanism5, scales);
+              const auto reference =
+                canary::make_air5_park_exchange(gas5.species, mechanism5, scales);
+              expect(built.chemistry_vibration[0].species ==
+                     reference.chemistry_vibration[0].species);
+              expect(built.mass == reference.mass);
+          });
+        exercise(
+          [] { return db::species_transport<3>(db::read_species_file(air5_path()), air5_names); },
+          [&](const auto& owner) {
+              const auto built =
+                canary::make_wilke_transport(owner, air5_names, gas5.species, scales);
+              expect(built.mass == gas5.species.mass);
+          });
+        exercise(
+          [] {
+              return db::collision_integral_pairs<15>(
+                db::read_collision_integrals_file(collision_path()));
+          },
+          [&](const auto& owner) {
+              const auto built = canary::make_gupta_yos_transport(owner,
+                                                                  air5_names,
+                                                                  gas5.species,
+                                                                  canary::air5_rotational_degrees,
+                                                                  scales);
+              expect(built.mass == gas5.species.mass);
+          });
+        exercise(
+          [] { return db::electronic_levels<8>(db::read_species_file(air11_path()), air11_names); },
+          [&](const auto& owner) {
+              const auto species =
+                db::nasa9_species<4>(db::read_species_file(air11_path()), air11_names);
+              const auto built =
+                canary::make_multi_temperature_mixture(species,
+                                                       canary::air11_rotational_degrees,
+                                                       owner,
+                                                       canary::air11_three_temperature_modes,
+                                                       scales);
+              const auto mixed =
+                canary::make_multi_temperature_mixture(canary::air11_species,
+                                                       canary::air11_rotational_degrees,
+                                                       owner,
+                                                       canary::air11_three_temperature_modes,
+                                                       scales);
+              expect(built.species.mass == gas11.species.mass &&
+                     mixed.species.mass == built.species.mass);
+          });
+        exercise(
+          [] {
+              return db::electron_exchange_input<10, 1, 2>(
+                db::read_energy_exchange_file(air11_exchange_path()),
+                db::read_species_file(air11_path()));
+          },
+          [&](const auto& owner) {
+              const auto heavy = db::energy_exchange_input<30, 21>(
+                db::read_energy_exchange_file(air11_exchange_path()));
+              const auto built = canary::make_multi_temperature_exchange(heavy,
+                                                                         owner,
+                                                                         air11_names,
+                                                                         gas11.species,
+                                                                         mechanism11,
+                                                                         gas11.model,
+                                                                         scales);
+              const auto mixed =
+                canary::make_multi_temperature_exchange(canary::air11_kim_jo_exchange,
+                                                        owner,
+                                                        air11_names,
+                                                        gas11.species,
+                                                        mechanism11,
+                                                        gas11.model,
+                                                        scales);
+              expect(built.mass == gas11.species.mass && mixed.mass == built.mass);
+          });
+    };
+
+    "owning species retain names and optional element metadata independently"_test = [] {
+        using Input = std::remove_cv_t<decltype(canary::air5_species)>;
+        using Owner = canary::OwnedInput<Input>;
+        static_assert(!std::is_convertible_v<Owner, Input>);
+        static_assert(!std::is_constructible_v<canary::detail::OwnedSpeciesName,
+                                               canary::detail::OwnedReactionEquation>);
+        static_assert(!std::is_constructible_v<canary::detail::OwnedTemperatureLabel,
+                                               canary::detail::OwnedElementName>);
+        const auto make_owner = [] {
+            std::string name = "nitrogen_species_with_a_long_owned_name";
+            std::string element = "element_identifier_with_a_long_owned_name";
+            std::string short_element = "N";
+            std::array<canary::ElementCount, 2> elements {{{element, 2}, {short_element, 1}}};
+            auto input = canary::air5_species;
+            input[0].name = name.c_str();
+            input[0].metadata.elements = std::span<const canary::ElementCount> {elements};
+            input[1].metadata.elements = std::span<const canary::ElementCount> {};
+            input[2].metadata.elements = std::nullopt;
+            Owner owner {input};
+            name.assign("changed");
+            element.assign("changed");
+            short_element.assign("changed");
+            elements[0].count = 99;
+            input[0].molar_mass = 99;
+            return owner;
+        };
+        const auto copied = [&] {
+            const auto source = make_owner();
+            return Owner(source);
+        }();
+        const auto moved = [&] {
+            auto source = make_owner();
+            return Owner(std::move(source));
+        }();
+        auto copy_assigned = make_owner();
+        {
+            const auto source = make_owner();
+            copy_assigned = source;
+        }
+        auto move_assigned = make_owner();
+        {
+            auto source = make_owner();
+            move_assigned = std::move(source);
+        }
+        for (const auto* owner : {&copied,
+                                  &moved,
+                                  static_cast<const Owner*>(&copy_assigned),
+                                  static_cast<const Owner*>(&move_assigned)}) {
+            canary::detail::with_input(*owner, [&](const auto& input) {
+                expect(std::string_view(input[0].name) ==
+                       "nitrogen_species_with_a_long_owned_name");
+                expect(input[0].molar_mass == canary::air5_species[0].molar_mass);
+                const auto elements = *input[0].metadata.elements;
+                expect(elements.size() == 2_u);
+                expect(elements[0].element == "element_identifier_with_a_long_owned_name" &&
+                       elements[0].count == 2_u);
+                expect(elements[1].element == "N" && elements[1].count == 1_u);
+                expect(input[1].metadata.elements.has_value() &&
+                       input[1].metadata.elements->empty());
+                expect(!input[2].metadata.elements.has_value());
+            });
+            const auto built =
+              canary::make_thermally_perfect_mixture(*owner,
+                                                     canary::UnitScales<double, canary::si> {});
+            expect(built.species.n == 5_u);
+        }
+        auto input = canary::air5_species;
+        input[0].name = nullptr;
+        input[1].name = "";
+        const Owner owner {input};
+        canary::detail::with_input(owner, [&](const auto& borrowed) {
+            expect(borrowed[0].name == nullptr);
+            expect(borrowed[1].name != nullptr && std::string_view(borrowed[1].name).empty());
+        });
+        expect(throws_parameter_error([&] {
+            (void)canary::make_thermally_perfect_mixture(owner,
+                                                         canary::UnitScales<double, canary::si> {});
+        }));
+    };
+
     "temporary directories are distinct and removed after scope exit"_test = [] {
         std::filesystem::path first_path;
         std::filesystem::path second_path;
@@ -406,10 +636,12 @@ int main()
         const auto file = db::read_species_file(air11_path());
         expect(file.species.at("e-").role == canary::SpeciesRole::electron);
         expect(file.species.at("N+").role == canary::SpeciesRole::heavy);
-        const auto input = db::nasa9_species<4>(file, air11_names);
-        for (std::size_t i = 0; i < input.size(); ++i) {
-            expect(input[i].metadata.role == canary::air11_species[i].metadata.role);
-        }
+        const auto input_owner = db::nasa9_species<4>(file, air11_names);
+        canary::detail::with_input(input_owner, [&](const auto& input) {
+            for (std::size_t i = 0; i < input.size(); ++i) {
+                expect(input[i].metadata.role == canary::air11_species[i].metadata.role);
+            }
+        });
     };
 
     "the shipped schema is the schema of the current file structs"_test = [] {
@@ -418,27 +650,29 @@ int main()
 
     "model inputs from the file equal the compiled five-species air data"_test = [] {
         const db::SpeciesFile file = db::read_species_file(air5_path());
-        const auto from_file = db::nasa9_species<4>(file, air5_names);
-        for (std::size_t i = 0; i < 5; ++i) {
-            const auto& a = from_file[i];
-            const auto& b = canary::air5_species[i];
-            expect(std::string_view(a.name) == std::string_view(b.name));
-            expect(a.molar_mass == b.molar_mass && a.charge == b.charge) << b.name;
-            expect(a.metadata.role == b.metadata.role) << b.name;
-            expect(a.fit.segments == b.fit.segments) << b.name;
-            const auto n = static_cast<std::size_t>(b.fit.segments);
-            for (std::size_t k = 0; k <= n; ++k) {
-                expect(a.fit.breaks[k] == b.fit.breaks[k]) << b.name;
-            }
-            for (std::size_t k = 0; k + 1 < n; ++k) {
-                expect(a.fit.blends[k] == b.fit.blends[k]) << b.name;
-            }
-            for (std::size_t j = 0; j < n; ++j) {
-                for (std::size_t k = 0; k < 9; ++k) {
-                    expect(a.fit.a[j][k] == b.fit.a[j][k]) << b.name;
+        const auto from_file_owner = db::nasa9_species<4>(file, air5_names);
+        canary::detail::with_input(from_file_owner, [&](const auto& from_file) {
+            for (std::size_t i = 0; i < 5; ++i) {
+                const auto& a = from_file[i];
+                const auto& b = canary::air5_species[i];
+                expect(std::string_view(a.name) == std::string_view(b.name));
+                expect(a.molar_mass == b.molar_mass && a.charge == b.charge) << b.name;
+                expect(a.metadata.role == b.metadata.role) << b.name;
+                expect(a.fit.segments == b.fit.segments) << b.name;
+                const auto n = static_cast<std::size_t>(b.fit.segments);
+                for (std::size_t k = 0; k <= n; ++k) {
+                    expect(a.fit.breaks[k] == b.fit.breaks[k]) << b.name;
+                }
+                for (std::size_t k = 0; k + 1 < n; ++k) {
+                    expect(a.fit.blends[k] == b.fit.blends[k]) << b.name;
+                }
+                for (std::size_t j = 0; j < n; ++j) {
+                    for (std::size_t k = 0; k < 9; ++k) {
+                        expect(a.fit.a[j][k] == b.fit.a[j][k]) << b.name;
+                    }
                 }
             }
-        }
+        });
     };
 
     "conversion errors name the problem"_test = [] {
@@ -463,47 +697,51 @@ int main()
     // evaluation of the same fits, including the blending regions at 1000 K.
     "cp/R of N2 and O2 equals GDTk's evaluation of the same data"_test = [] {
         const db::SpeciesFile file = db::read_species_file(air5_path());
-        const auto species =
+        const auto species_owner =
           db::nasa9_species<4>(file, std::array<std::string_view, 2> {"N2", "O2"});
-        constexpr std::array temps {300.0, 1000.0, 5000.0, 15000.0};
-        constexpr std::array<std::array<double, 4>, 2> gdtk {
-          {
-            {3.5029350227462328, 3.9324555662029987, 4.5621214841400004, 7.9038660786805508},
-            {3.534485021788023, 4.1953819290074996, 5.1713062458949999, 3.9642060171736162},
-          },
-        };
-        for (std::size_t s = 0; s < 2; ++s) {
-            const auto curve = canary::make_nasa9_curve(species[s].fit, 1.0);
-            for (std::size_t k = 0; k < temps.size(); ++k) {
-                const double cp = cp_over_r(curve, temps[k]);
-                expect(std::abs(cp - gdtk[s][k]) <= 1e-12 * gdtk[s][k])
-                  << species[s].name << temps[k] << cp;
+        canary::detail::with_input(species_owner, [&](const auto& species) {
+            constexpr std::array temps {300.0, 1000.0, 5000.0, 15000.0};
+            constexpr std::array<std::array<double, 4>, 2> gdtk {
+              {
+                {3.5029350227462328, 3.9324555662029987, 4.5621214841400004, 7.9038660786805508},
+                {3.534485021788023, 4.1953819290074996, 5.1713062458949999, 3.9642060171736162},
+              },
+            };
+            for (std::size_t s = 0; s < 2; ++s) {
+                const auto curve = canary::make_nasa9_curve(species[s].fit, 1.0);
+                for (std::size_t k = 0; k < temps.size(); ++k) {
+                    const double cp = cp_over_r(curve, temps[k]);
+                    expect(std::abs(cp - gdtk[s][k]) <= 1e-12 * gdtk[s][k])
+                      << species[s].name << temps[k] << cp;
+                }
             }
-        }
+        });
     };
 
     // NIST-JANAF Cp in J/(mol K). The fits differ from JANAF by up to 0.75 %
     // here (O2 at 5000 K); the tolerance matches the curve tests'.
     "Cp of N2 and O2 agrees with JANAF up to its 6000 K limit"_test = [] {
         const db::SpeciesFile file = db::read_species_file(air5_path());
-        const auto species =
+        const auto species_owner =
           db::nasa9_species<4>(file, std::array<std::string_view, 2> {"N2", "O2"});
-        constexpr std::array temps {300.0, 1000.0, 5000.0, 6000.0};
-        constexpr std::array<std::array<double, 4>, 2> janaf {
-          {
-            {29.125, 32.697, 37.912, 38.276},
-            {29.385, 34.870, 42.675, 44.387},
-          },
-        };
-        const double r_u = canary::constants::universal_gas_constant<double>;
-        for (std::size_t s = 0; s < 2; ++s) {
-            const auto curve = canary::make_nasa9_curve(species[s].fit, 1.0);
-            for (std::size_t k = 0; k < temps.size(); ++k) {
-                const double cp = r_u * cp_over_r(curve, temps[k]);
-                expect(std::abs(cp - janaf[s][k]) <= 1.5e-2 * janaf[s][k])
-                  << species[s].name << temps[k] << cp;
+        canary::detail::with_input(species_owner, [&](const auto& species) {
+            constexpr std::array temps {300.0, 1000.0, 5000.0, 6000.0};
+            constexpr std::array<std::array<double, 4>, 2> janaf {
+              {
+                {29.125, 32.697, 37.912, 38.276},
+                {29.385, 34.870, 42.675, 44.387},
+              },
+            };
+            const double r_u = canary::constants::universal_gas_constant<double>;
+            for (std::size_t s = 0; s < 2; ++s) {
+                const auto curve = canary::make_nasa9_curve(species[s].fit, 1.0);
+                for (std::size_t k = 0; k < temps.size(); ++k) {
+                    const double cp = r_u * cp_over_r(curve, temps[k]);
+                    expect(std::abs(cp - janaf[s][k]) <= 1.5e-2 * janaf[s][k])
+                      << species[s].name << temps[k] << cp;
+                }
             }
-        }
+        });
     };
 
     "the shipped Kim-Jo file reads with its 13 reactions"_test = [] {
@@ -577,40 +815,42 @@ int main()
 
     "model inputs from the Kim-Jo file equal the compiled data"_test = [] {
         const db::ReactionsFile file = db::read_reactions_file(kim_jo_path());
-        const auto input = db::mechanism_input<13, 5>(file);
-        const auto& compiled = canary::air5_kim_jo;
-        expect(input.temperature_lower == compiled.temperature_lower);
-        expect(input.temperature_upper == compiled.temperature_upper);
-        for (std::size_t k = 0; k < 13; ++k) {
-            const auto& a = input.reactions[k];
-            const auto& b = compiled.reactions[k];
-            expect(std::string_view(a.equation) == b.equation) << k;
-            expect(same_coefficients(a.reactants, b.reactants)) << k;
-            expect(same_coefficients(a.products, b.products)) << k;
-            expect(same_rate(a.forward, b.forward)) << k;
-            expect(a.backward_model == b.backward_model) << k;
-            expect(same_rate(a.backward, b.backward)) << k;
-            expect(a.third_body == b.third_body) << k;
-            expect(same_coefficients(a.efficiencies, b.efficiencies)) << k;
-        }
-        // The mechanism built from the file is the compiled one.
-        const canary::UnitScales<double, canary::si> scales {};
-        const auto built = canary::make_air5<double>(scales);
-        const auto from_file =
-          canary::make_reaction_mechanism(input, air5_names, built.species, scales);
-        const auto from_header = canary::make_air5_kim_jo(built.species, scales);
-        for (std::size_t k = 0; k < 13; ++k) {
-            const auto& a = from_file.reactions[k];
-            const auto& b = from_header.reactions[k];
-            expect(a.reactants == b.reactants && a.products == b.products &&
-                   a.coefficient_change == b.coefficient_change)
-              << k;
-            expect(a.forward.A == b.forward.A && a.forward.n == b.forward.n &&
-                   a.forward.activation_temperature == b.forward.activation_temperature)
-              << k;
-            expect(a.backward_model == b.backward_model && a.third_body == b.third_body) << k;
-            expect(a.efficiencies == b.efficiencies) << k;
-        }
+        const auto input_owner = db::mechanism_input<13, 5>(file);
+        canary::detail::with_input(input_owner, [&](const auto& input) {
+            const auto& compiled = canary::air5_kim_jo;
+            expect(input.temperature_lower == compiled.temperature_lower);
+            expect(input.temperature_upper == compiled.temperature_upper);
+            for (std::size_t k = 0; k < 13; ++k) {
+                const auto& a = input.reactions[k];
+                const auto& b = compiled.reactions[k];
+                expect(std::string_view(a.equation) == b.equation) << k;
+                expect(same_coefficients(a.reactants, b.reactants)) << k;
+                expect(same_coefficients(a.products, b.products)) << k;
+                expect(same_rate(a.forward, b.forward)) << k;
+                expect(a.backward_model == b.backward_model) << k;
+                expect(same_rate(a.backward, b.backward)) << k;
+                expect(a.third_body == b.third_body) << k;
+                expect(same_coefficients(a.efficiencies, b.efficiencies)) << k;
+            }
+            // The mechanism built from the file is the compiled one.
+            const canary::UnitScales<double, canary::si> scales {};
+            const auto built = canary::make_air5<double>(scales);
+            const auto from_file =
+              canary::make_reaction_mechanism(input, air5_names, built.species, scales);
+            const auto from_header = canary::make_air5_kim_jo(built.species, scales);
+            for (std::size_t k = 0; k < 13; ++k) {
+                const auto& a = from_file.reactions[k];
+                const auto& b = from_header.reactions[k];
+                expect(a.reactants == b.reactants && a.products == b.products &&
+                       a.coefficient_change == b.coefficient_change)
+                  << k;
+                expect(a.forward.A == b.forward.A && a.forward.n == b.forward.n &&
+                       a.forward.activation_temperature == b.forward.activation_temperature)
+                  << k;
+                expect(a.backward_model == b.backward_model && a.third_body == b.third_body) << k;
+                expect(a.efficiencies == b.efficiencies) << k;
+            }
+        });
     };
 
     "reactions conversion errors name the reaction and the problem"_test = [] {
@@ -643,18 +883,23 @@ int main()
         // Values are checked by the builder.
         changed = file;
         changed.reactions[8].reactants = {{"N2", 1.0}, {"Ar", 1.0}};
-        const auto input = db::mechanism_input<13, 5>(changed);
-        const canary::UnitScales<double, canary::si> scales {};
-        const auto built = canary::make_air5<double>(scales);
-        expect(throws_parameter_error([&] {
-            (void)canary::make_reaction_mechanism(input, air5_names, built.species, scales);
-        }));
-        changed = file;
-        changed.reactions[8].forward.A = -1.0;
-        const auto negative = db::mechanism_input<13, 5>(changed);
-        expect(throws_parameter_error([&] {
-            (void)canary::make_reaction_mechanism(negative, air5_names, built.species, scales);
-        }));
+        const auto input_owner = db::mechanism_input<13, 5>(changed);
+        canary::detail::with_input(input_owner, [&](const auto& input) {
+            const canary::UnitScales<double, canary::si> scales {};
+            const auto built = canary::make_air5<double>(scales);
+            expect(throws_parameter_error([&] {
+                (void)canary::make_reaction_mechanism(input, air5_names, built.species, scales);
+            }));
+            changed = file;
+            changed.reactions[8].forward.A = -1.0;
+            const auto negative_owner = db::mechanism_input<13, 5>(changed);
+            canary::detail::with_input(negative_owner, [&](const auto& negative) {
+                expect(throws_parameter_error([&] {
+                    (void)
+                      canary::make_reaction_mechanism(negative, air5_names, built.species, scales);
+                }));
+            });
+        });
     };
 
     "model inputs from the Park file equal the compiled data, with translational exponents"_test =
@@ -662,25 +907,27 @@ int main()
           const db::ReactionsFile file = db::read_reactions_file(park_path());
           expect(file.reactions[0].forward.translational_exponent == 0.5);
           expect(!file.reactions[3].forward.translational_exponent.has_value());
-          const auto input = db::mechanism_input<5, 5>(file);
-          const auto& compiled = canary::air5_park;
-          expect(input.temperature_lower == compiled.temperature_lower);
-          expect(input.temperature_upper == compiled.temperature_upper);
-          for (std::size_t k = 0; k < 5; ++k) {
-              const auto& a = input.reactions[k];
-              const auto& b = compiled.reactions[k];
-              expect(std::string_view(a.equation) == b.equation) << k;
-              expect(same_coefficients(a.reactants, b.reactants)) << k;
-              expect(same_coefficients(a.products, b.products)) << k;
-              expect(same_rate(a.forward, b.forward)) << k;
-              expect(a.backward_model == b.backward_model) << k;
-              expect(a.third_body == b.third_body) << k;
-              expect(same_coefficients(a.efficiencies, b.efficiencies)) << k;
-          }
-          expect(input.reactions[0].forward.translational_exponent == 0.5);
-          expect(input.reactions[3].forward.translational_exponent == 1.0);
-          // The exponent survives writing and reading.
-          expect(db::parse_reactions(db::write_reactions(file)) == file);
+          const auto input_owner = db::mechanism_input<5, 5>(file);
+          canary::detail::with_input(input_owner, [&](const auto& input) {
+              const auto& compiled = canary::air5_park;
+              expect(input.temperature_lower == compiled.temperature_lower);
+              expect(input.temperature_upper == compiled.temperature_upper);
+              for (std::size_t k = 0; k < 5; ++k) {
+                  const auto& a = input.reactions[k];
+                  const auto& b = compiled.reactions[k];
+                  expect(std::string_view(a.equation) == b.equation) << k;
+                  expect(same_coefficients(a.reactants, b.reactants)) << k;
+                  expect(same_coefficients(a.products, b.products)) << k;
+                  expect(same_rate(a.forward, b.forward)) << k;
+                  expect(a.backward_model == b.backward_model) << k;
+                  expect(a.third_body == b.third_body) << k;
+                  expect(same_coefficients(a.efficiencies, b.efficiencies)) << k;
+              }
+              expect(input.reactions[0].forward.translational_exponent == 0.5);
+              expect(input.reactions[3].forward.translational_exponent == 1.0);
+              // The exponent survives writing and reading.
+              expect(db::parse_reactions(db::write_reactions(file)) == file);
+          });
       };
 
     "an equilibrium backward rate with a translational exponent is an error"_test = [] {
@@ -757,33 +1004,35 @@ int main()
 
     "model inputs from the energy-exchange file equal the compiled data"_test = [] {
         const db::EnergyExchangeFile file = db::read_energy_exchange_file(exchange_path());
-        const auto input = db::energy_exchange_input<15, 3>(file);
-        const auto& compiled = canary::air5_park_exchange;
-        for (std::size_t k = 0; k < 15; ++k) {
-            const auto& a = input.vibration_translation[k];
-            const auto& b = compiled.vibration_translation[k];
-            expect(std::string_view(a.species) == b.species &&
-                   std::string_view(a.partner) == b.partner)
-              << k;
-            expect(a.millikan_white.a == b.millikan_white.a &&
-                   a.millikan_white.b == b.millikan_white.b)
-              << k;
-            expect(same_correction(a.correction, b.correction)) << k;
-        }
-        for (std::size_t k = 0; k < 3; ++k) {
-            const auto& a = input.chemistry_vibration[k];
-            const auto& b = compiled.chemistry_vibration[k];
-            expect(a.reaction == b.reaction && std::string_view(a.species) == b.species) << k;
-            expect(a.dissociation_energy == b.dissociation_energy &&
-                   a.vibrational_temperature == b.vibrational_temperature)
-              << k;
-        }
-        // The energy exchange built from the file builds like the compiled one.
-        const canary::UnitScales<double, canary::si> scales {};
-        const auto built = canary::make_air5<double>(scales);
-        const auto mechanism = canary::make_air5_park(built.species, scales);
-        (void)canary::make_energy_exchange(input, air5_names, built.species, mechanism, scales);
-        (void)canary::make_air5_park_exchange(built.species, mechanism, scales);
+        const auto input_owner = db::energy_exchange_input<15, 3>(file);
+        canary::detail::with_input(input_owner, [&](const auto& input) {
+            const auto& compiled = canary::air5_park_exchange;
+            for (std::size_t k = 0; k < 15; ++k) {
+                const auto& a = input.vibration_translation[k];
+                const auto& b = compiled.vibration_translation[k];
+                expect(std::string_view(a.species) == b.species &&
+                       std::string_view(a.partner) == b.partner)
+                  << k;
+                expect(a.millikan_white.a == b.millikan_white.a &&
+                       a.millikan_white.b == b.millikan_white.b)
+                  << k;
+                expect(same_correction(a.correction, b.correction)) << k;
+            }
+            for (std::size_t k = 0; k < 3; ++k) {
+                const auto& a = input.chemistry_vibration[k];
+                const auto& b = compiled.chemistry_vibration[k];
+                expect(a.reaction == b.reaction && std::string_view(a.species) == b.species) << k;
+                expect(a.dissociation_energy == b.dissociation_energy &&
+                       a.vibrational_temperature == b.vibrational_temperature)
+                  << k;
+            }
+            // The energy exchange built from the file builds like the compiled one.
+            const canary::UnitScales<double, canary::si> scales {};
+            const auto built = canary::make_air5<double>(scales);
+            const auto mechanism = canary::make_air5_park(built.species, scales);
+            (void)canary::make_energy_exchange(input, air5_names, built.species, mechanism, scales);
+            (void)canary::make_air5_park_exchange(built.species, mechanism, scales);
+        });
     };
 
     "energy-exchange corrections require only their model-specific fields"_test = [] {
@@ -802,10 +1051,12 @@ int main()
                                    (model == "kim_2021" && fields == 2);
                 if (valid) {
                     const auto parsed = db::parse_energy_exchange(db::write_energy_exchange(file));
-                    const auto input = db::energy_exchange_input<15, 3>(parsed);
-                    expect(input.vibration_translation[0].correction.reference_temperature ==
-                           correction.reference_temperature.value_or(0.0));
-                    expect(input.vibration_translation[0].correction.exponent == 0.0);
+                    const auto input_owner = db::energy_exchange_input<15, 3>(parsed);
+                    canary::detail::with_input(input_owner, [&](const auto& input) {
+                        expect(input.vibration_translation[0].correction.reference_temperature ==
+                               correction.reference_temperature.value_or(0.0));
+                        expect(input.vibration_translation[0].correction.exponent == 0.0);
+                    });
                 } else {
                     std::string message;
                     try {
@@ -892,23 +1143,25 @@ int main()
 
     "transport inputs from the air file equal the compiled data"_test = [] {
         const db::SpeciesFile file = db::read_species_file(air5_path());
-        const auto input = db::species_transport<3>(file, air5_names);
-        for (std::size_t i = 0; i < 5; ++i) {
-            const auto& a = input[i];
-            const auto& b = canary::air5_species_transport[i];
-            expect(std::string_view(a.name) == b.name) << i;
-            expect(a.viscosity.segments == b.viscosity.segments &&
-                   a.viscosity.breaks == b.viscosity.breaks &&
-                   a.viscosity.coefficients == b.viscosity.coefficients)
-              << i;
-            expect(a.conductivity.segments == b.conductivity.segments &&
-                   a.conductivity.breaks == b.conductivity.breaks &&
-                   a.conductivity.coefficients == b.conductivity.coefficients)
-              << i;
-            expect(a.lennard_jones.sigma == b.lennard_jones.sigma &&
-                   a.lennard_jones.epsilon == b.lennard_jones.epsilon)
-              << i;
-        }
+        const auto input_owner = db::species_transport<3>(file, air5_names);
+        canary::detail::with_input(input_owner, [&](const auto& input) {
+            for (std::size_t i = 0; i < 5; ++i) {
+                const auto& a = input[i];
+                const auto& b = canary::air5_species_transport[i];
+                expect(std::string_view(a.name) == b.name) << i;
+                expect(a.viscosity.segments == b.viscosity.segments &&
+                       a.viscosity.breaks == b.viscosity.breaks &&
+                       a.viscosity.coefficients == b.viscosity.coefficients)
+                  << i;
+                expect(a.conductivity.segments == b.conductivity.segments &&
+                       a.conductivity.breaks == b.conductivity.breaks &&
+                       a.conductivity.coefficients == b.conductivity.coefficients)
+                  << i;
+                expect(a.lennard_jones.sigma == b.lennard_jones.sigma &&
+                       a.lennard_jones.epsilon == b.lennard_jones.epsilon)
+                  << i;
+            }
+        });
     };
 
     "transport conversion errors name the species and the problem"_test = [] {
@@ -991,19 +1244,23 @@ int main()
 
     "collision-pair inputs from the file equal the compiled data"_test = [] {
         const db::CollisionIntegralsFile file = db::read_collision_integrals_file(collision_path());
-        const auto input = db::collision_integral_pairs<15>(file);
-        const auto same = [](const canary::CollisionFitInput& a,
-                             const canary::CollisionFitInput& b) {
-            return a.A == b.A && a.B == b.B && a.C == b.C && a.D == b.D;
-        };
-        for (std::size_t k = 0; k < 15; ++k) {
-            const auto& a = input[k];
-            const auto& b = canary::air5_collision_integrals[k];
-            expect(std::string_view(a.first) == b.first && std::string_view(a.second) == b.second)
-              << k;
-            expect(same(a.pi_omega_11, b.pi_omega_11) && same(a.pi_omega_22, b.pi_omega_22)) << k;
-        }
-        expect(throws_parameter_error([&] { (void)db::collision_integral_pairs<14>(file); }));
+        const auto input_owner = db::collision_integral_pairs<15>(file);
+        canary::detail::with_input(input_owner, [&](const auto& input) {
+            const auto same = [](const canary::CollisionFitInput& a,
+                                 const canary::CollisionFitInput& b) {
+                return a.A == b.A && a.B == b.B && a.C == b.C && a.D == b.D;
+            };
+            for (std::size_t k = 0; k < 15; ++k) {
+                const auto& a = input[k];
+                const auto& b = canary::air5_collision_integrals[k];
+                expect(std::string_view(a.first) == b.first &&
+                       std::string_view(a.second) == b.second)
+                  << k;
+                expect(same(a.pi_omega_11, b.pi_omega_11) && same(a.pi_omega_22, b.pi_omega_22))
+                  << k;
+            }
+            expect(throws_parameter_error([&] { (void)db::collision_integral_pairs<14>(file); }));
+        });
     };
 
     "the shipped air files hold electronic levels"_test = [] {
@@ -1027,34 +1284,42 @@ int main()
                    a.degeneracies == b.degeneracies && a.temperatures == b.temperatures;
         };
         const db::SpeciesFile air5 = db::read_species_file(air5_path());
-        const auto input5 = db::electronic_levels<8>(air5, air5_names);
-        for (std::size_t i = 0; i < 5; ++i) {
-            expect(same(input5[i], canary::air5_electronic_levels[i])) << i;
-        }
-        const db::SpeciesFile air11 = db::read_species_file(air11_path());
-        const auto input11 = db::electronic_levels<8>(air11, air11_names);
-        for (std::size_t i = 0; i < 11; ++i) {
-            expect(same(input11[i], canary::air11_electronic_levels[i])) << i;
-        }
-        const auto species11 = db::nasa9_species<4>(air11, air11_names);
-        for (std::size_t i = 0; i < 11; ++i) {
-            const auto& a = species11[i];
-            const auto& b = canary::air11_species[i];
-            expect(std::string_view(a.name) == b.name && a.molar_mass == b.molar_mass &&
-                   a.charge == b.charge && a.fit.segments == b.fit.segments &&
-                   a.fit.breaks == b.fit.breaks && a.fit.blends == b.fit.blends &&
-                   a.fit.a == b.fit.a)
-              << i;
-        }
-        // N2 has 7 levels.
-        expect(throws_parameter_error([&] { (void)db::electronic_levels<6>(air5, air5_names); }));
-        db::SpeciesFile changed = air5;
-        changed.species.at("O").electronic_levels->temperatures.pop_back();
-        expect(
-          throws_parameter_error([&] { (void)db::electronic_levels<8>(changed, air5_names); }));
-        changed = air5;
-        changed.species.erase("NO");
-        expect(throws_database_error([&] { (void)db::electronic_levels<8>(changed, air5_names); }));
+        const auto input5_owner = db::electronic_levels<8>(air5, air5_names);
+        canary::detail::with_input(input5_owner, [&](const auto& input5) {
+            for (std::size_t i = 0; i < 5; ++i) {
+                expect(same(input5[i], canary::air5_electronic_levels[i])) << i;
+            }
+            const db::SpeciesFile air11 = db::read_species_file(air11_path());
+            const auto input11_owner = db::electronic_levels<8>(air11, air11_names);
+            canary::detail::with_input(input11_owner, [&](const auto& input11) {
+                for (std::size_t i = 0; i < 11; ++i) {
+                    expect(same(input11[i], canary::air11_electronic_levels[i])) << i;
+                }
+                const auto species11_owner = db::nasa9_species<4>(air11, air11_names);
+                canary::detail::with_input(species11_owner, [&](const auto& species11) {
+                    for (std::size_t i = 0; i < 11; ++i) {
+                        const auto& a = species11[i];
+                        const auto& b = canary::air11_species[i];
+                        expect(std::string_view(a.name) == b.name && a.molar_mass == b.molar_mass &&
+                               a.charge == b.charge && a.fit.segments == b.fit.segments &&
+                               a.fit.breaks == b.fit.breaks && a.fit.blends == b.fit.blends &&
+                               a.fit.a == b.fit.a)
+                          << i;
+                    }
+                    // N2 has 7 levels.
+                    expect(throws_parameter_error(
+                      [&] { (void)db::electronic_levels<6>(air5, air5_names); }));
+                    db::SpeciesFile changed = air5;
+                    changed.species.at("O").electronic_levels->temperatures.pop_back();
+                    expect(throws_parameter_error(
+                      [&] { (void)db::electronic_levels<8>(changed, air5_names); }));
+                    changed = air5;
+                    changed.species.erase("NO");
+                    expect(throws_database_error(
+                      [&] { (void)db::electronic_levels<8>(changed, air5_names); }));
+                });
+            });
+        });
     };
 
     "the eleven-species Kim-Jo mechanism reads with electron temperatures"_test = [] {
@@ -1065,16 +1330,18 @@ int main()
         expect(n2e.forward.other_temperature == std::optional<std::string> {"electron"});
         expect(n2e.backward.other_temperature == std::optional<std::string> {"electron"});
         expect(!file.reactions[0].forward.other_temperature.has_value());
-        const auto input = db::mechanism_input<40, 11>(file);
-        for (std::size_t k = 0; k < 40; ++k) {
-            const auto& a = input.reactions[k];
-            const auto& b = canary::air11_kim_jo.reactions[k];
-            expect(std::string_view(a.equation) == b.equation) << k;
-            expect(same_rate(a.forward, b.forward)) << k;
-            expect(same_other(a.forward, b.forward) && same_other(a.backward, b.backward)) << k;
-            expect(same_coefficients(a.efficiencies, b.efficiencies)) << k;
-        }
-        expect(std::string_view(input.reactions[38].backward.other_temperature) == "electron");
+        const auto input_owner = db::mechanism_input<40, 11>(file);
+        canary::detail::with_input(input_owner, [&](const auto& input) {
+            for (std::size_t k = 0; k < 40; ++k) {
+                const auto& a = input.reactions[k];
+                const auto& b = canary::air11_kim_jo.reactions[k];
+                expect(std::string_view(a.equation) == b.equation) << k;
+                expect(same_rate(a.forward, b.forward)) << k;
+                expect(same_other(a.forward, b.forward) && same_other(a.backward, b.backward)) << k;
+                expect(same_coefficients(a.efficiencies, b.efficiencies)) << k;
+            }
+            expect(std::string_view(input.reactions[38].backward.other_temperature) == "electron");
+        });
     };
 
     "the eleven-species exchange file reads and maps to the compiled electron exchanges"_test = [] {
@@ -1086,48 +1353,52 @@ int main()
         expect(db::parse_energy_exchange(db::write_energy_exchange(file)) == file);
         const db::SpeciesFile species = db::read_species_file(air11_path());
         expect(species.species.at("N").ionisation_energy.has_value());
-        const auto electrons = db::electron_exchange_input<10, 1, 2>(file, species);
-        const auto& compiled = canary::air11_kim_jo_exchange_electrons;
-        for (std::size_t k = 0; k < 10; ++k) {
-            const auto& a = electrons.electron_translation[k];
-            const auto& b = compiled.electron_translation[k];
-            expect(std::string_view(a.partner) == b.partner && a.cross_section == b.cross_section &&
-                   a.a == b.a && a.b == b.b && a.c == b.c &&
-                   a.maximum_temperature == b.maximum_temperature)
-              << k;
-        }
-        const auto& ve = electrons.vibration_electron[0];
-        expect(std::string_view(ve.species) == "N2" && ve.relaxation_time.a_low == 7.5_d &&
-               ve.relaxation_time.blend_upper == 7050.0_d);
-        for (std::size_t k = 0; k < 2; ++k) {
-            const auto& a = electrons.electron_impact_ionisation[k];
-            const auto& b = compiled.electron_impact_ionisation[k];
-            expect(a.reaction == b.reaction && std::string_view(a.species) == b.species &&
-                   a.ionisation_energy == b.ionisation_energy)
-              << k;
-        }
-        const auto input = db::energy_exchange_input<30, 21>(file);
-        for (std::size_t k = 0; k < 30; ++k) {
-            const auto& a = input.vibration_translation[k];
-            const auto& b = canary::air11_kim_jo_exchange.vibration_translation[k];
-            expect(same_correction(a.correction, b.correction) &&
-                   a.millikan_white.a == b.millikan_white.a)
-              << k;
-        }
-        // Errors: counts, an unknown cross-section, a missing ionisation energy.
-        expect(throws_parameter_error(
-          [&] { (void)db::electron_exchange_input<9, 1, 2>(file, species); }));
-        db::EnergyExchangeFile changed = file;
-        changed.electron_translation[3].cross_section.model = "maxwell";
-        expect(throws_parameter_error(
-          [&] { (void)db::electron_exchange_input<10, 1, 2>(changed, species); }));
-        changed = file;
-        changed.vibration_electron[0].relaxation_time.model = "millikan_white";
-        expect(throws_parameter_error(
-          [&] { (void)db::electron_exchange_input<10, 1, 2>(changed, species); }));
-        db::SpeciesFile no_energy = species;
-        no_energy.species.at("O").ionisation_energy.reset();
-        expect(throws_parameter_error(
-          [&] { (void)db::electron_exchange_input<10, 1, 2>(file, no_energy); }));
+        const auto electrons_owner = db::electron_exchange_input<10, 1, 2>(file, species);
+        canary::detail::with_input(electrons_owner, [&](const auto& electrons) {
+            const auto& compiled = canary::air11_kim_jo_exchange_electrons;
+            for (std::size_t k = 0; k < 10; ++k) {
+                const auto& a = electrons.electron_translation[k];
+                const auto& b = compiled.electron_translation[k];
+                expect(std::string_view(a.partner) == b.partner &&
+                       a.cross_section == b.cross_section && a.a == b.a && a.b == b.b &&
+                       a.c == b.c && a.maximum_temperature == b.maximum_temperature)
+                  << k;
+            }
+            const auto& ve = electrons.vibration_electron[0];
+            expect(std::string_view(ve.species) == "N2" && ve.relaxation_time.a_low == 7.5_d &&
+                   ve.relaxation_time.blend_upper == 7050.0_d);
+            for (std::size_t k = 0; k < 2; ++k) {
+                const auto& a = electrons.electron_impact_ionisation[k];
+                const auto& b = compiled.electron_impact_ionisation[k];
+                expect(a.reaction == b.reaction && std::string_view(a.species) == b.species &&
+                       a.ionisation_energy == b.ionisation_energy)
+                  << k;
+            }
+            const auto input_owner = db::energy_exchange_input<30, 21>(file);
+            canary::detail::with_input(input_owner, [&](const auto& input) {
+                for (std::size_t k = 0; k < 30; ++k) {
+                    const auto& a = input.vibration_translation[k];
+                    const auto& b = canary::air11_kim_jo_exchange.vibration_translation[k];
+                    expect(same_correction(a.correction, b.correction) &&
+                           a.millikan_white.a == b.millikan_white.a)
+                      << k;
+                }
+                // Errors: counts, an unknown cross-section, a missing ionisation energy.
+                expect(throws_parameter_error(
+                  [&] { (void)db::electron_exchange_input<9, 1, 2>(file, species); }));
+                db::EnergyExchangeFile changed = file;
+                changed.electron_translation[3].cross_section.model = "maxwell";
+                expect(throws_parameter_error(
+                  [&] { (void)db::electron_exchange_input<10, 1, 2>(changed, species); }));
+                changed = file;
+                changed.vibration_electron[0].relaxation_time.model = "millikan_white";
+                expect(throws_parameter_error(
+                  [&] { (void)db::electron_exchange_input<10, 1, 2>(changed, species); }));
+                db::SpeciesFile no_energy = species;
+                no_energy.species.at("O").ionisation_energy.reset();
+                expect(throws_parameter_error(
+                  [&] { (void)db::electron_exchange_input<10, 1, 2>(file, no_energy); }));
+            });
+        });
     };
 }
