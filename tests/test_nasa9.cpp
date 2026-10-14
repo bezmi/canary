@@ -3,13 +3,14 @@
 
 #include <array>
 #include <boost/ut.hpp>
-#include <cmath>
-#include <cstddef>
 #include <canary/build.hpp>
+#include <canary/data/air11_species.hpp>
 #include <canary/data/air5.hpp>
 #include <canary/nasa9.hpp>
 #include <canary/scalar.hpp>
 #include <canary/units.hpp>
+#include <cmath>
+#include <cstddef>
 #include <limits>
 #include <string>
 #include <vector>
@@ -334,6 +335,159 @@ void test_nasa9()
                 expect(cp_h.cp_over_r.real() == evaluate(curve, t).cp);
             }
         }
+    };
+
+    "NASA9 construction checks capacity throughout segments and transitions"_test = [] {
+        const auto check = []<typename P> {
+            Data data {};
+            data.segments = 1;
+            data.breaks = {1.0, 3.0};
+            for (const double cp : {-1.0, 0.5, 1.0}) {
+                data.a[0][2] = cp;
+                expect(
+                  throws<canary::ParameterError>([&] { canary::make_nasa9_curve(data, P(1)); }));
+            }
+            data.a[0][2] = std::nextafter(P(1), P(2));
+            expect(nothrow([&] { canary::make_nasa9_curve(data, P(1)); }));
+
+            // cp/R = minimum + (T-2)^2 has positive endpoint cv in all cases.
+            data.a[0][3] = -4.0;
+            data.a[0][4] = 1.0;
+            for (const double minimum : {0.5, 1.0}) {
+                data.a[0][2] = 4.0 + minimum;
+                expect(
+                  throws<canary::ParameterError>([&] { canary::make_nasa9_curve(data, P(1)); }));
+            }
+            data.a[0][2] = 5.25;
+            expect(nothrow([&] { canary::make_nasa9_curve(data, P(1)); }));
+
+            // Negative cv occupies only |T-1.5| < 1/1024 inside the fit.
+            data.a[0][2] = 3.25 - 0x1p-20;
+            data.a[0][3] = -3.0;
+            expect(throws<canary::ParameterError>([&] { canary::make_nasa9_curve(data, P(1)); }));
+
+            data = {};
+            data.segments = 2;
+            data.breaks = {1.0, 2.0, 3.0};
+            data.blends[0] = 1.0;
+            data.a[0][2] = 14.0;
+            data.a[0][3] = -8.0;
+            data.a[1][2] = -18.0;
+            data.a[1][3] = 8.0;
+            // Both unblended regions and both transition endpoints have cp/R >= 2.
+            // The blended capacity has cp/R = -2 at T=2.
+            expect(throws<canary::ParameterError>([&] { canary::make_nasa9_curve(data, P(1)); }));
+            data.a[0][2] += 3.5;
+            data.a[1][2] += 3.5;
+            expect(nothrow([&] { canary::make_nasa9_curve(data, P(1)); }));
+
+            // T²(cp/R-1) = (T-2)^6 + offset in the lower segment;
+            // the upper segment doubles it, giving a degree-seven transition.
+            for (const double offset : {-0.015625, 0.0, 0.015625}) {
+                const std::array<double, 7>
+                  coefficients {64.0 + offset, -192.0, 240.0, -160.0, 60.0, -12.0, 1.0};
+                for (std::size_t k = 0; k < coefficients.size(); ++k) {
+                    data.a[0][k] = coefficients[k];
+                    data.a[1][k] = 2.0 * coefficients[k];
+                }
+                data.a[0][2] += 1.0;
+                data.a[1][2] += 1.0;
+                if (offset > 0) {
+                    expect(nothrow([&] { canary::make_nasa9_curve(data, P(1)); }));
+                } else {
+                    expect(throws<canary::ParameterError>(
+                      [&] { canary::make_nasa9_curve(data, P(1)); }));
+                }
+            }
+        };
+        check.template operator()<float>();
+        check.template operator()<double>();
+    };
+
+    "NASA9 construction rejects unrepresentable converted parameters"_test = [] {
+        const auto check = []<typename P> {
+            Data good {};
+            good.segments = 2;
+            good.breaks = {1.0, 2.0, 3.0};
+            good.blends[0] = 1.0;
+            good.a[0][2] = 3.0;
+            good.a[1][2] = 3.0;
+            const auto rejects = [](const Data& data, P scale, const std::string& reason) {
+                bool rejected = false;
+                try {
+                    static_cast<void>(canary::make_nasa9_curve(data, scale));
+                } catch (const canary::ParameterError& error) {
+                    rejected = true;
+                    expect(std::string(error.what()).find(reason) != std::string::npos)
+                      << error.what();
+                }
+                expect(rejected) << reason;
+            };
+            Data data = good;
+            data.breaks = {1.0e-100, 2.0e-100, 3.0e-100};
+            data.blends[0] = 1.0e-100;
+            rejects(data, std::numeric_limits<P>::max(), "converted boundary");
+
+            data = good;
+            data.blends[0] = std::numeric_limits<double>::denorm_min();
+            rejects(data, P(1), "converted transition");
+            data.blends[0] = std::numeric_limits<P>::epsilon() / 2;
+            rejects(data, P(1), "converted transition");
+
+            data = good;
+            data.a[0][0] = static_cast<double>(std::numeric_limits<P>::max());
+            rejects(data, P(0.5), "converted coefficient");
+            data = good;
+            data.a[0][7] = static_cast<double>(std::numeric_limits<P>::max());
+            rejects(data, P(0.5), "converted enthalpy constant");
+            data = good;
+            data.a[0][2] = static_cast<double>(std::numeric_limits<P>::max());
+            data.a[1][2] = data.a[0][2];
+            rejects(data, P(1), "converted endpoint");
+            // The logarithmic unit shift overflows the stored entropy constant.
+            data.a[0][8] = data.a[0][2];
+            rejects(data, P(2), "converted entropy constant");
+
+            data = good;
+            data.breaks = {1.0, 2.0, 10.0};
+            rejects(data, std::numeric_limits<P>::min(), "converted boundary");
+        };
+        check.template operator()<float>();
+        check.template operator()<double>();
+
+        Data data {};
+        data.segments = 1;
+        data.breaks = {1.0, std::nextafter(1.0, 2.0)};
+        data.a[0][2] = 3.0;
+        expect(nothrow([&] { canary::make_nasa9_curve(data, 1.0); }));
+        expect(throws<canary::ParameterError>([&] { canary::make_nasa9_curve(data, 1.0F); }));
+    };
+
+    "rounded SI and scaled air curves retain positive capacity"_test = [] {
+        const auto check = []<typename P>(const auto& inputs) {
+            for (const auto& sp : inputs) {
+                for (const P scale : {P(1), P(3000)}) {
+                    const auto curve = canary::make_nasa9_curve(sp.fit, scale);
+                    for (int region = 0; region < sp.fit.segments; ++region) {
+                        const auto j = static_cast<std::size_t>(region);
+                        for (const P fraction : {P(0), P(0.25), P(0.5), P(0.75), P(1)}) {
+                            const P t =
+                              curve.breaks[j] + fraction * (curve.breaks[j + 1] - curve.breaks[j]);
+                            const auto values = canary::nasa9_cp_h(curve, t, std::log(t));
+                            expect(std::isfinite(values.cp_over_r) && values.cp_over_r > P(1))
+                              << sp.name;
+                            expect(std::isfinite(values.h_over_r)) << sp.name;
+                            expect(std::isfinite(canary::nasa9_s(curve, t, std::log(t))))
+                              << sp.name;
+                        }
+                    }
+                }
+            }
+        };
+        check.template operator()<float>(species);
+        check.template operator()<double>(species);
+        check.template operator()<float>(canary::air11_species);
+        check.template operator()<double>(canary::air11_species);
     };
 
     "make_nasa9_curve rejects invalid fits"_test = [] {

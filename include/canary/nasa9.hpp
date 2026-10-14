@@ -7,13 +7,15 @@
 // scalars, in the temperature unit of the model that holds the curve.
 
 #include <array>
+#include <canary/build.hpp>
+#include <canary/config.hpp>
+#include <canary/detail/nasa9_validation.hpp>
+#include <canary/scalar.hpp>
 #include <cmath>
 #include <concepts>
 #include <cstddef>
 #include <format>
-#include <canary/build.hpp>
-#include <canary/config.hpp>
-#include <canary/scalar.hpp>
+#include <limits>
 
 namespace canary
 {
@@ -226,11 +228,71 @@ template <std::size_t S> void check_nasa9_data(const Nasa9Data<S>& data)
     }
 }
 
+// Checked narrowing of host-folded parameters. Coefficients may round to zero;
+// positive bounds and widths are checked after storing them in P.
+template <std::floating_point P> P nasa9_parameter(long double value, const char* parameter)
+{
+    if (!std::isfinite(value) || std::abs(value) > std::numeric_limits<P>::max()) {
+        throw ParameterError(
+          std::format("converted {} is outside the finite parameter range", parameter));
+    }
+    return static_cast<P>(value);
+}
+
+template <std::floating_point P, std::size_t S>
+void check_nasa9_curve(const Nasa9Curve<P, S>& curve)
+{
+    const auto n = static_cast<std::size_t>(curve.segments);
+    for (std::size_t i = 0; i <= n; ++i) {
+        if (!(curve.breaks[i] > P(0)) || (i > 0 && !(curve.breaks[i] > curve.breaks[i - 1]))) {
+            throw ParameterError(
+              std::format("converted boundary {} must be positive and strictly increasing", i));
+        }
+    }
+    P previous_end = curve.breaks[0];
+    const auto require_capacity =
+      [](const CapacityPolynomial& polynomial, std::size_t region, const char* kind) {
+          if (!positive_capacity(polynomial)) {
+              throw ParameterError(
+                std::format("cp/R > 1 could not be certified throughout {} {}", kind, region));
+          }
+      };
+    for (std::size_t i = 1; i < n; ++i) {
+        const P width = curve.blends[i - 1];
+        const P start = curve.breaks[i] - width / P(2);
+        const P end = curve.breaks[i] + width / P(2);
+        if (!(width > P(0)) || !std::isfinite(start) || !std::isfinite(end) ||
+            !(start < curve.breaks[i]) || !(end > curve.breaks[i]) || start < previous_end ||
+            end > curve.breaks[n]) {
+            throw ParameterError(
+              std::format("converted transition {} collapses, overlaps or leaves the fit", i));
+        }
+        require_capacity(capacity_polynomial(curve.b[i - 1], previous_end, start),
+                         i - 1,
+                         "segment");
+        auto lower = capacity_polynomial(curve.b[i - 1], start, end);
+        const auto upper = capacity_polynomial(curve.b[i], start, end);
+        const auto extent = CapacityInterval {static_cast<long double>(end)} -
+                            CapacityInterval {static_cast<long double>(start)};
+        const long double reciprocal = 1.0L / static_cast<long double>(width);
+        const auto ratio = extent * capacity_bounds(reciprocal, reciprocal);
+        auto blend = lower;
+        for (std::size_t k = 0; k + 1 < blend.size(); ++k) {
+            blend[k + 1] = blend[k + 1] + (upper[k] - lower[k]) * ratio;
+        }
+        require_capacity(blend, i, "transition");
+        previous_end = end;
+    }
+    require_capacity(capacity_polynomial(curve.b[n - 1], previous_end, curve.breaks[n]),
+                     n - 1,
+                     "segment");
+}
+
 }  // namespace detail
 
 // Curve of a fit in a model's temperature unit, with temperature_scale the
 // SI value of that unit in kelvin (1 in SI). The coefficients are folded in
-// double precision and then rounded to P:
+// long double precision and then rounded to P:
 //   b_k = a_k tau^(k - 2) for k = 0..6, b_7 = (a_7 + a_1 ln tau) / tau,
 //   b_8 = a_8 + a_2 ln tau,
 // and the breaks and blending widths are divided by tau. With tau = 1 the
@@ -238,7 +300,11 @@ template <std::size_t S> void check_nasa9_data(const Nasa9Data<S>& data)
 // and positive, the segment count is not in [1, S], the used breaks are not
 // finite, positive and increasing, a blending width is not finite and
 // positive, the blending regions overlap or leave the fit, or a used
-// coefficient is not finite.
+// coefficient is not finite. Converted parameters must remain finite; bounds
+// and transitions must remain positive, ordered and noncollapsed. Construction
+// rejects a curve unless interval bounds establish cp/R > 1 throughout the fit.
+// The endpoint continuation then retains positive ideal-gas cv outside the fit.
+// Stored endpoint cp/R, h/R and s/R must all be finite.
 template <std::size_t S, std::floating_point P>
 Nasa9Curve<P, S> make_nasa9_curve(const Nasa9Data<S>& data, P temperature_scale)
 {
@@ -247,23 +313,29 @@ Nasa9Curve<P, S> make_nasa9_curve(const Nasa9Data<S>& data, P temperature_scale)
           std::format("temperature scale must be finite and positive, got {}", temperature_scale));
     }
     detail::check_nasa9_data(data);
-    const auto tau = static_cast<double>(temperature_scale);
-    const double ln_tau = std::log(tau);
+    const auto tau = static_cast<long double>(temperature_scale);
+    const long double ln_tau = std::log(tau);
     const auto n = static_cast<std::size_t>(data.segments);
     Nasa9Curve<P, S> curve {};
     curve.segments = data.segments;
-    for (std::size_t i = 0; i <= n; ++i) { curve.breaks[i] = static_cast<P>(data.breaks[i] / tau); }
+    for (std::size_t i = 0; i <= n; ++i) {
+        curve.breaks[i] = detail::nasa9_parameter<P>(data.breaks[i] / tau, "boundary");
+    }
     for (std::size_t i = 0; i + 1 < n; ++i) {
-        curve.blends[i] = static_cast<P>(data.blends[i] / tau);
+        curve.blends[i] = detail::nasa9_parameter<P>(data.blends[i] / tau, "transition width");
     }
     for (std::size_t j = 0; j < n; ++j) {
         const auto& a = data.a[j];
         for (std::size_t k = 0; k < 7; ++k) {
-            curve.b[j][k] = static_cast<P>(a[k] * std::pow(tau, static_cast<double>(k) - 2.0));
+            curve.b[j][k] =
+              detail::nasa9_parameter<P>(a[k] * std::pow(tau, static_cast<int>(k) - 2),
+                                         "coefficient");
         }
-        curve.b[j][7] = static_cast<P>((a[7] + (a[1] * ln_tau)) / tau);
-        curve.b[j][8] = static_cast<P>(a[8] + (a[2] * ln_tau));
+        curve.b[j][7] =
+          detail::nasa9_parameter<P>((a[7] + (a[1] * ln_tau)) / tau, "enthalpy constant");
+        curve.b[j][8] = detail::nasa9_parameter<P>(a[8] + (a[2] * ln_tau), "entropy constant");
     }
+    detail::check_nasa9_curve(curve);
     // The ends lie inside [breaks[0], breaks[segments]], so these calls
     // evaluate the polynomials and do not read low or high.
     const auto values_at = [&curve](P t) {
@@ -277,6 +349,12 @@ Nasa9Curve<P, S> make_nasa9_curve(const Nasa9Data<S>& data, P temperature_scale)
     };
     curve.low = values_at(curve.breaks[0]);
     curve.high = values_at(curve.breaks[n]);
+    for (const auto& end : {curve.low, curve.high}) {
+        if (!std::isfinite(end.cp_over_r) || !(end.cp_over_r > P(1)) ||
+            !std::isfinite(end.h_over_r) || !std::isfinite(end.s_over_r)) {
+            throw ParameterError("converted endpoint values must be finite with cp/R > 1");
+        }
+    }
     return curve;
 }
 
