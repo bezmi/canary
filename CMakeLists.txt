@@ -8,7 +8,12 @@ project(
 option(CANARY_BUILD_TESTS "Build the canary tests" ${PROJECT_IS_TOP_LEVEL})
 option(CANARY_BUILD_BENCHMARKS "Build the canary benchmarks" ${PROJECT_IS_TOP_LEVEL})
 option(CANARY_BUILD_DATABASE "Build the species database library (C++23, glaze)" ${PROJECT_IS_TOP_LEVEL})
+option(CANARY_REQUIRE_VALIDATION "Require all test targets and validation dependencies" OFF)
 option(CANARY_FIND_MDSPAN "Use an installed mdspan found with find_package instead of fetching it" OFF)
+
+if(CANARY_REQUIRE_VALIDATION AND (NOT CANARY_BUILD_TESTS OR NOT CANARY_BUILD_DATABASE))
+  message(FATAL_ERROR "CANARY_REQUIRE_VALIDATION requires CANARY_BUILD_TESTS and CANARY_BUILD_DATABASE")
+endif()
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/cmake)
 

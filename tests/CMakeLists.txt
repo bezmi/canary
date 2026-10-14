@@ -1,8 +1,20 @@
-# Test targets are built as strict C++20 so that a header needing a later
-# standard or a compiler extension fails here.
+# Numerical tests use the requested language standard, with C++20 as the minimum.
+if(NOT DEFINED CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 20)
+elseif(CMAKE_CXX_STANDARD LESS 20)
+  message(FATAL_ERROR "canary tests require CMAKE_CXX_STANDARD >= 20")
+endif()
+
 function(canary_test_options target)
-  set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
-  target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  set_target_properties(${target} PROPERTIES CXX_STANDARD ${CMAKE_CXX_STANDARD}
+                        CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+  if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC" OR MSVC)
+    target_compile_options(${target} PRIVATE /W4 /WX /permissive-)
+  elseif(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
+    target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  else()
+    message(WARNING "canary: strict warning flags are not configured for ${CMAKE_CXX_COMPILER_ID}")
+  endif()
 endfunction()
 
 add_executable(canary_tests test_main.cpp test_config_default.cpp test_config_consumer.cpp test_scalar.cpp test_quantity.cpp test_units.cpp test_status.cpp test_species.cpp test_state.cpp test_thermo.cpp test_calorically_perfect.cpp test_calorically_perfect_mixture.cpp
@@ -16,7 +28,7 @@ add_test(NAME canary.unit COMMAND canary_tests)
 # Code that must not compile. compile_fail/<name>.cpp is compiled twice: as
 # written, as part of the normal build, where it must compile; and with
 # CANARY_COMPILE_FAIL defined, by the test, which passes only if the build
-# output matches <regex>.
+# fails and its diagnostic matches <regex>. Shared build operations are serialized.
 function(canary_compile_fail_test name regex)
   add_library(compile_ok_${name} OBJECT compile_fail/${name}.cpp)
   add_library(compile_fail_${name} OBJECT EXCLUDE_FROM_ALL compile_fail/${name}.cpp)
@@ -27,8 +39,13 @@ function(canary_compile_fail_test name regex)
   endforeach()
   target_compile_definitions(compile_fail_${name} PRIVATE CANARY_COMPILE_FAIL)
   add_test(NAME canary.compile_fail.${name}
-           COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target compile_fail_${name})
-  set_tests_properties(canary.compile_fail.${name} PROPERTIES PASS_REGULAR_EXPRESSION "${regex}")
+           COMMAND ${CMAKE_COMMAND}
+                   "-DBUILD_DIR=${CMAKE_BINARY_DIR}"
+                   "-DBUILD_TARGET=compile_fail_${name}"
+                   "-DBUILD_CONFIG=$<CONFIG>"
+                   "-DEXPECTED_DIAGNOSTIC=${regex}"
+                   -P ${PROJECT_SOURCE_DIR}/cmake/CanaryExpectCompileFailure.cmake)
+  set_tests_properties(canary.compile_fail.${name} PROPERTIES RESOURCE_LOCK canary_compile_fail_build)
 endfunction()
 
 canary_compile_fail_test(self_test "compile-fail self test")
@@ -75,6 +92,7 @@ endforeach()
 add_library(canary_header_check OBJECT ${header_check_sources})
 target_link_libraries(canary_header_check PRIVATE canary::canary)
 canary_test_options(canary_header_check)
+set_target_properties(canary_header_check PROPERTIES CXX_STANDARD 20)
 
 # Species database library: C++ tests (the public header is C++20) and the
 # Python converter and schema checks, when the interpreter and its yaml and
@@ -86,7 +104,11 @@ if(TARGET canary_database)
   canary_test_options(canary_database_tests)
   add_test(NAME canary.database COMMAND canary_database_tests)
 
-  find_package(Python3 COMPONENTS Interpreter)
+  if(CANARY_REQUIRE_VALIDATION)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  else()
+    find_package(Python3 COMPONENTS Interpreter)
+  endif()
   if(Python3_FOUND)
     execute_process(COMMAND ${Python3_EXECUTABLE} -c "import yaml, jsonschema" RESULT_VARIABLE python_modules_missing
                     OUTPUT_QUIET ERROR_QUIET)
@@ -107,8 +129,12 @@ if(TARGET canary_database)
                        ${PROJECT_SOURCE_DIR}/database/data/air11_kim_jo_exchange.json --
                        ${PROJECT_SOURCE_DIR}/database/collision_integrals.schema.json
                        ${PROJECT_SOURCE_DIR}/database/data/air5_collision_integrals.json)
+    elseif(CANARY_REQUIRE_VALIDATION)
+      message(FATAL_ERROR "canary validation requires Python modules yaml and jsonschema")
     else()
       message(STATUS "canary: Python modules yaml or jsonschema missing; species converter tests skipped")
     endif()
+  else()
+    message(STATUS "canary: Python interpreter missing; species converter tests skipped")
   endif()
 endif()

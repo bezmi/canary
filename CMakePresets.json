@@ -10,7 +10,10 @@
             "name": "default",
             "hidden": true,
             "generator": "Ninja",
-            "binaryDir": "${sourceDir}/build/${presetName}"
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CANARY_REQUIRE_VALIDATION": "ON"
+            }
         },
         {
             "name": "clang",
@@ -75,32 +78,38 @@
         {
             "name": "build-debug",
             "configurePreset": "debug",
-            "description": "Build Debug (gcc)"
+            "description": "Build Debug (gcc); two jobs by default, override with --parallel",
+            "jobs": 2
         },
         {
             "name": "build-release",
             "configurePreset": "release",
-            "description": "Build Release (gcc)"
+            "description": "Build Release (gcc); two jobs by default, override with --parallel",
+            "jobs": 2
         },
         {
             "name": "build-reldeb",
             "configurePreset": "reldeb",
-            "description": "Build RelWithDebInfo (gcc)"
+            "description": "Build RelWithDebInfo (gcc); two jobs by default, override with --parallel",
+            "jobs": 2
         },
         {
             "name": "build-debug-clang",
             "configurePreset": "debug-clang",
-            "description": "Build Debug (clang)"
+            "description": "Build Debug (clang); two jobs by default, override with --parallel",
+            "jobs": 2
         },
         {
             "name": "build-release-clang",
             "configurePreset": "release-clang",
-            "description": "Build Release (clang)"
+            "description": "Build Release (clang); two jobs by default, override with --parallel",
+            "jobs": 2
         },
         {
             "name": "build-reldeb-clang",
             "configurePreset": "reldeb-clang",
-            "description": "Build RelWithDebInfo (clang)"
+            "description": "Build RelWithDebInfo (clang); two jobs by default, override with --parallel",
+            "jobs": 2
         }
     ],
     "workflowPresets": [
@@ -114,6 +123,10 @@
                 {
                     "type": "build",
                     "name": "build-debug"
+                },
+                {
+                    "type": "test",
+                    "name": "test-debug"
                 }
             ]
         },
@@ -127,6 +140,10 @@
                 {
                     "type": "build",
                     "name": "build-release"
+                },
+                {
+                    "type": "test",
+                    "name": "test-release"
                 }
             ]
         },
@@ -140,6 +157,10 @@
                 {
                     "type": "build",
                     "name": "build-reldeb"
+                },
+                {
+                    "type": "test",
+                    "name": "test-reldeb"
                 }
             ]
         },
@@ -153,6 +174,10 @@
                 {
                     "type": "build",
                     "name": "build-debug-clang"
+                },
+                {
+                    "type": "test",
+                    "name": "test-debug-clang"
                 }
             ]
         },
@@ -166,6 +191,10 @@
                 {
                     "type": "build",
                     "name": "build-release-clang"
+                },
+                {
+                    "type": "test",
+                    "name": "test-release-clang"
                 }
             ]
         },
@@ -179,8 +208,86 @@
                 {
                     "type": "build",
                     "name": "build-reldeb-clang"
+                },
+                {
+                    "type": "test",
+                    "name": "test-reldeb-clang"
                 }
             ]
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "test-debug",
+            "configurePreset": "debug",
+            "description": "Run tests with two jobs; override with --parallel",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "jobs": 2,
+                "noTestsAction": "error"
+            }
+        },
+        {
+            "name": "test-release",
+            "configurePreset": "release",
+            "description": "Run tests with two jobs; override with --parallel",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "jobs": 2,
+                "noTestsAction": "error"
+            }
+        },
+        {
+            "name": "test-reldeb",
+            "configurePreset": "reldeb",
+            "description": "Run tests with two jobs; override with --parallel",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "jobs": 2,
+                "noTestsAction": "error"
+            }
+        },
+        {
+            "name": "test-debug-clang",
+            "configurePreset": "debug-clang",
+            "description": "Run tests with two jobs; override with --parallel",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "jobs": 2,
+                "noTestsAction": "error"
+            }
+        },
+        {
+            "name": "test-release-clang",
+            "configurePreset": "release-clang",
+            "description": "Run tests with two jobs; override with --parallel",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "jobs": 2,
+                "noTestsAction": "error"
+            }
+        },
+        {
+            "name": "test-reldeb-clang",
+            "configurePreset": "reldeb-clang",
+            "description": "Run tests with two jobs; override with --parallel",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "jobs": 2,
+                "noTestsAction": "error"
+            }
         }
     ]
 }
