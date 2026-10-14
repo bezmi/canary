@@ -47,11 +47,6 @@
 // R_u for the dissociation energy D per mole.
 
 #include <array>
-#include <cmath>
-#include <concepts>
-#include <cstddef>
-#include <cstdint>
-#include <format>
 #include <canary/build.hpp>
 #include <canary/config.hpp>
 #include <canary/models/thermally_perfect.hpp>
@@ -63,6 +58,11 @@
 #include <canary/state.hpp>
 #include <canary/thermo.hpp>
 #include <canary/units.hpp>
+#include <cmath>
+#include <concepts>
+#include <cstddef>
+#include <cstdint>
+#include <format>
 #include <numbers>
 #include <string>
 #include <string_view>
@@ -379,10 +379,22 @@ ChemistryVibrationCoupling<P, U>
     }
     const double tau = scale_factor<kind::temperature>(double_scales(scales));
     const double theta_d = d / constants::universal_gas_constant<double>;
+    if (!(theta_d > theta_v)) {
+        throw ParameterError(
+          std::format("dissociation temperature must exceed vibrational temperature, got {} and {}",
+                      theta_d,
+                      theta_v));
+    }
     coupling.dissociation_temperature =
       Temperature<P, U> {positive_parameter<P>(theta_d / tau, "dissociation temperature")};
     coupling.vibrational_temperature =
       Temperature<P, U> {positive_parameter<P>(theta_v / tau, "vibrational temperature")};
+    if (!(coupling.dissociation_temperature.value() > coupling.vibrational_temperature.value())) {
+        throw ParameterError(std::format("stored dissociation temperature must exceed stored "
+                                         "vibrational temperature, got {} and {}",
+                                         coupling.dissociation_temperature.value(),
+                                         coupling.vibrational_temperature.value()));
+    }
     return coupling;
 }
 
@@ -471,7 +483,8 @@ void make_vibrational_exchanges(
 // - a reaction index is outside [0, R), or the species has no net change of
 //   coefficient in the reaction;
 // - a dissociation energy or vibrational temperature is not finite and
-//   positive;
+//   positive, or dissociation temperature does not exceed vibrational
+//   temperature before and after conversion to the stored scalar and units;
 // - a derived constant is not finite (and, for the correction coefficient
 //   and the coupling temperatures, positive) in P.
 template <std::floating_point P,

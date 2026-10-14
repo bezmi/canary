@@ -4,8 +4,6 @@
 #include <algorithm>
 #include <array>
 #include <boost/ut.hpp>
-#include <cmath>
-#include <cstddef>
 #include <canary/build.hpp>
 #include <canary/data/air5.hpp>
 #include <canary/data/air5_park.hpp>
@@ -19,6 +17,8 @@
 #include <canary/status.hpp>
 #include <canary/thermo.hpp>
 #include <canary/units.hpp>
+#include <cmath>
+#include <cstddef>
 #include <limits>
 #include <mdspan/mdspan.hpp>
 #include <numbers>
@@ -965,6 +965,55 @@ void test_energy_exchange()
             }
         }
     };
+
+    "energy exchange: oscillator temperatures remain ordered after scaling and rounding"_test =
+      [&] {
+          for (const double theta_d : {1.0, 2.0}) {
+              auto input = canary::air5_park_exchange;
+              input.chemistry_vibration[0].vibrational_temperature = 2.0;
+              input.chemistry_vibration[0].dissociation_energy = theta_d * ru;
+              expect(
+                error_message([&] {
+                    (void)canary::make_energy_exchange(input,
+                                                       canary::detail::air5_park_species_names,
+                                                       built.species,
+                                                       mech,
+                                                       si_scales);
+                })
+                  .starts_with(
+                    "chemistry-vibration coupling 0 (N2): dissociation temperature must exceed"));
+          }
+          const auto check_float = [&]<typename U>(const canary::UnitScales<float, U>& scales) {
+              const auto gas_f = canary::make_air5<float>(scales);
+              const auto mech_f = canary::make_air5_park(gas_f.species, scales);
+              auto input = canary::air5_park_exchange;
+              input.chemistry_vibration[0].vibrational_temperature = 1000.0;
+              input.chemistry_vibration[0].dissociation_energy = 1000.00001 * ru;
+              expect(error_message([&] {
+                         (void)canary::make_energy_exchange(input,
+                                                            canary::detail::air5_park_species_names,
+                                                            gas_f.species,
+                                                            mech_f,
+                                                            scales);
+                     })
+                       .starts_with("chemistry-vibration coupling 0 (N2): stored dissociation "
+                                    "temperature must exceed"));
+              input.chemistry_vibration[0].dissociation_energy = 1001.0 * ru;
+              const auto accepted =
+                canary::make_energy_exchange(input,
+                                             canary::detail::air5_park_species_names,
+                                             gas_f.species,
+                                             mech_f,
+                                             scales);
+              expect(accepted.chemistry_vibration[0].dissociation_temperature.value() >
+                     accepted.chemistry_vibration[0].vibrational_temperature.value());
+          };
+          check_float(canary::UnitScales<float, si> {});
+          check_float(canary::UnitScales<float, scaled> {.mass = 4.65e-26F,
+                                                         .density = 1.0e-3F,
+                                                         .temperature = 1000.0F,
+                                                         .length = 1.0F});
+      };
 
     "energy exchange: the builder rejects invalid input with the entry in the message"_test = [&] {
         using Input = canary::EnergyExchangeInput<15, 3>;
