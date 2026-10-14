@@ -2,10 +2,11 @@
 #include "test_suites.hpp"
 
 #include <boost/ut.hpp>
-#include <concepts>
 #include <canary/quantity.hpp>
 #include <canary/state.hpp>
 #include <canary/status.hpp>
+#include <concepts>
+#include <span>
 #include <type_traits>
 
 namespace
@@ -22,6 +23,27 @@ struct NoTemperature {
     canary::Density<double, si> rho;
     canary::SpecificEnergy<double, si> e;
     canary::Pressure<double, si> p;
+};
+
+// A caller-defined result can expose both sets of properties and non-owning
+// mode capacities without inheriting from a library record.
+template <typename Ratio = canary::HeatCapacityRatio<double>,
+          typename ModeCapacity = canary::SpecificHeat<double, si>>
+struct CustomProperties {
+    canary::SpecificHeat<double, si> cv;
+    canary::SpecificHeat<double, si> cp;
+    Ratio capacity_ratio;
+    canary::SpecificGasConstant<double, si> gas_constant;
+    canary::SpecificHeat<double, si> cv_heavy;
+    std::span<const ModeCapacity> mode_cv;
+    canary::SpecificGasConstant<double, si> gas_constant_heavy;
+    canary::SpecificGasConstant<double, si> gas_constant_electron;
+    canary::AcousticProperties<double, si> acoustics;
+};
+
+struct IncorrectAcousticProperties {
+    canary::SoundSpeed<double, si> sound_speed;
+    canary::HeatCapacityRatio<double> acoustic_exponent;
 };
 
 }  // namespace
@@ -42,6 +64,48 @@ static_assert(sizeof(canary::MultiTemperatureState<double, si, 2>) == 8 * sizeof
 static_assert(sizeof(canary::ThermoState<double, si>) == 4 * sizeof(double));
 static_assert(
   std::same_as<canary::Closure<double, si>, canary::ClosureOf<canary::ThermoState<double, si>>>);
+
+static_assert(canary::AcousticPropertiesOf<canary::AcousticProperties<float, si>, float, si>);
+static_assert(canary::AcousticPropertiesOf<canary::AcousticProperties<D, scaled>, D, scaled>);
+static_assert(!canary::AcousticPropertiesOf<IncorrectAcousticProperties, double, si>);
+static_assert(!canary::AcousticPropertiesOf<canary::AcousticProperties<double, si>, float, si>);
+static_assert(
+  !canary::AcousticPropertiesOf<canary::AcousticProperties<double, si>, double, scaled>);
+static_assert(
+  canary::SingleTemperaturePropertiesOf<canary::SingleTemperatureProperties<float, si>, float, si>);
+static_assert(
+  canary::SingleTemperaturePropertiesOf<canary::SingleTemperatureProperties<D, scaled>, D, scaled>);
+static_assert(canary::MultiTemperaturePropertiesOf<canary::MultiTemperatureProperties<float, si, 1>,
+                                                   float,
+                                                   si>);
+static_assert(canary::MultiTemperaturePropertiesOf<canary::MultiTemperatureProperties<D, scaled, 2>,
+                                                   D,
+                                                   scaled>);
+static_assert(
+  !canary::
+    SingleTemperaturePropertiesOf<canary::MultiTemperatureProperties<double, si, 2>, double, si>);
+static_assert(!canary::MultiTemperaturePropertiesOf<canary::SingleTemperatureProperties<double, si>,
+                                                    double,
+                                                    si>);
+static_assert(canary::SingleTemperaturePropertiesOf<CustomProperties<>, double, si>);
+static_assert(canary::MultiTemperaturePropertiesOf<CustomProperties<>, double, si>);
+static_assert(
+  !canary::
+    SingleTemperaturePropertiesOf<CustomProperties<canary::AcousticExponent<double>>, double, si>);
+static_assert(
+  !canary::MultiTemperaturePropertiesOf<
+    CustomProperties<canary::HeatCapacityRatio<double>, canary::SpecificHeat<double, scaled>>,
+    double,
+    si>);
+static_assert(!canary::AcousticPropertiesOf<int, double, si>);
+static_assert(!canary::SingleTemperaturePropertiesOf<int, double, si>);
+static_assert(!canary::MultiTemperaturePropertiesOf<int, double, si>);
+static_assert(std::is_trivially_copyable_v<canary::AcousticProperties<double, si>>);
+static_assert(std::is_trivially_copyable_v<canary::SingleTemperatureProperties<float, scaled>>);
+static_assert(std::is_trivially_copyable_v<canary::MultiTemperatureProperties<D, scaled, 2>>);
+static_assert(sizeof(canary::AcousticProperties<double, si>) == 2 * sizeof(double));
+static_assert(sizeof(canary::SingleTemperatureProperties<float, scaled>) == 6 * sizeof(float));
+static_assert(sizeof(canary::MultiTemperatureProperties<D, scaled, 2>) == 7 * sizeof(D));
 
 void test_state()
 {

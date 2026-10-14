@@ -2,11 +2,12 @@
 #define CANARY_STATE_HPP
 
 #include <array>
-#include <concepts>
-#include <cstddef>
 #include <canary/quantity.hpp>
 #include <canary/scalar.hpp>
 #include <canary/status.hpp>
+#include <concepts>
+#include <cstddef>
+#include <type_traits>
 
 namespace canary
 {
@@ -55,6 +56,68 @@ struct MultiTemperatureState {
     Temperature<T, U> temp;
     std::array<SpecificEnergy<T, U>, M> mode_e;
     std::array<ModeTemperature<T, U>, M> mode_temp;
+};
+
+// Acoustic response under the model's documented pressure-work and energy
+// constraints. sound_speed is authoritative; acoustic_exponent = rho*a*a/p.
+// An acoustic exponent alone does not specify a pressure/internal-energy law.
+template <Scalar T, UnitSystem U> struct AcousticProperties {
+    SoundSpeed<T, U> sound_speed;
+    AcousticExponent<T> acoustic_exponent;
+};
+
+// Single-temperature heat capacities and gas constant are per unit mass.
+// capacity_ratio is cp/cv; acoustics describes the model's pressure response.
+template <Scalar T, UnitSystem U> struct SingleTemperatureProperties {
+    SpecificHeat<T, U> cv;
+    SpecificHeat<T, U> cp;
+    HeatCapacityRatio<T> capacity_ratio;
+    SpecificGasConstant<T, U> gas_constant;
+    AcousticProperties<T, U> acoustics;
+};
+
+// Common-velocity mixture properties with M internal energy modes. All heat
+// capacities and gas constants are per mixture mass. mode_cv follows the same
+// mode ordering as MultiTemperatureState. The heavy and electron gas constants
+// determine their respective partial pressures at their own temperatures.
+template <Scalar T, UnitSystem U, std::size_t M>
+    requires(M > 0)
+struct MultiTemperatureProperties {
+    SpecificHeat<T, U> cv_heavy;
+    std::array<SpecificHeat<T, U>, M> mode_cv;
+    SpecificGasConstant<T, U> gas_constant_heavy;
+    SpecificGasConstant<T, U> gas_constant_electron;
+    AcousticProperties<T, U> acoustics;
+};
+
+// Structural property contracts permit caller-defined records with quantities
+// of the required kind, scalar and unit system.
+template <typename P, typename T, typename U>
+concept AcousticPropertiesOf = Scalar<T> && UnitSystem<U> && requires(const P& p) {
+    { p.sound_speed } -> std::convertible_to<SoundSpeed<T, U>>;
+    { p.acoustic_exponent } -> std::convertible_to<AcousticExponent<T>>;
+};
+
+template <typename P, typename T, typename U>
+concept SingleTemperaturePropertiesOf = Scalar<T> && UnitSystem<U> && requires(const P& p) {
+    { p.cv } -> std::convertible_to<SpecificHeat<T, U>>;
+    { p.cp } -> std::convertible_to<SpecificHeat<T, U>>;
+    { p.capacity_ratio } -> std::convertible_to<HeatCapacityRatio<T>>;
+    { p.gas_constant } -> std::convertible_to<SpecificGasConstant<T, U>>;
+    requires AcousticPropertiesOf<std::remove_cvref_t<decltype(p.acoustics)>, T, U>;
+};
+
+// mode_cv must contain one capacity for every mode in the corresponding model.
+// The concept checks indexed access and quantity types; the producer is
+// responsible for the mode count and ordering.
+template <typename P, typename T, typename U>
+concept MultiTemperaturePropertiesOf = Scalar<T> && UnitSystem<U> && requires(const P& p) {
+    { p.cv_heavy } -> std::convertible_to<SpecificHeat<T, U>>;
+    { p.mode_cv.size() } -> std::convertible_to<std::size_t>;
+    { p.mode_cv[std::size_t {}] } -> std::convertible_to<SpecificHeat<T, U>>;
+    { p.gas_constant_heavy } -> std::convertible_to<SpecificGasConstant<T, U>>;
+    { p.gas_constant_electron } -> std::convertible_to<SpecificGasConstant<T, U>>;
+    requires AcousticPropertiesOf<std::remove_cvref_t<decltype(p.acoustics)>, T, U>;
 };
 
 // Derived properties at a state.

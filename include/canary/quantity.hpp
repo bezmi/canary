@@ -1,9 +1,9 @@
 #ifndef CANARY_QUANTITY_HPP
 #define CANARY_QUANTITY_HPP
 
-#include <concepts>
 #include <canary/config.hpp>
 #include <canary/scalar.hpp>
+#include <concepts>
 #include <type_traits>
 
 namespace canary
@@ -74,6 +74,8 @@ struct molar_mass             { static constexpr Dimension dimension {.mass = 1,
 // Charge of one particle.
 struct charge                 { static constexpr Dimension dimension {.charge = 1, .count = -1}; };
 struct heat_capacity_ratio    { static constexpr Dimension dimension {}; };
+// rho*a*a/p for the model's acoustic constraint.
+struct acoustic_exponent      { static constexpr Dimension dimension {}; };
 struct prandtl_number         { static constexpr Dimension dimension {}; };
 struct boltzmann_constant     { static constexpr Dimension dimension {.mass = 1, .length = 2, .time = -2, .temperature = -1, .count = -1}; };
 struct universal_gas_constant { static constexpr Dimension dimension {.mass = 1, .length = 2, .time = -2, .temperature = -1, .amount = -1}; };
@@ -171,6 +173,7 @@ template <Scalar T, UnitSystem U> using ParticleMass         = Quantity<kind::pa
 template <Scalar T>               using MolarMass            = Quantity<kind::molar_mass, T, si>;
 template <Scalar T, UnitSystem U> using Charge               = Quantity<kind::charge, T, U>;
 template <Scalar T>               using HeatCapacityRatio    = Quantity<kind::heat_capacity_ratio, T, unitless>;
+template <Scalar T>               using AcousticExponent     = Quantity<kind::acoustic_exponent, T, unitless>;
 template <Scalar T>               using PrandtlNumber        = Quantity<kind::prandtl_number, T, unitless>;
 template <Scalar T, UnitSystem U> using BoltzmannConstant    = Quantity<kind::boltzmann_constant, T, U>;
 template <Scalar T>               using UniversalGasConstant = Quantity<kind::universal_gas_constant, T, si>;

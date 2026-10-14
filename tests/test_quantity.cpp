@@ -2,10 +2,10 @@
 #include "test_suites.hpp"
 
 #include <boost/ut.hpp>
-#include <cmath>
-#include <concepts>
 #include <canary/quantity.hpp>
 #include <canary/scalar.hpp>
+#include <cmath>
+#include <concepts>
 #include <type_traits>
 
 namespace
@@ -24,6 +24,16 @@ concept AddableWith = requires(A a, B b) { a + b; };
 template <typename A, typename B>
 concept MultipliableWith = requires(A a, B b) { a * b; };
 
+template <typename Ratio>
+concept HasCaloricallyPerfectRelation =
+  requires(Ratio ratio) { canary::pressure(ratio, canary::EnergyDensity<double, si> {1}); } ||
+  requires(Ratio ratio) { canary::energy_density(ratio, canary::Pressure<double, si> {1}); } ||
+  requires(Ratio ratio) {
+      canary::isochoric_specific_heat(canary::SpecificGasConstant<double, si> {1}, ratio);
+  } || requires(Ratio ratio) {
+      canary::isobaric_specific_heat(canary::SpecificHeat<double, si> {1}, ratio);
+  };
+
 }  // namespace
 
 static_assert(sizeof(canary::Density<double, si>) == sizeof(double));
@@ -32,6 +42,18 @@ static_assert(sizeof(canary::Density<D, si>) == sizeof(D));
 static_assert(std::is_trivially_copyable_v<canary::Density<double, si>>);
 static_assert(std::is_trivially_copyable_v<canary::Density<D, si>>);
 static_assert(std::is_standard_layout_v<canary::Pressure<double, scaled>>);
+
+static_assert(sizeof(canary::AcousticExponent<double>) == sizeof(double));
+static_assert(sizeof(canary::AcousticExponent<D>) == sizeof(D));
+static_assert(std::is_trivially_copyable_v<canary::AcousticExponent<float>>);
+static_assert(canary::KindOf<canary::AcousticExponent<double>, canary::kind::acoustic_exponent>);
+static_assert(
+  !std::constructible_from<canary::AcousticExponent<double>, canary::HeatCapacityRatio<double>>);
+static_assert(
+  !std::constructible_from<canary::HeatCapacityRatio<double>, canary::AcousticExponent<double>>);
+static_assert(!AddableWith<canary::AcousticExponent<double>, canary::HeatCapacityRatio<double>>);
+static_assert(HasCaloricallyPerfectRelation<canary::HeatCapacityRatio<double>>);
+static_assert(!HasCaloricallyPerfectRelation<canary::AcousticExponent<double>>);
 
 // Construction is explicit only.
 static_assert(!std::convertible_to<double, canary::Density<double, si>>);
