@@ -5,7 +5,10 @@ atomic weights (g/mol) are required: --atomic-weights N=14.0067 O=15.9994 E=5.48
 An electron count E n gives charge -n. The blend width of each interior
 boundary is required as for thermo_inp_to_json.py.
 
-Usage: cantera_to_json.py air.yaml --species N2 O2 --atomic-weights ... --blend ... --source TEXT -o out.json
+Every selected species requires an explicit --roles NAME=heavy|electron declaration.
+Roles are independent of species names, ordering and charge; electron roles require charge -1.
+
+Usage: cantera_to_json.py air.yaml --species N2 O2 --roles N2=heavy O2=heavy --atomic-weights ... --blend ... --source TEXT -o out.json
 """
 
 import argparse
@@ -52,7 +55,10 @@ def main():
     parser.add_argument("--blend", required=True, nargs="+", help="boundary=width in K")
     parser.add_argument("--source", required=True)
     parser.add_argument("-o", "--output", required=True)
+    parser.add_argument("--roles", required=True, nargs="+", metavar="NAME=ROLE",
+                        help="explicit heavy or electron role for every selected species")
     args = parser.parse_args()
+    roles = species_json.parse_roles(args.roles, args.species)
     weights = {}
     for item in args.atomic_weights:
         element, value = item.split("=")
@@ -84,6 +90,8 @@ def main():
             species[name] = convert(entries[name], weights, widths)
         except ValueError as error:
             raise SystemExit(f"{name}: {error}") from None
+    for name, record in species.items():
+        record["role"] = roles[name]
     species_json.dump(species_json.species_file(species, reference=args.source), args.output)
 
 

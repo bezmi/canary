@@ -1,4 +1,4 @@
-"""Shared output structure of canary species files (format canary-species-1).
+"""Shared output structure of canary species files (format canary-species-2).
 
 Numbers are written by Python's json module in the shortest form that reads
 back to the same double. Decimal strings from source files are converted with
@@ -9,7 +9,7 @@ rounding, so that "28.0134" g/mol and "28.0134e-3" kg/mol give the same double.
 import json
 from decimal import Decimal
 
-FORMAT = "canary-species-1"
+FORMAT = "canary-species-2"
 UNITS = {"molar_mass": "kg/mol", "energy": "J/mol", "temperature": "K", "length": "m"}
 
 
@@ -63,7 +63,33 @@ def parse_blend_widths(items):
     return widths
 
 
+def parse_roles(items, names):
+    """Require exactly one explicit heavy/electron role per selected species."""
+    selected = set(names)
+    if len(selected) != len(names):
+        raise SystemExit("selected species must be distinct")
+    roles = {}
+    for item in items:
+        name, separator, role = item.partition("=")
+        if not separator or not name or role not in ("heavy", "electron"):
+            raise SystemExit(f"invalid role declaration {item!r}: expected NAME=heavy or NAME=electron")
+        if name not in selected:
+            raise SystemExit(f"role for {name}: species is not selected")
+        if name in roles:
+            raise SystemExit(f"role for {name}: given twice")
+        roles[name] = role
+    for name in names:
+        if name not in roles:
+            raise SystemExit(f"role for {name}: missing declaration")
+    return roles
+
+
 def species_file(species, reference=None, notes=None):
+    for name, record in species.items():
+        if record.get("role") not in ("heavy", "electron"):
+            raise SystemExit(f"{name}: role must be heavy or electron")
+        if record["role"] == "electron" and record["charge"] != -1:
+            raise SystemExit(f"{name}: electron role requires charge -1")
     out = {"format": FORMAT, "units": UNITS, "species": species}
     if reference:
         out["reference"] = reference

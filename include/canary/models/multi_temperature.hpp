@@ -39,7 +39,7 @@ struct ElectronicLevelsInput {
 
 // The kinds of energy that an energy mode can hold for one species:
 // vibration and electronic excitation of a heavy species, and the
-// translational energy of free electrons (species "e-").
+// translational energy of a species with the electron role.
 enum class ModeComponent : std::uint8_t { vibration, electronic, electron };
 
 // Host input: one component of an energy mode, the species by name and the
@@ -79,11 +79,11 @@ struct ModeComponentSet {
 // Ideal gas mixture of N species with a translational-rotational
 // temperature T (State::temp) and M energy modes, mode m with its own
 // temperature T_m (State::mode_temp[m]) and energy per unit mass e_m
-// (State::mode_e[m]). The species named "e-" is the free electron; every
-// other species is a heavy species. For species i, with gas constant R_i,
+// (State::mode_e[m]). SpeciesMetadataView supplies the heavy/electron role
+// during construction. For species i, with gas constant R_i,
 // cp_i(T) and h_i(T) per unit mass from its NASA 9-coefficient curve, T_ref
 // the reference temperature and d_i its rotational degrees of freedom
-// (0 for an atom and for e-, 2 for a linear molecule, 3 for a nonlinear
+// (0 for an atom and for free electrons, 2 for a linear molecule, 3 for a nonlinear
 // molecule):
 // - cp_tr,i = (5/2 + d_i/2) R_i, cv_tr,i = cp_tr,i - R_i and
 //   dh_f,i = h_i(T_ref);
@@ -765,14 +765,12 @@ void check_multi_temperature_species(const std::array<Nasa9Species<S>, N>& speci
             throw ParameterError(std::format("species {}: name given twice", names[i]));
         }
         const int d = rotational_degrees[i];
-        if (names[i] == "e-") {
-            if (species[i].charge != -1.0) {
-                throw ParameterError(
-                  std::format("species e-: charge must be -1, got {}", species[i].charge));
-            }
+        if (species[i].metadata.role == SpeciesRole::electron) {
             if (d != 0) {
                 throw ParameterError(
-                  std::format("species e-: rotational degrees of freedom must be 0, got {}", d));
+                  std::format("species {}: rotational degrees of freedom must be 0, got {}",
+                              names[i],
+                              d));
             }
         }
         if (d != 0 && d != 2 && d != 3) {
@@ -830,6 +828,7 @@ template <std::floating_point P,
           std::size_t C>
 void fill_mode_components(MultiTemperatureMixture<P, U, N, M, S, L>& model,
                           const std::array<std::string_view, N>& names,
+                          const std::array<Nasa9Species<S>, N>& species,
                           const std::array<int, N>& rotational_degrees,
                           const std::array<EnergyModeInput<C>, M>& modes)
 {
@@ -859,7 +858,7 @@ void fill_mode_components(MultiTemperatureMixture<P, U, N, M, S, L>& model,
             };
             const std::size_t i = species_index(names, name);
             if (i == N) { throw fail("unknown species"); }
-            const bool electron = name == "e-";
+            const bool electron = species[i].metadata.role == SpeciesRole::electron;
             switch (input.component) {
             case ModeComponent::vibration:
                 if (electron) { throw fail("free electrons have only the electron component"); }
@@ -869,7 +868,9 @@ void fill_mode_components(MultiTemperatureMixture<P, U, N, M, S, L>& model,
                 if (electron) { throw fail("free electrons have only the electron component"); }
                 break;
             case ModeComponent::electron:
-                if (!electron) { throw fail("only e- has the electron component"); }
+                if (!electron) {
+                    throw fail("only an electron-role species has the electron component");
+                }
                 break;
             default: throw fail("unknown component");
             }
@@ -884,12 +885,13 @@ void fill_mode_components(MultiTemperatureMixture<P, U, N, M, S, L>& model,
     }
     model.electron = -1;
     model.electron_mode = -1;
-    const std::size_t e = species_index(names, "e-");
-    if (e < N) {
+    for (std::size_t e = 0; e < N; ++e) {
+        if (species[e].metadata.role != SpeciesRole::electron) { continue; }
         const int mode = owner[e][static_cast<std::size_t>(ModeComponent::electron)];
         if (mode < 0) {
-            throw ParameterError(
-              "species e-: free electrons must be in a mode as their electron component");
+            throw ParameterError(std::format(
+              "species {}: free electrons must be in a mode as their electron component",
+              names[e]));
         }
         model.electron = static_cast<int>(e);
         model.electron_mode = mode;
@@ -908,7 +910,7 @@ void fill_mode_components(MultiTemperatureMixture<P, U, N, M, S, L>& model,
 // rounded to P. Throws ParameterError, naming the species, the levels entry
 // or the mode and component, when:
 // - a species name is null or empty (the error gives the species index);
-// - two species have the same name; a species named e- does not have
+// - two species have the same name; an electron-role species does not have
 //   charge -1 or has rotational degrees of freedom other than 0; a number
 //   of rotational degrees of freedom is not 0, 2 or 3;
 // - make_thermally_perfect_mixture rejects a species;
@@ -917,10 +919,10 @@ void fill_mode_components(MultiTemperatureMixture<P, U, N, M, S, L>& model,
 //   non-negative; the first level temperature is not 0; a degeneracy is not
 //   positive;
 // - a mode has a component count not in [1, C]; a component names an
-//   unknown species; it is vibration of an atom (d_i = 0) or of e-,
-//   electronic of e-, electron of a species other than e-, or not one of
+//   unknown species; it is vibration of an atom (d_i = 0) or a free electron,
+//   electronic of a free electron, electron of a heavy species, or not one of
 //   the three components; a component appears twice (in one mode or in two);
-// - e- is present but its electron component is in no mode.
+// - an electron-role species is present but its electron component is in no mode.
 template <std::floating_point P,
           UnitSystem U,
           std::size_t N,
@@ -987,7 +989,7 @@ Built<MultiTemperatureMixture<P, U, N, M, S, L>, SpeciesData<P, U, N>>
         };
     }
 
-    detail::fill_mode_components(model, names, rotational_degrees, modes);
+    detail::fill_mode_components(model, names, species, rotational_degrees, modes);
     return built;
 }
 
@@ -1586,7 +1588,7 @@ CANARY_HOST_DEVICE std::array<SpecificHeat<T, U>, N>
 { return species_isobaric_specific_heat(gas.thermally_perfect, temp); }
 
 // The mode that holds the vibration of species i, or -1 when its vibration
-// is in no mode (an atom, e-, or a frozen vibration).
+// is in no mode (an atom, a free electron, or a frozen vibration).
 template <std::floating_point P,
           UnitSystem U,
           std::size_t N,
@@ -1603,7 +1605,7 @@ CANARY_HOST_DEVICE constexpr int
     return -1;
 }
 
-// The mode that holds the energy of the free electrons, or -1 without e-.
+// The mode that holds the energy of the free electrons, or -1 without free electrons.
 template <std::floating_point P,
           UnitSystem U,
           std::size_t N,

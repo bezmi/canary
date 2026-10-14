@@ -1,4 +1,4 @@
-"""Writes species of a canary species file (format canary-species-1) as a C++
+"""Writes species of a canary species file (format canary-species-2) as a C++
 header of host input records: with --thermo, the NASA-9 species
 (canary::Nasa9Species, see include/canary/models/thermally_perfect.hpp); with
 --electronic, the electronic levels (canary::ElectronicLevelsInput, see
@@ -19,7 +19,7 @@ from pathlib import Path
 
 from reactions_to_header import comment, number, string
 
-FORMAT = "canary-species-1"
+FORMAT = "canary-species-2"
 
 
 def array(items):
@@ -36,6 +36,9 @@ def padded(values, size, zero):
 
 
 def thermo_entry(name, record, segments):
+    role = record.get("role")
+    if role not in ("heavy", "electron"):
+        raise SystemExit(f"{name}: role must be heavy or electron")
     thermo = record["thermo"]
     if thermo["model"] != "nasa9":
         raise SystemExit(f"{name}: thermo model must be nasa9")
@@ -48,6 +51,7 @@ def thermo_entry(name, record, segments):
         f".name = {string(name)},",
         f".molar_mass = {number(record['molar_mass'])},",
         f".charge = {number(record['charge'])},",
+        f".metadata = {{.role = SpeciesRole::{role}}},",
         f".fit = {{.segments = {count}, .breaks = {array(number(x) for x in breaks)}, "
         f".blends = {array(number(x) for x in blends)}, "
         f".a = {{{{{', '.join(array(number(x) for x in row) for row in rows)},}},}},}},",

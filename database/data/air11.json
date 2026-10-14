@@ -1,5 +1,5 @@
 {
-   "format": "canary-species-1",
+   "format": "canary-species-2",
    "units": {
       "molar_mass": "kg/mol",
       "energy": "J/mol",
@@ -8,6 +8,7 @@
    },
    "species": {
       "N2": {
+         "role": "heavy",
          "molar_mass": 0.0280134,
          "charge": 0.0,
          "thermo": {
@@ -83,6 +84,7 @@
          "notes": "molar mass: from CEA2::thermo.inp"
       },
       "O2": {
+         "role": "heavy",
          "molar_mass": 0.0319988,
          "charge": 0.0,
          "thermo": {
@@ -155,6 +157,7 @@
          "notes": "molar mass: from CEA2::thermo.inp"
       },
       "N": {
+         "role": "heavy",
          "molar_mass": 0.0140067,
          "charge": 0.0,
          "thermo": {
@@ -244,6 +247,7 @@
          "ionisation_energy": 1402330.360173364
       },
       "O": {
+         "role": "heavy",
          "molar_mass": 0.0159994,
          "charge": 0.0,
          "thermo": {
@@ -331,6 +335,7 @@
          "ionisation_energy": 1313942.077121842
       },
       "NO": {
+         "role": "heavy",
          "molar_mass": 0.0300061,
          "charge": 0.0,
          "thermo": {
@@ -403,6 +408,7 @@
          "notes": "molar mass: CEA2::thermo.inp"
       },
       "N+": {
+         "role": "heavy",
          "molar_mass": 0.0140061514,
          "charge": 1.0,
          "thermo": {
@@ -489,6 +495,7 @@
          "notes": "molar mass: CEA2::thermo.inp"
       },
       "O+": {
+         "role": "heavy",
          "molar_mass": 0.0159988514,
          "charge": 1.0,
          "thermo": {
@@ -575,6 +582,7 @@
          "notes": "molar mass: CEA2::therm.inp"
       },
       "N2+": {
+         "role": "heavy",
          "molar_mass": 0.0280128514,
          "charge": 1.0,
          "thermo": {
@@ -646,6 +654,7 @@
          "notes": "molar mass: from CEA2::thermo.inp"
       },
       "O2+": {
+         "role": "heavy",
          "molar_mass": 0.0319982514,
          "charge": 1.0,
          "thermo": {
@@ -714,6 +723,7 @@
          "notes": "molar mass: CEA2::thermo.inp"
       },
       "NO+": {
+         "role": "heavy",
          "molar_mass": 0.0300055514,
          "charge": 1.0,
          "thermo": {
@@ -789,6 +799,7 @@
          "notes": "molar mass: CEA2::thermo.inp"
       },
       "e-": {
+         "role": "electron",
          "molar_mass": 5.48579903e-07,
          "charge": -1.0,
          "thermo": {

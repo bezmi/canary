@@ -15,9 +15,12 @@ of e- is e_minus.lua.
 With --ionisation-energy N=14.53413 ..., the given ionisation energies
 (in eV, converted to J/mol with e N_A) are added; GDTk's database has none.
 
+Every selected species requires an explicit --roles NAME=heavy|electron declaration.
+Roles are independent of species names, ordering and charge; electron roles require charge -1.
+
 Usage: gdtk_to_json.py --database DIR --species N2 O2 N O NO [--transport]
            [--electronic] [--ionisation-energy N=14.53413 O=13.61805]
-           --source TEXT -o out.json
+           --roles N2=heavy O2=heavy N=heavy O=heavy NO=heavy --source TEXT -o out.json
 """
 
 import argparse
@@ -182,7 +185,10 @@ def main():
                         help="ionisation energies in eV to add")
     parser.add_argument("--source", required=True, help="where the database files came from (version, path)")
     parser.add_argument("-o", "--output", required=True)
+    parser.add_argument("--roles", required=True, nargs="+", metavar="NAME=ROLE",
+                        help="explicit heavy or electron role for every selected species")
     args = parser.parse_args()
+    roles = species_json.parse_roles(args.roles, args.species)
     species = {name: convert(args.database / file_name(name), name, args.transport, args.electronic)
                for name in args.species}
     for item in args.ionisation_energy:
@@ -190,6 +196,8 @@ def main():
         if name not in species:
             raise SystemExit(f"ionisation energy for {name}, which is not converted")
         species[name]["ionisation_energy"] = float(Decimal(value) * MOLAR_ELECTRONVOLT)
+    for name, record in species.items():
+        record["role"] = roles[name]
     species_json.dump(species_json.species_file(species, reference=args.source), args.output)
 
 

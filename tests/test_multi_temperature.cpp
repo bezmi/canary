@@ -685,6 +685,52 @@ void test_multi_temperature()
           expect(!canary::detail::holds_any(air4.mode_components[1][0]));
       };
 
+    "multi-temperature: species roles are independent of names and ordering"_test = [] {
+        auto species = canary::air11_species;
+        auto degrees = canary::air11_rotational_degrees;
+        auto levels = canary::air11_electronic_levels;
+        auto modes = canary::air11_three_temperature_modes;
+        species[10].name = "free-electron";
+        species[2].name = "e-";
+        const auto rename = [](const char* name) {
+            if (std::string_view(name) == "e-") { return "free-electron"; }
+            if (std::string_view(name) == "N") { return "e-"; }
+            return name;
+        };
+        for (auto& entry : levels) { entry.name = rename(entry.name); }
+        for (auto& mode : modes) {
+            for (int i = 0; i < mode.count; ++i) {
+                auto& entry = mode.components[static_cast<std::size_t>(i)];
+                entry.species = rename(entry.species);
+            }
+        }
+        for (const std::size_t electron : {std::size_t(10), std::size_t(0)}) {
+            if (electron == 0) {
+                std::swap(species[0], species[10]);
+                std::swap(degrees[0], degrees[10]);
+            }
+            const auto result =
+              canary::make_multi_temperature_mixture(species,
+                                                     degrees,
+                                                     levels,
+                                                     modes,
+                                                     canary::UnitScales<double, si> {});
+            expect(result.model.electron == static_cast<int>(electron));
+            expect(result.model.electron_mode == 1_i);
+            expect(result.model.mode_components[1][electron].electron);
+            expect(!result.model.mode_components[1][2].electron);
+        }
+        species = canary::air11_species;
+        degrees = canary::air11_rotational_degrees;
+        species[2].metadata.role = canary::SpeciesRole::electron;
+        species[2].charge = -1;
+        const auto error = air11_error(species,
+                                       degrees,
+                                       canary::air11_electronic_levels,
+                                       canary::air11_three_temperature_modes);
+        expect(error.find("more than one electron-role species") != std::string::npos) << error;
+    };
+
     "multi-temperature: the builder rejects null or empty species names"_test = [] {
         for (const char* name : std::array<const char*, 2> {nullptr, ""}) {
             auto species = canary::air11_species;
@@ -752,8 +798,8 @@ void test_multi_temperature()
         auto modes = canary::air11_three_temperature_modes;
         modes[1].components[3].component = canary::ModeComponent::electron;
         const std::string error = air11_modes_error(modes);
-        expect(
-          error.starts_with("mode 1, component 3 (O electron): only e- has the electron component"))
+        expect(error.starts_with("mode 1, component 3 (O electron): only an electron-role species "
+                                 "has the electron component"))
           << error;
     };
 

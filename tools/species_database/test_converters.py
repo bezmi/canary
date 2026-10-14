@@ -27,11 +27,12 @@ blend = ["--blend", "1000=400", "6000=1000"]
 
 runs = {
     "thermo.inp": [tools / "thermo_inp_to_json.py", data / "thermo_inp_excerpt.inp",
-                   "--species", "N2", "O2", "NO", *blend],
+                   "--species", "N2", "O2", "NO", "--roles", "N2=heavy", "O2=heavy", "NO=heavy", *blend],
     "Cantera": [tools / "cantera_to_json.py", data / "cantera_excerpt.yaml", "--species", "N2", "O2", "NO",
+                "--roles", "N2=heavy", "O2=heavy", "NO=heavy",
                 "--atomic-weights", "N=14.0067", "O=15.9994", *blend],
     "GDTk layout": [tools / "gdtk_to_json.py", "--database", data / "gdtk", "--species", "N2", "--transport",
-                    "--electronic"],
+                    "--electronic", "--roles", "N2=heavy"],
 }
 
 expected_species = {
@@ -46,14 +47,14 @@ with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "out.json"
         subprocess.run([sys.executable, *map(str, command), "--source", "test", "-o", str(out)], check=True)
         converted = json.loads(out.read_text())
-        assert converted["format"] == "canary-species-1"
+        assert converted["format"] == "canary-species-2"
         assert set(converted["species"]) == expected_species[label], f"{label}: unexpected species set"
         if label == "GDTk layout":
             assert converted["species"]["N2"]["electronic_levels"] == shipped["N2"]["electronic_levels"]
             assert converted["species"]["N2"]["transport"] == shipped["N2"]["transport"]
         for name, record in converted["species"].items():
             expected = shipped[name]
-            for key in ("molar_mass", "charge"):
+            for key in ("molar_mass", "charge", "role"):
                 if record[key] != expected[key]:
                     failures += 1
                     print(f"{label} {name}: {key} {record[key]} != {expected[key]}")
@@ -100,6 +101,82 @@ def reject_conversion(command, out, diagnostic):
     assert not out.exists()
 
 
+# Every importer requires one unambiguous declaration for each selected species.
+with tempfile.TemporaryDirectory() as tmp:
+    out = Path(tmp) / "roles.json"
+    for label, original in runs.items():
+        command = list(original)
+        start = command.index("--roles")
+        end = start + 1
+        while end < len(command) and not str(command[end]).startswith("--"):
+            end += 1
+        del command[start:end]
+        reject_conversion(command, out, "--roles")
+        valid = [name + "=heavy" for name in sorted(expected_species[label])]
+        for declarations, diagnostic in (
+            (valid + [valid[0]], "given twice"),
+            (valid + ["absent=heavy"], "species is not selected"),
+            (["N2=unspecified"], "expected NAME=heavy or NAME=electron"),
+            (["N2=unknown"], "expected NAME=heavy or NAME=electron"),
+            (["N2"], "expected NAME=heavy or NAME=electron"),
+            (["=heavy"], "expected NAME=heavy or NAME=electron"),
+            (["N2=heavy=electron"], "expected NAME=heavy or NAME=electron"),
+        ):
+            reject_conversion(command + ["--roles", *declarations], out, diagnostic)
+        if len(valid) > 1:
+            reject_conversion(command + ["--roles", *valid[1:]], out, "missing declaration")
+        invalid_charge = ["N2=electron" if role == "N2=heavy" else role for role in valid]
+        reject_conversion(command + ["--roles", *invalid_charge], out, "electron role requires charge -1")
+print("Explicit converter roles: checked")
+
+
+# Explicit roles survive conversion independently of labels and source ordering.
+with tempfile.TemporaryDirectory() as tmp:
+    source = Path(tmp) / "roles.yaml"
+    out = Path(tmp) / "roles.json"
+    thermo = {"model": "NASA9", "temperature-ranges": [200, 20000],
+              "data": [[0, 0, 2.5, 0, 0, 0, 0, 0, 0]]}
+    source.write_text(yaml.safe_dump({"species": [
+        {"name": "carrier", "composition": {"E": 1}, "thermo": thermo},
+        {"name": "e-", "composition": {"N": 1}, "thermo": thermo},
+    ]}), encoding="utf-8")
+    command = [sys.executable, str(tools / "cantera_to_json.py"), str(source),
+               "--species", "e-", "carrier", "--roles", "carrier=electron", "e-=heavy",
+               "--atomic-weights", "N=14.0067", "E=0.000548579909", *blend,
+               "--source", "test", "-o", str(out)]
+    subprocess.run(command, check=True)
+    records = json.loads(out.read_text())["species"]
+    assert records["e-"]["role"] == "heavy" and records["e-"]["charge"] == 0
+    assert records["carrier"]["role"] == "electron" and records["carrier"]["charge"] == -1
+
+    # A GDTk-layout electron with a user-chosen label and a constant cp/R fit.
+    (Path(tmp) / "carrier.lua").write_text(
+        "db.carrier.charge = -1\n"
+        "db.carrier.M = {value = 5.48579909e-7}\n"
+        "db.carrier.ceaThermoCoeffs = {nsegments = 1, T_break_points = {200, 20000}, "
+        "segment0 = {0, 0, 2.5, 0, 0, 0, 0, 0, 0}}\n", encoding="utf-8")
+    subprocess.run([sys.executable, str(tools / "gdtk_to_json.py"), "--database", tmp,
+                    "--species", "carrier", "--roles", "carrier=electron",
+                    "--source", "test", "-o", str(out)], check=True)
+    record = json.loads(out.read_text())["species"]["carrier"]
+    assert record["role"] == "electron" and record["charge"] == -1
+
+    # A complete fixed-width electron record in thermo.inp layout.
+    metadata = " 1" + " " * 8 + "E " + "  1.00" + " " * 34 + "0.0005485799".rjust(13)
+    powers = "".join(f"{p:5.1f}" for p in [-2, -1, 0, 1, 2, 3, 4])
+    head = f"{200:11.3f}{20000:11.3f}7" + powers
+    first = "".join(f"{v:16.8E}" for v in [0, 0, 2.5, 0, 0])
+    second = "".join(f"{v:16.8E}" for v in [0, 0, 0, 0, 0])
+    source = Path(tmp) / "electron.inp"
+    source.write_text("\n".join(["carrier".ljust(18), metadata, head, first, second]) + "\n")
+    subprocess.run([sys.executable, str(tools / "thermo_inp_to_json.py"), str(source),
+                    "--species", "carrier", "--roles", "carrier=electron", *blend,
+                    "--source", "test", "-o", str(out)], check=True)
+    record = json.loads(out.read_text())["species"]["carrier"]
+    assert record["role"] == "electron" and record["charge"] == -1
+print("Renamed electron conversion: checked")
+
+
 # Reject invalid masses and dimensions before creating an output file.
 with tempfile.TemporaryDirectory() as tmp:
     out = Path(tmp) / "invalid.json"
@@ -138,7 +215,7 @@ with tempfile.TemporaryDirectory() as tmp:
     source = Path(tmp) / "ion.yaml"
     source.write_text(yaml.safe_dump(changed))
     command = [tools / "cantera_to_json.py", source, "--species", "N2",
-               "--atomic-weights", "N=14.0067", "E=0.000548579909", *blend]
+               "--roles", "N2=heavy", "--atomic-weights", "N=14.0067", "E=0.000548579909", *blend]
     subprocess.run([sys.executable, *map(str, command), "--source", "test", "-o", str(out)], check=True)
     record = json.loads(out.read_text())["species"]["N2"]
     assert record["charge"] == 1.0
@@ -160,7 +237,7 @@ with tempfile.TemporaryDirectory() as tmp:
     first = next(i for i, line in enumerate(original) if line[:18].split()[:1] == ["N2"])
     lines = original[first:first + 11]
     source = Path(tmp) / "invalid.inp"
-    command = [tools / "thermo_inp_to_json.py", source, "--species", "N2", *blend]
+    command = [tools / "thermo_inp_to_json.py", source, "--species", "N2", "--roles", "N2=heavy", *blend]
     for length in range(1, len(lines)):
         source.write_text("\n".join(lines[:length]) + "\n")
         reject_conversion(command, out, "N2: incomplete")
@@ -203,10 +280,10 @@ print("NASA9 complete records, powers and Fortran numbers: checked")
 with tempfile.TemporaryDirectory() as tmp:
     out = Path(tmp) / "ion.json"
     subprocess.run([sys.executable, str(tools / "gdtk_to_json.py"), "--database", str(data / "gdtk"),
-                    "--species", "N+", "--electronic", "--source", "test", "-o", str(out)], check=True)
+                    "--species", "N+", "--roles", "N+=heavy", "--electronic", "--source", "test", "-o", str(out)], check=True)
     converted = json.loads(out.read_text())["species"]["N+"]
     expected = json.loads((root / "database" / "data" / "air11.json").read_text())["species"]["N+"]
-    for key in ("molar_mass", "charge", "electronic_levels"):
+    for key in ("molar_mass", "charge", "role", "electronic_levels"):
         if converted[key] != expected[key]:
             failures += 1
             print(f"GDTk bracket form N+: {key} {converted[key]} != {expected[key]}")

@@ -6,7 +6,8 @@
 // Reference: GDTk species database (gdtk-uq/gdtk commit bf559c3f,
 // src/gas/species-database); thermo fits as cited per species (NASA CEA2
 // thermo.inp, Johnston et al. AIAA Paper 2015-3110); electronic levels: NIST,
-// as in the GDTk database
+// as in the GDTk database; ionisation energies of N (14.53413 eV) and O
+// (13.61805 eV): NIST Atomic Spectra Database
 
 #include <array>
 #include <canary/models/multi_temperature.hpp>
@@ -24,6 +25,7 @@ inline constexpr std::array<Nasa9Species<4>, 11> air11_species {
       .name = "N2",
       .molar_mass = 0.0280134,
       .charge = 0.0,
+      .metadata = {.role = SpeciesRole::heavy},
       .fit =
         {
           .segments = 3,
@@ -109,6 +111,7 @@ inline constexpr std::array<Nasa9Species<4>, 11> air11_species {
       .name = "O2",
       .molar_mass = 0.0319988,
       .charge = 0.0,
+      .metadata = {.role = SpeciesRole::heavy},
       .fit =
         {
           .segments = 3,
@@ -194,6 +197,7 @@ inline constexpr std::array<Nasa9Species<4>, 11> air11_species {
       .name = "N",
       .molar_mass = 0.0140067,
       .charge = 0.0,
+      .metadata = {.role = SpeciesRole::heavy},
       .fit =
         {
           .segments = 4,
@@ -279,6 +283,7 @@ inline constexpr std::array<Nasa9Species<4>, 11> air11_species {
       .name = "O",
       .molar_mass = 0.0159994,
       .charge = 0.0,
+      .metadata = {.role = SpeciesRole::heavy},
       .fit =
         {
           .segments = 4,
@@ -364,6 +369,7 @@ inline constexpr std::array<Nasa9Species<4>, 11> air11_species {
       .name = "NO",
       .molar_mass = 0.0300061,
       .charge = 0.0,
+      .metadata = {.role = SpeciesRole::heavy},
       .fit =
         {
           .segments = 3,
@@ -449,6 +455,7 @@ inline constexpr std::array<Nasa9Species<4>, 11> air11_species {
       .name = "N+",
       .molar_mass = 0.0140061514,
       .charge = 1.0,
+      .metadata = {.role = SpeciesRole::heavy},
       .fit =
         {
           .segments = 4,
@@ -534,6 +541,7 @@ inline constexpr std::array<Nasa9Species<4>, 11> air11_species {
       .name = "O+",
       .molar_mass = 0.0159988514,
       .charge = 1.0,
+      .metadata = {.role = SpeciesRole::heavy},
       .fit =
         {
           .segments = 4,
@@ -619,6 +627,7 @@ inline constexpr std::array<Nasa9Species<4>, 11> air11_species {
       .name = "N2+",
       .molar_mass = 0.0280128514,
       .charge = 1.0,
+      .metadata = {.role = SpeciesRole::heavy},
       .fit =
         {
           .segments = 3,
@@ -704,6 +713,7 @@ inline constexpr std::array<Nasa9Species<4>, 11> air11_species {
       .name = "O2+",
       .molar_mass = 0.0319982514,
       .charge = 1.0,
+      .metadata = {.role = SpeciesRole::heavy},
       .fit =
         {
           .segments = 3,
@@ -789,6 +799,7 @@ inline constexpr std::array<Nasa9Species<4>, 11> air11_species {
       .name = "NO+",
       .molar_mass = 0.0300055514,
       .charge = 1.0,
+      .metadata = {.role = SpeciesRole::heavy},
       .fit =
         {
           .segments = 3,
@@ -874,6 +885,7 @@ inline constexpr std::array<Nasa9Species<4>, 11> air11_species {
       .name = "e-",
       .molar_mass = 5.48579903e-07,
       .charge = -1.0,
+      .metadata = {.role = SpeciesRole::electron},
       .fit =
         {
           .segments = 3,

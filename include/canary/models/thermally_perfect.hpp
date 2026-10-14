@@ -22,13 +22,15 @@ namespace canary
 {
 
 // Host input for one species of a thermally perfect mixture: its name (for
-// error messages), molar mass [kg/mol], charge [elementary charges] and fit.
+// error messages), molar mass [kg/mol], charge [elementary charges], metadata
+// and fit. The name and borrowed metadata must outlive construction.
 template <std::size_t S>
     requires(S > 0)
 struct Nasa9Species {
     const char* name;
     double molar_mass;
     double charge;
+    SpeciesMetadataView metadata;
     Nasa9Data<S> fit;
 };
 
@@ -84,6 +86,38 @@ struct ThermallyPerfectMixture {
 namespace detail
 {
 
+// Validates host metadata before numerical parameters are constructed.
+inline void check_species_metadata(const SpeciesMetadataView& metadata, double charge)
+{
+    switch (metadata.role) {
+    case SpeciesRole::heavy: break;
+    case SpeciesRole::electron:
+        if (charge != -1.0) {
+            throw ParameterError(std::format("charge must be -1, got {}", charge));
+        }
+        if (metadata.elements && !metadata.elements->empty()) {
+            throw ParameterError("free-electron elemental composition must be empty");
+        }
+        break;
+    case SpeciesRole::unspecified: throw ParameterError("species role must be specified");
+    default: throw ParameterError("unknown species role");
+    }
+    if (!metadata.elements) { return; }
+    const auto elements = *metadata.elements;
+    for (std::size_t i = 0; i < elements.size(); ++i) {
+        const auto& entry = elements[i];
+        if (entry.element.empty()) { throw ParameterError("element identifier must not be empty"); }
+        if (entry.count == 0) {
+            throw ParameterError(std::format("element {}: count must be positive", entry.element));
+        }
+        for (std::size_t j = 0; j < i; ++j) {
+            if (elements[j].element == entry.element) {
+                throw ParameterError(std::format("element {}: given twice", entry.element));
+            }
+        }
+    }
+}
+
 // Fills entry i of the model and of the species data from one species, after
 // the model's reference temperature is set. Throws ParameterError.
 template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
@@ -100,6 +134,7 @@ void fill_thermally_perfect_species(ThermallyPerfectMixture<P, U, N, S>& model,
     if (!std::isfinite(input.charge)) {
         throw ParameterError(std::format("charge must be finite, got {}", input.charge));
     }
+    check_species_metadata(input.metadata, input.charge);
     const P tau = scale_factor<kind::temperature>(scales);
     const auto gas_constant =
       static_cast<P>(constants::universal_gas_constant<double> / input.molar_mass);
@@ -126,7 +161,11 @@ void fill_thermally_perfect_species(ThermallyPerfectMixture<P, U, N, S>& model,
 // is zero and the iteration limit 30. Throws
 // ParameterError, with the species name in the message, when a molar mass
 // is not finite and positive, a charge is not finite, or a fit is rejected
-// by make_nasa9_curve.
+// by make_nasa9_curve. Metadata requires a specified, known role, nonempty
+// distinct element identifiers and positive element counts. A free electron
+// requires charge -1 and empty composition when supplied. At most one species
+// may have the electron role. Names must be non-null and nonempty; a name
+// error gives the species index.
 template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
     requires(N > 0 && S > 0)
 Built<ThermallyPerfectMixture<P, U, N, S>, SpeciesData<P, U, N>>
@@ -143,8 +182,16 @@ Built<ThermallyPerfectMixture<P, U, N, S>, SpeciesData<P, U, N>>
     model.bracket_width = convert<U>(Temperature<P, si> {P(1000)}, scales);
     model.relative_tolerance = P(1.0e-10);
     model.max_iterations = 30;
+    bool has_electron = false;
     for (std::size_t i = 0; i < N; ++i) {
+        if (species[i].name == nullptr || species[i].name[0] == '\0') {
+            throw ParameterError(std::format("species {}: name must not be null or empty", i));
+        }
         try {
+            if (species[i].metadata.role == SpeciesRole::electron) {
+                if (has_electron) { throw ParameterError("more than one electron-role species"); }
+                has_electron = true;
+            }
             detail::fill_thermally_perfect_species(model, built.species, i, species[i], scales);
         } catch (const ParameterError& error) {
             throw ParameterError(std::format("species {}: {}", species[i].name, error.what()));

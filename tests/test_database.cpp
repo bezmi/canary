@@ -377,13 +377,39 @@ int main()
 
     "another format, other units, invalid JSON or a missing file are errors"_test = [] {
         expect(throws_database_error(
-          [] { db::parse_species(air5_with("canary-species-1", "canary-species-2")); }));
+          [] { db::parse_species(air5_with("canary-species-2", "canary-species-1")); }));
         expect(
           throws_database_error([] { db::parse_species(air5_with("\"kg/mol\"", "\"g/mol\"")); }));
         expect(throws_database_error([] { db::parse_species(air5_with("\"K\"", "\"degC\"")); }));
         expect(throws_database_error([] { db::parse_species("{\"format\": "); }));
         expect(
           throws_database_error([] { db::read_species_file(source_path("no_such_file.json")); }));
+    };
+
+    "species records require explicit roles and diagnose old formats"_test = [] {
+        for (const std::string_view replacement :
+             {"", "\"role\": \"unspecified\",", "\"role\": \"unknown\","}) {
+            expect(throws_database_error(
+              [&] { db::parse_species(air5_with("\"role\": \"heavy\",", replacement)); }));
+        }
+        expect(throws_database_error(
+          [] { db::parse_species(air5_with("\"role\": \"heavy\"", "\"role\": \"electron\"")); }));
+        try {
+            db::parse_species(R"({"format":"canary-species-1","species":{}})");
+            expect(false) << "old species format accepted";
+        } catch (const db::DatabaseError& error) {
+            expect(std::string_view(error.what())
+                     .find("regenerate species files with an explicit heavy/electron role") !=
+                   std::string_view::npos)
+              << error.what();
+        }
+        const auto file = db::read_species_file(air11_path());
+        expect(file.species.at("e-").role == canary::SpeciesRole::electron);
+        expect(file.species.at("N+").role == canary::SpeciesRole::heavy);
+        const auto input = db::nasa9_species<4>(file, air11_names);
+        for (std::size_t i = 0; i < input.size(); ++i) {
+            expect(input[i].metadata.role == canary::air11_species[i].metadata.role);
+        }
     };
 
     "the shipped schema is the schema of the current file structs"_test = [] {
@@ -398,6 +424,7 @@ int main()
             const auto& b = canary::air5_species[i];
             expect(std::string_view(a.name) == std::string_view(b.name));
             expect(a.molar_mass == b.molar_mass && a.charge == b.charge) << b.name;
+            expect(a.metadata.role == b.metadata.role) << b.name;
             expect(a.fit.segments == b.fit.segments) << b.name;
             const auto n = static_cast<std::size_t>(b.fit.segments);
             for (std::size_t k = 0; k <= n; ++k) {

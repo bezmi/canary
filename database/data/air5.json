@@ -1,5 +1,5 @@
 {
-   "format": "canary-species-1",
+   "format": "canary-species-2",
    "units": {
       "molar_mass": "kg/mol",
       "energy": "J/mol",
@@ -8,6 +8,7 @@
    },
    "species": {
       "N2": {
+         "role": "heavy",
          "molar_mass": 0.0280134,
          "charge": 0.0,
          "thermo": {
@@ -149,6 +150,7 @@
          "notes": "molar mass: from CEA2::thermo.inp"
       },
       "O2": {
+         "role": "heavy",
          "molar_mass": 0.0319988,
          "charge": 0.0,
          "thermo": {
@@ -287,6 +289,7 @@
          "notes": "molar mass: from CEA2::thermo.inp"
       },
       "N": {
+         "role": "heavy",
          "molar_mass": 0.0140067,
          "charge": 0.0,
          "thermo": {
@@ -427,6 +430,7 @@
          "notes": "molar mass: CEA2::thermo.inp"
       },
       "O": {
+         "role": "heavy",
          "molar_mass": 0.0159994,
          "charge": 0.0,
          "thermo": {
@@ -565,6 +569,7 @@
          "notes": "molar mass: CEA2::thermo.inp"
       },
       "NO": {
+         "role": "heavy",
          "molar_mass": 0.0300061,
          "charge": 0.0,
          "thermo": {

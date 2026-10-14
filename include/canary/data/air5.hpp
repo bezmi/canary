@@ -35,6 +35,7 @@ inline constexpr std::array<Nasa9Species<4>, 5> air5_species {
       .name = "N2",
       .molar_mass = 28.0134e-3,
       .charge = 0,
+      .metadata = {.role = SpeciesRole::heavy},
       .fit =
         {
           .segments = 3,
@@ -96,6 +97,7 @@ inline constexpr std::array<Nasa9Species<4>, 5> air5_species {
       .name = "O2",
       .molar_mass = 0.03199880,
       .charge = 0,
+      .metadata = {.role = SpeciesRole::heavy},
       .fit =
         {
           .segments = 3,
@@ -157,6 +159,7 @@ inline constexpr std::array<Nasa9Species<4>, 5> air5_species {
       .name = "N",
       .molar_mass = 14.0067e-3,
       .charge = 0,
+      .metadata = {.role = SpeciesRole::heavy},
       .fit =
         {
           .segments = 4,
@@ -231,6 +234,7 @@ inline constexpr std::array<Nasa9Species<4>, 5> air5_species {
       .name = "O",
       .molar_mass = 0.01599940,
       .charge = 0,
+      .metadata = {.role = SpeciesRole::heavy},
       .fit =
         {
           .segments = 4,
@@ -305,6 +309,7 @@ inline constexpr std::array<Nasa9Species<4>, 5> air5_species {
       .name = "NO",
       .molar_mass = 0.03000610,
       .charge = 0,
+      .metadata = {.role = SpeciesRole::heavy},
       .fit =
         {
           .segments = 3,

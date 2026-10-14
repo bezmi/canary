@@ -39,7 +39,7 @@ struct ElementCount {
 // Reaction construction requires known composition for every participant.
 struct SpeciesMetadataView {
     SpeciesRole role {SpeciesRole::unspecified};
-    std::optional<std::span<const ElementCount>> elements;
+    std::optional<std::span<const ElementCount>> elements {};
 };
 
 // Particle mass and charge of each species, in the model's unit system. Only

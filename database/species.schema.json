@@ -87,6 +87,19 @@
                      "null"
                   ]
                },
+               "role": {
+                  "type": "string",
+                  "oneOf": [
+                     {
+                        "title": "heavy",
+                        "const": "heavy"
+                     },
+                     {
+                        "title": "electron",
+                        "const": "electron"
+                     }
+                  ]
+               },
                "thermo": {
                   "type": "object",
                   "properties": {
@@ -209,6 +222,7 @@
             "required": [
                "molar_mass",
                "charge",
+               "role",
                "thermo"
             ]
          }

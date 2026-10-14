@@ -1,4 +1,4 @@
-"""Writes the transport data of a canary species file (format canary-species-1,
+"""Writes the transport data of a canary species file (format canary-species-2,
 the "transport" record of each species) and a collision-integral file (format
 canary-collision-integrals-1) as a C++ header of host input records
 (canary::SpeciesTransportInput and canary::CollisionPairInput, see
@@ -20,7 +20,7 @@ from pathlib import Path
 
 from reactions_to_header import comment, number, string
 
-SPECIES_FORMAT = "canary-species-1"
+SPECIES_FORMAT = "canary-species-2"
 COLLISION_FORMAT = "canary-collision-integrals-1"
 
 

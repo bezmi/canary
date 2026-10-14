@@ -85,6 +85,64 @@ void test_thermally_perfect()
     const auto built = canary::make_air5<double>(canary::UnitScales<double, si> {});
     const Air& gas = built.model;
 
+    "thermally perfect construction validates explicit species metadata"_test = [] {
+        const auto check = [](const auto& inputs, std::string_view expected) {
+            try {
+                canary::make_thermally_perfect_mixture(inputs, canary::UnitScales<double, si> {});
+                expect(false) << "invalid metadata accepted";
+            } catch (const canary::ParameterError& error) {
+                expect(std::string_view(error.what()).starts_with(expected)) << error.what();
+            }
+        };
+        auto inputs = canary::air5_species;
+        inputs[0].metadata.role = canary::SpeciesRole::unspecified;
+        check(inputs, "species N2: species role must be specified");
+        inputs[0].metadata.role = static_cast<canary::SpeciesRole>(99);
+        check(inputs, "species N2: unknown species role");
+        inputs[0].metadata.role = canary::SpeciesRole::electron;
+        check(inputs, "species N2: charge must be -1");
+        inputs[0].charge = -1;
+        inputs[1].metadata.role = canary::SpeciesRole::electron;
+        inputs[1].charge = -1;
+        check(inputs, "species O2: more than one electron-role species");
+        inputs = canary::air5_species;
+        const std::array invalid_elements {
+          std::array<canary::ElementCount, 2> {{{"", 1}, {"N", 1}}},
+          std::array<canary::ElementCount, 2> {{{"N", 0}, {"O", 1}}},
+          std::array<canary::ElementCount, 2> {{{"N", 1}, {"N", 1}}},
+        };
+        const std::array diagnostics {
+          "species N2: element identifier must not be empty",
+          "species N2: element N: count must be positive",
+          "species N2: element N: given twice",
+        };
+        for (std::size_t i = 0; i < invalid_elements.size(); ++i) {
+            inputs[0].metadata.elements =
+              std::span<const canary::ElementCount>(invalid_elements[i]);
+            check(inputs, diagnostics[i]);
+        }
+        const std::array<canary::ElementCount, 1> elements {{{"N", 2}}};
+        inputs[0].metadata.elements = std::span<const canary::ElementCount>(elements);
+        expect(nothrow([&] {
+            canary::make_thermally_perfect_mixture(inputs, canary::UnitScales<double, si> {});
+        }));
+        inputs[0].metadata.role = canary::SpeciesRole::electron;
+        inputs[0].charge = -1;
+        check(inputs, "species N2: free-electron elemental composition must be empty");
+        inputs[0].metadata.elements = std::span<const canary::ElementCount> {};
+        expect(nothrow([&] {
+            canary::make_thermally_perfect_mixture(inputs, canary::UnitScales<double, si> {});
+        }));
+        inputs[0].metadata.elements.reset();
+        expect(nothrow([&] {
+            canary::make_thermally_perfect_mixture(inputs, canary::UnitScales<double, si> {});
+        }));
+        for (const char* name : std::array<const char*, 2> {nullptr, ""}) {
+            inputs[0].name = name;
+            check(inputs, "species 0: name must not be null or empty");
+        }
+    };
+
     "thermally perfect closures reject pressure overflow and retain diagnostic fields"_test = [&] {
         const auto check = [&]<typename V> {
             const std::array<V, 5> y {V(1), V(0), V(0), V(0), V(0)};

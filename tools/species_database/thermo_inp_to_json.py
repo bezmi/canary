@@ -4,7 +4,10 @@ Zehe and Gordon, NASA/TP-2002-211556, appendix C) to a canary species file.
 The file gives no blending between temperature intervals, so the blend width
 of each interior boundary is required: --blend 1000=400 6000=1000 ...
 
-Usage: thermo_inp_to_json.py thermo.inp --species N2 O2 NO --blend 1000=400 6000=1000 --source TEXT -o out.json
+Every selected species requires an explicit --roles NAME=heavy|electron declaration.
+Roles are independent of species names, ordering and charge; electron roles require charge -1.
+
+Usage: thermo_inp_to_json.py thermo.inp --species N2 O2 NO --roles N2=heavy O2=heavy NO=heavy --blend 1000=400 6000=1000 --source TEXT -o out.json
 """
 
 import argparse
@@ -86,7 +89,10 @@ def main():
     parser.add_argument("--blend", required=True, nargs="+", help="boundary=width in K")
     parser.add_argument("--source", required=True)
     parser.add_argument("-o", "--output", required=True)
+    parser.add_argument("--roles", required=True, nargs="+", metavar="NAME=ROLE",
+                        help="explicit heavy or electron role for every selected species")
     args = parser.parse_args()
+    roles = species_json.parse_roles(args.roles, args.species)
     with open(args.thermo_inp, encoding="utf-8") as stream:
         lines = [line.rstrip("\n") for line in stream]
     widths = species_json.parse_blend_widths(args.blend)
@@ -96,6 +102,8 @@ def main():
             species[name] = convert(lines, name, widths)
         except (ValueError, InvalidOperation) as error:
             raise SystemExit(f"{name}: invalid NASA9 record: {error}") from None
+    for name, record in species.items():
+        record["role"] = roles[name]
     species_json.dump(species_json.species_file(species, reference=args.source), args.output)
 
 

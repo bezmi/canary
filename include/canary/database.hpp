@@ -10,13 +10,14 @@
 //
 // Species file layout (strict JSON):
 //   {
-//     "format": "canary-species-1",
+//     "format": "canary-species-2",
 //     "units": {"molar_mass": "kg/mol", "energy": "J/mol", "temperature": "K",
 //               "length": "m"},
 //     "species": {
 //       "N2": {
 //         "molar_mass": 0.0280134,
 //         "charge": 0,
+//         "role": "heavy",
 //         "thermo": {
 //           "model": "nasa9",
 //           "temperature_ranges": [200, 1000, 6000, 20000],
@@ -158,7 +159,7 @@ namespace canary::database
 {
 
 // Value of the "format" key of a species file.
-inline constexpr std::string_view species_format = "canary-species-1";
+inline constexpr std::string_view species_format = "canary-species-2";
 
 // Units of the values in a file. Only these SI units are accepted.
 struct Units {
@@ -233,11 +234,12 @@ struct ElectronicLevelsRecord {
 };
 
 // One species: molar mass in kg/mol, charge in elementary charges, thermo
-// data and optionally transport data, electronic levels and the ionisation
-// energy in J/mol.
+// data, explicit heavy/electron role and optionally transport data, electronic levels and the
+// ionisation energy in J/mol.
 struct SpeciesRecord {
     double molar_mass {};
     double charge {};
+    SpeciesRole role {SpeciesRole::unspecified};
     ThermoRecord thermo;
     std::optional<TransportRecord> transport;
     std::optional<ElectronicLevelsRecord> electronic_levels;
@@ -666,6 +668,7 @@ std::array<Nasa9Species<S>, N> nasa9_species(const SpeciesFile& file,
               .name = entry->first.c_str(),
               .molar_mass = entry->second.molar_mass,
               .charge = entry->second.charge,
+              .metadata = {.role = entry->second.role},
               .fit = nasa9_data<S>(entry->second.thermo),
             };
         } catch (const ParameterError& error) {

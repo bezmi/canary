@@ -248,6 +248,27 @@ void test_two_temperature()
         }
     };
 
+    "two-temperature: electron rejection follows the role rather than the name"_test = [] {
+        auto species = canary::air5_species;
+        species[3].name = "e-";
+        expect(nothrow([&] {
+            canary::make_two_temperature_mixture(species,
+                                                 canary::air5_rotational_degrees,
+                                                 canary::UnitScales<double, si> {});
+        }));
+        species[3].name = "free-electron";
+        species[3].metadata.role = canary::SpeciesRole::electron;
+        try {
+            canary::make_two_temperature_mixture(species,
+                                                 canary::air5_rotational_degrees,
+                                                 canary::UnitScales<double, si> {});
+            expect(false) << "electron-role species accepted";
+        } catch (const canary::ParameterError& error) {
+            expect(
+              std::string_view(error.what()).starts_with("species free-electron: free electrons"));
+        }
+    };
+
     "two-temperature: the builder rejects rotational degrees other than 0, 2 and 3 and free electrons"_test =
       [] {
           for (const int d : {1, 4, -2}) {
@@ -267,6 +288,7 @@ void test_two_temperature()
           }
           auto species = canary::air5_species;
           species[3].name = "e-";
+          species[3].metadata.role = canary::SpeciesRole::electron;
           try {
               canary::make_two_temperature_mixture(species,
                                                    canary::air5_rotational_degrees,
