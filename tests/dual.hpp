@@ -148,6 +148,10 @@ template <std::floating_point V> struct canary::ScalarTraits<canary::test::Dual<
     using value_type = V;
 
     static constexpr V value(const canary::test::Dual<V>& x) { return x.real(); }
+
+    template <std::floating_point W>
+    static constexpr canary::test::Dual<W> cast(const canary::test::Dual<V>& x)
+    { return {static_cast<W>(x.real()), static_cast<W>(x.dual())}; }
 };
 
 #endif  // CANARY_TESTS_DUAL_HPP

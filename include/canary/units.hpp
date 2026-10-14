@@ -9,6 +9,7 @@
 #include <format>
 #include <limits>
 #include <type_traits>
+#include <utility>
 
 namespace canary
 {
@@ -155,21 +156,78 @@ concept ConvertibleUnits =
     (std::same_as<From, To> || (std::same_as<From, si> && std::same_as<To, S>) ||
      (std::same_as<From, S> && std::same_as<To, si>))));
 
+namespace detail
+{
+template <std::floating_point W, Scalar T>
+    requires(
+      std::same_as<W, typename ScalarTraits<T>::value_type> ||
+      requires(const T& x) {
+          { ScalarTraits<T>::template cast<W>(x) } -> Scalar;
+          requires std::same_as<
+            typename ScalarTraits<decltype(ScalarTraits<T>::template cast<W>(x))>::value_type,
+            W>;
+      })
+constexpr auto scalar_cast(const T& x)
+{
+    if constexpr (std::same_as<W, typename ScalarTraits<T>::value_type>) {
+        return x;
+    } else {
+        return ScalarTraits<T>::template cast<W>(x);
+    }
+}
+
+template <Scalar T, std::floating_point P>
+using conversion_precision_t = std::common_type_t<double, P, typename ScalarTraits<T>::value_type>;
+
+template <Scalar T, std::floating_point P>
+using conversion_scalar_t = decltype(scalar_cast<conversion_precision_t<T, P>>(std::declval<T>()));
+
+template <typename T, typename P>
+concept ConvertibleScalar = Scalar<T> && std::floating_point<P> && requires(const T& x) {
+    { scalar_cast<conversion_precision_t<T, P>>(x) } -> Scalar;
+    requires ScalarWith<conversion_scalar_t<T, P>, conversion_precision_t<T, P>>;
+    {
+        scalar_cast<typename ScalarTraits<T>::value_type>(std::declval<conversion_scalar_t<T, P>>())
+    } -> std::same_as<T>;
+};
+
+template <std::floating_point W, std::floating_point P>
+UnitScales<W, scaled> scales_cast(const UnitScales<P, scaled>& s)
+{
+    return UnitScales<W, scaled> {{.mass = static_cast<W>(s.mass()),
+                                   .density = static_cast<W>(s.density()),
+                                   .temperature = static_cast<W>(s.temperature()),
+                                   .length = static_cast<W>(s.length())}};
+}
+}  // namespace detail
+
 // The quantity q in unit system To. The kind does not change; a
 // dimensionless quantity is returned unchanged. Host-side: called when
-// models are built, not in per-cell code.
+// models are built, not in per-cell code. The result retains scalar type T.
+// Arithmetic uses the common precision of double, P and T's value_type;
+// ScalarTraits::cast converts all scalar components when precision changes.
 template <UnitSystem To, KindTag K, Scalar T, UnitTag From, std::floating_point P, UnitSystem S>
-    requires ConvertibleUnits<K, From, To, S> && ScalarPair<T, P>
+    requires ConvertibleUnits<K, From, To, S> && ScalarPair<T, P> &&
+             (std::same_as<From, unitless> || std::same_as<From, To> ||
+              detail::ConvertibleScalar<T, P>)
 auto convert(Quantity<K, T, From> q, const UnitScales<P, S>& scales)
 {
     if constexpr (std::same_as<From, unitless> || std::same_as<From, To>) {
         return q;
-    } else if constexpr (std::same_as<From, si>) {
-        const auto value = q.value() / scale_factor<K>(scales);
-        return Quantity<K, std::remove_const_t<decltype(value)>, To> {value};
     } else {
-        const auto value = q.value() * scale_factor<K>(scales);
-        return Quantity<K, std::remove_const_t<decltype(value)>, To> {value};
+        using W = detail::conversion_precision_t<T, P>;
+        using WideScalar = detail::conversion_scalar_t<T, P>;
+        const W factor = scale_factor<K>(detail::scales_cast<W>(scales));
+        const WideScalar value = detail::scalar_cast<W>(q.value());
+        const WideScalar converted = [&] {
+            if constexpr (std::same_as<From, si>) {
+                return WideScalar(value / factor);
+            } else {
+                return WideScalar(value * factor);
+            }
+        }();
+        return Quantity<K, T, To> {
+          detail::scalar_cast<typename ScalarTraits<T>::value_type>(converted)};
     }
 }
 

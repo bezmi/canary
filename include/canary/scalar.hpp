@@ -12,12 +12,18 @@ namespace canary
 // floating-point type, the real part for a dual number. A consumer
 // specialises it for its own scalar type, giving value_type (a
 // floating-point type) and a static function value(x) that returns it.
+// Unit conversion that changes precision also requires cast<W>(x), returning
+// the same scalar family with value_type W. It must convert every component,
+// including derivatives, and support conversion back to the original type.
 template <typename T> struct ScalarTraits;
 
 template <std::floating_point T> struct ScalarTraits<T> {
     using value_type = T;
 
     CANARY_HOST_DEVICE static constexpr T value(T x) { return x; }
+
+    template <std::floating_point W> CANARY_HOST_DEVICE static constexpr W cast(T x)
+    { return static_cast<W>(x); }
 };
 
 // Type of the per-cell values that canary functions compute with: double,

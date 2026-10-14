@@ -238,6 +238,86 @@ void test_units()
         expect(within_ulp(p_s, rho_s * temp_s / m_s, 16.0)) << p_s << rho_s * temp_s / m_s;
     };
 
+    "unit conversion retains each input scalar type across scale precisions"_test = [] {
+        const auto check = []<typename V, typename P>() {
+            const canary::UnitScales<P, scaled> reference {
+              {.mass = P(1), .density = P(8), .temperature = P(4), .length = P(1)}};
+            const auto converted = convert<scaled>(canary::Density<V, si> {V(16)}, reference);
+            static_assert(std::same_as<decltype(converted), const canary::Density<V, scaled>>);
+            expect(converted.value() == V(2));
+            const auto back = convert<si>(converted, reference);
+            static_assert(std::same_as<decltype(back), const canary::Density<V, si>>);
+            expect(back.value() == V(16));
+
+            using D = canary::test::Dual<V>;
+            const auto dual = convert<scaled>(canary::Density<D, si> {D(V(16), V(-8))}, reference);
+            static_assert(std::same_as<decltype(dual), const canary::Density<D, scaled>>);
+            expect(dual.value().real() == V(2) && dual.value().dual() == V(-1));
+            const auto dual_back = convert<si>(dual, reference);
+            static_assert(std::same_as<decltype(dual_back), const canary::Density<D, si>>);
+            expect(dual_back.value().real() == V(16) && dual_back.value().dual() == V(-8));
+
+            const auto identity = convert<si>(canary::Density<D, si> {D(V(16), V(-8))}, reference);
+            expect(identity.value().real() == V(16) && identity.value().dual() == V(-8));
+            const auto unitless =
+              convert<scaled>(canary::MassFraction<D> {D(V(0.5), V(-1))}, reference);
+            static_assert(std::same_as<decltype(unitless), const canary::MassFraction<D>>);
+            expect(unitless.value().real() == V(0.5) && unitless.value().dual() == V(-1));
+        };
+        const auto check_scales = [&]<typename V>() {
+            check.template operator()<V, float>();
+            check.template operator()<V, double>();
+            check.template operator()<V, long double>();
+        };
+        check_scales.template operator()<float>();
+        check_scales.template operator()<double>();
+        check_scales.template operator()<long double>();
+    };
+
+    "float conversion widens intermediate particle counts"_test = [] {
+        const canary::UnitScales<float, scaled> reference {
+          {.mass = 1.0F, .density = 1.0e20F, .temperature = 1.0F, .length = 1.0e10F}};
+        const auto rho =
+          convert<scaled>(canary::Density<float, si> {reference.density()}, reference);
+        expect(rho.value() == 1.0_f);
+        using D = canary::test::Dual<float>;
+        const auto dual =
+          convert<scaled>(canary::Density<D, si> {D(reference.density(), -reference.density())},
+                          reference);
+        expect(dual.value().real() == 1.0_f && dual.value().dual() == -1.0_f);
+    };
+
+    "dual float conversion preserves components with factors outside float range"_test = [] {
+        using D = canary::test::Dual<float>;
+        const canary::UnitScales<double, scaled> reference {
+          {.mass = 1.0, .density = 1.0e40, .temperature = 1.0, .length = 1.0}};
+        const auto small = convert<scaled>(canary::Density<D, si> {D(1.0F, -2.0F)}, reference);
+        expect(small.value().real() == static_cast<float>(1.0 / 1.0e40));
+        expect(small.value().dual() == static_cast<float>(-2.0 / 1.0e40));
+        const auto large =
+          convert<si>(canary::Density<D, scaled> {D(1.0e-30F, -2.0e-30F)}, reference);
+        expect(large.value().real() == static_cast<float>(double(1.0e-30F) * 1.0e40));
+        expect(large.value().dual() == static_cast<float>(double(-2.0e-30F) * 1.0e40));
+    };
+
+    "unit conversion retains long double precision and range"_test = [] {
+        const long double adjacent = std::nextafter(1.0L, 2.0L);
+        const canary::UnitScales<long double, scaled> reference {
+          {.mass = 1.0L, .density = 1.0L, .temperature = adjacent, .length = 1.0L}};
+        const auto scaled_temperature =
+          convert<scaled>(canary::Temperature<long double, si> {adjacent}, reference);
+        expect(scaled_temperature.value() == 1.0L);
+        const auto temperature =
+          convert<si>(canary::Temperature<long double, scaled> {1.0L}, reference);
+        expect(temperature.value() == adjacent);
+        const long double largest = std::numeric_limits<long double>::max();
+        const canary::UnitScales<double, scaled> unit {
+          {.mass = 1.0, .density = 1.0, .temperature = 1.0, .length = 1.0}};
+        using D = canary::test::Dual<long double>;
+        const auto dual = convert<scaled>(canary::Temperature<D, si> {D(largest, -largest)}, unit);
+        expect(dual.value().real() == largest && dual.value().dual() == -largest);
+    };
+
     "a dual-number quantity converts with its derivative"_test = [] {
         using D = canary::test::Dual<double>;
         const canary::Density<D, si> rho {D(2.0e-6, 1.0)};
