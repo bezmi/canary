@@ -612,6 +612,114 @@ void test_multi_temperature()
         }
     };
 
+    "electronic level conversion preserves zero and rejects lost positive temperatures"_test = [] {
+        const auto check = []<typename T>(const auto& scales) {
+            canary::ElectronicLevelsInput<2> input {.name = "test",
+                                                    .levels = 2,
+                                                    .degeneracies = {1, 1},
+                                                    .temperatures = {0, 5000}};
+            const auto converted = canary::detail::make_electronic_levels(input, scales);
+            expect(converted.temperatures[0].value() == T(0));
+            expect(converted.temperatures[1].value() > T(0));
+            input.temperatures[1] = 0;
+            expect(nothrow([&] { (void)canary::detail::make_electronic_levels(input, scales); }));
+            input.temperatures[1] = std::numeric_limits<double>::max();
+            if constexpr (std::same_as<T, float>) {
+                expect(throws<canary::ParameterError>(
+                  [&] { (void)canary::detail::make_electronic_levels(input, scales); }));
+            }
+            input.temperatures[1] = std::numeric_limits<double>::denorm_min();
+            if constexpr (std::same_as<T, float>) {
+                expect(throws<canary::ParameterError>(
+                  [&] { (void)canary::detail::make_electronic_levels(input, scales); }));
+            }
+        };
+        check.template operator()<float>(canary::UnitScales<float, si> {});
+        check.template operator()<double>(canary::UnitScales<double, si> {});
+        check.template operator()<float>(canary::UnitScales<float, scaled> {
+          {.mass = 4.65e-26F, .density = 1.0e-3F, .temperature = 1000.0F, .length = 1.0F}});
+        check.template operator()<double>(reference_scales);
+        canary::ElectronicLevelsInput<2> input {
+          .name = "test",
+          .levels = 2,
+          .degeneracies = {1, 1},
+          .temperatures = {0, std::numeric_limits<double>::max()}};
+        const canary::UnitScales<double, scaled> small {
+          {.mass = 4.65e-26, .density = 1.0e-3, .temperature = 0.5, .length = 1.0}};
+        expect(throws<canary::ParameterError>(
+          [&] { (void)canary::detail::make_electronic_levels(input, small); }));
+        input.temperatures[1] = std::numeric_limits<double>::denorm_min();
+        const canary::UnitScales<double, scaled> large {
+          {.mass = 4.65e-26, .density = 1.0e-3, .temperature = 2.0, .length = 1.0}};
+        expect(throws<canary::ParameterError>(
+          [&] { (void)canary::detail::make_electronic_levels(input, large); }));
+    };
+
+    "multi-temperature construction reports converted level failures with species context"_test =
+      [] {
+          for (const double temperature :
+               {std::numeric_limits<double>::max(), std::numeric_limits<double>::denorm_min()}) {
+              auto levels = canary::air11_electronic_levels;
+              levels[0].temperatures[1] = temperature;
+              try {
+                  (void)canary::make_multi_temperature_mixture(
+                    canary::air11_species,
+                    canary::air11_rotational_degrees,
+                    levels,
+                    canary::air11_three_temperature_modes,
+                    canary::UnitScales<float, si> {});
+                  expect(false) << "unrepresentable level temperature accepted";
+              } catch (const canary::ParameterError& error) {
+                  expect(std::string_view(error.what())
+                           .starts_with("electronic levels of N2: level 1:"));
+              }
+          }
+      };
+
+    "multi-temperature construction rejects reference electronic energy overflow"_test = [] {
+        const auto check = []<typename T>(T mass_scale) {
+            const canary::UnitScales<T, scaled> scales {
+              {.mass = mass_scale, .density = T(1), .temperature = T(1), .length = T(1)}};
+            const std::array<canary::Nasa9Species<1>, 1> species {
+              {{.name = "test",
+                .molar_mass = 0.028,
+                .charge = 0,
+                .metadata = {.role = canary::SpeciesRole::heavy},
+                .fit = {.segments = 1,
+                        .breaks = {200, 20000},
+                        .blends = {},
+                        .a = {{{0, 0, 2.5, 0, 0, 0, 0, -1.5 * 298.15, 0}}}}}}};
+            const std::array<int, 1> rotations {0};
+            std::array<canary::ElectronicLevelsInput<2>, 1> levels {
+              {{.name = "test",
+                .levels = 2,
+                .degeneracies = {1, std::numeric_limits<int>::max()},
+                .temperatures = {0, 5000}}}};
+            const std::array<canary::EnergyModeInput<1>, 1> modes {
+              {{.count = 1,
+                .components = {
+                  {{.species = "test", .component = canary::ModeComponent::electronic}}}}}};
+            try {
+                (void)
+                  canary::make_multi_temperature_mixture(species, rotations, levels, modes, scales);
+                expect(false) << "nonfinite reference electronic energy accepted";
+            } catch (const canary::ParameterError& error) {
+                expect(std::string_view(error.what())
+                         .starts_with("electronic levels of test: reference electronic energy must "
+                                      "be finite and non-negative"))
+                  << error.what();
+            }
+            levels[0].degeneracies[1] = 1;
+            expect(nothrow([&] {
+                const auto built =
+                  canary::make_multi_temperature_mixture(species, rotations, levels, modes, scales);
+                expect(std::isfinite(built.model.reference_electronic_energy[0].value()));
+            }));
+        };
+        check(1.0e10F);
+        check(2.0e279);
+    };
+
     "multi-temperature closures reject electron pressure overflow with finite heavy pressure"_test =
       [&] {
           const auto check = [&]<typename V> {

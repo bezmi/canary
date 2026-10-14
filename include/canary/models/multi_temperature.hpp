@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <limits>
 #include <string_view>
 
 namespace canary
@@ -816,8 +817,20 @@ ElectronicLevels<P, U, L> make_electronic_levels(const ElectronicLevelsInput<L>&
             throw ParameterError(
               std::format("level {}: degeneracy must be positive, got {}", k, g));
         }
+        const long double converted =
+          static_cast<long double>(theta) / static_cast<long double>(tau);
+        if (!std::isfinite(converted) || converted > std::numeric_limits<P>::max()) {
+            throw ParameterError(
+              std::format("level {}: converted temperature is outside the finite parameter range",
+                          k));
+        }
+        const Temperature<P, U> stored {static_cast<P>(converted)};
+        if (theta > 0.0 && !(stored.value() > P(0))) {
+            throw ParameterError(
+              std::format("level {}: positive temperature rounds to zero in model units", k));
+        }
         out.degeneracies[k] = static_cast<P>(g);
-        out.temperatures[k] = Temperature<P, U> {static_cast<P>(theta / tau)};
+        out.temperatures[k] = stored;
     }
     return out;
 }
@@ -912,7 +925,7 @@ void fill_mode_components(MultiTemperatureMixture<P, U, N, M, S, L>& model,
 // unit system of the scales, with its species data. The single-temperature
 // model and the species data are those of make_thermally_perfect_mixture,
 // with its temperature limits and solve settings. Level temperatures are
-// converted to the temperature unit of U in double precision and then
+// converted to the temperature unit of U in long double precision and then
 // rounded to P. Throws ParameterError, naming the species, the levels entry
 // or the mode and component, when:
 // - a species name is null or empty (the error gives the species index);
@@ -923,7 +936,8 @@ void fill_mode_components(MultiTemperatureMixture<P, U, N, M, S, L>& model,
 // - a levels entry names an unknown species or a species already given; its
 //   level count is not in [0, L]; a level temperature is not finite and
 //   non-negative; the first level temperature is not 0; a degeneracy is not
-//   positive;
+//   positive; a converted temperature is nonfinite or a positive input rounds
+//   to zero; a stored reference electronic energy is nonfinite or negative;
 // - a mode has a component count not in [1, C]; a component names an
 //   unknown species; it is vibration of an atom (d_i = 0) or a free electron,
 //   electronic of a free electron, electron of a heavy species, or not one of
@@ -998,6 +1012,13 @@ Built<MultiTemperatureMixture<P, U, N, M, S, L>, SpeciesData<P, U, N>>
                                     t_ref)
             .e,
         };
+        const P reference_energy = model.reference_electronic_energy[i.value()].value();
+        if (!std::isfinite(reference_energy) || reference_energy < P(0)) {
+            throw ParameterError(std::format("electronic levels of {}: reference electronic energy "
+                                             "must be finite and non-negative, got {}",
+                                             names[i.value()],
+                                             reference_energy));
+        }
     }
 
     detail::fill_mode_components(model, names, species, rotational_degrees, modes);
