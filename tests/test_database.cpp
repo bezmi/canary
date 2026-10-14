@@ -7,10 +7,6 @@
 
 #include <array>
 #include <boost/ut.hpp>
-#include <cmath>
-#include <cstddef>
-#include <filesystem>
-#include <fstream>
 #include <canary/build.hpp>
 #include <canary/data/air11_kim_jo.hpp>
 #include <canary/data/air11_kim_jo_exchange.hpp>
@@ -28,17 +24,65 @@
 #include <canary/reactions.hpp>
 #include <canary/transport/mixture.hpp>
 #include <canary/units.hpp>
+#include <cmath>
+#include <cstddef>
+#include <filesystem>
+#include <fstream>
 #include <ios>
 #include <iterator>
 #include <map>
 #include <optional>
+#include <random>
+#include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
+#include <utility>
 
 namespace
 {
 
 namespace db = canary::database;
+
+// Each fixture owns a directory created atomically, including across processes.
+class TemporaryDirectory
+{
+  public:
+    TemporaryDirectory()
+    {
+        const auto parent = std::filesystem::temp_directory_path();
+        std::random_device random;
+        for (int attempt = 0; attempt < 128; ++attempt) {
+            auto candidate =
+              parent / ("canary-test-" + std::to_string(random()) + "-" + std::to_string(random()));
+            std::error_code error;
+            if (std::filesystem::create_directory(candidate, error)) {
+                path_ = std::move(candidate);
+                return;
+            }
+            if (error && error != std::errc::file_exists) {
+                throw std::filesystem::filesystem_error("cannot create test directory",
+                                                        candidate,
+                                                        error);
+            }
+        }
+        throw std::runtime_error("cannot create a unique test directory");
+    }
+
+    TemporaryDirectory(const TemporaryDirectory&) = delete;
+    TemporaryDirectory& operator=(const TemporaryDirectory&) = delete;
+
+    ~TemporaryDirectory()
+    {
+        std::error_code error;
+        std::filesystem::remove_all(path_, error);
+    }
+
+    const std::filesystem::path& path() const { return path_; }
+
+  private:
+    std::filesystem::path path_;
+};
 
 std::filesystem::path source_path(std::string_view relative)
 { return std::filesystem::path(CANARY_SOURCE_DIR) / relative; }
@@ -195,6 +239,61 @@ int main()
 {
     using namespace boost::ut;
 
+    "temporary directories are distinct and removed after scope exit"_test = [] {
+        std::filesystem::path first_path;
+        std::filesystem::path second_path;
+        {
+            const TemporaryDirectory first;
+            const TemporaryDirectory second;
+            first_path = first.path();
+            second_path = second.path();
+            expect(first_path != second_path);
+            expect(std::filesystem::is_directory(first_path));
+            expect(std::filesystem::is_directory(second_path));
+        }
+        expect(!std::filesystem::exists(first_path));
+        expect(!std::filesystem::exists(second_path));
+    };
+
+    "temporary directories remove files during exception unwinding"_test = [] {
+        std::filesystem::path path;
+        expect(throws_database_error([&] {
+            const TemporaryDirectory directory;
+            path = directory.path();
+            db::write_species_file(path / "species.json", db::read_species_file(air5_path()));
+            throw db::DatabaseError("test exception");
+        }));
+        expect(!path.empty());
+        expect(!std::filesystem::exists(path));
+    };
+
+    "all database writers reject invalid destinations without changing existing files"_test = [] {
+        const TemporaryDirectory directory;
+        const auto occupied = directory.path() / "occupied";
+        expect(fatal(std::filesystem::create_directory(occupied)));
+        const auto marker = occupied / "marker.txt";
+        {
+            std::ofstream out(marker);
+            out << "retained content";
+            out.close();
+            expect(fatal(bool(out)));
+        }
+        const auto check = [&](const auto& file, auto write) {
+            expect(throws_database_error([&] { write(occupied, file); }));
+            expect(throws_database_error(
+              [&] { write(directory.path() / "missing" / "output.json", file); }));
+            expect(throws_database_error([&] { write(marker / "output.json", file); }));
+            expect(read_text(marker) == "retained content");
+            expect(std::filesystem::is_directory(occupied));
+            expect(!std::filesystem::exists(directory.path() / "missing"));
+        };
+        check(db::read_species_file(air5_path()), db::write_species_file);
+        check(db::read_reactions_file(kim_jo_path()), db::write_reactions_file);
+        check(db::read_energy_exchange_file(exchange_path()), db::write_energy_exchange_file);
+        check(db::read_collision_integrals_file(collision_path()),
+              db::write_collision_integrals_file);
+    };
+
     "the shipped five-species air file reads with its five species"_test = [] {
         const db::SpeciesFile file = db::read_species_file(air5_path());
         expect(file.format == db::species_format);
@@ -216,10 +315,10 @@ int main()
 
     "writing to a file and reading it back gives the same data"_test = [] {
         const db::SpeciesFile file = db::read_species_file(air5_path());
-        const auto path = std::filesystem::temp_directory_path() / "canary_test_species.json";
+        const TemporaryDirectory directory;
+        const auto path = directory.path() / "species.json";
         db::write_species_file(path, file);
         expect(db::read_species_file(path) == file);
-        std::filesystem::remove(path);
     };
 
     "unknown keys are errors at every level"_test = [] {
@@ -366,10 +465,10 @@ int main()
         const db::ReactionsFile again = db::parse_reactions(text);
         expect(again == file);
         expect(db::write_reactions(again) == text);
-        const auto path = std::filesystem::temp_directory_path() / "canary_test_reactions.json";
+        const TemporaryDirectory directory;
+        const auto path = directory.path() / "reactions.json";
         db::write_reactions_file(path, file);
         expect(db::read_reactions_file(path) == file);
-        std::filesystem::remove(path);
     };
 
     "unknown and missing keys of a reactions file are errors"_test = [] {
@@ -554,10 +653,10 @@ int main()
         const db::EnergyExchangeFile again = db::parse_energy_exchange(text);
         expect(again == file);
         expect(db::write_energy_exchange(again) == text);
-        const auto path = std::filesystem::temp_directory_path() / "canary_test_exchange.json";
+        const TemporaryDirectory directory;
+        const auto path = directory.path() / "exchange.json";
         db::write_energy_exchange_file(path, file);
         expect(db::read_energy_exchange_file(path) == file);
-        std::filesystem::remove(path);
     };
 
     "unknown and missing keys, another format or other units of an energy-exchange file are errors"_test =
@@ -758,10 +857,10 @@ int main()
         const db::CollisionIntegralsFile again = db::parse_collision_integrals(text);
         expect(again == file);
         expect(db::write_collision_integrals(again) == text);
-        const auto path = std::filesystem::temp_directory_path() / "canary_test_collisions.json";
+        const TemporaryDirectory directory;
+        const auto path = directory.path() / "collisions.json";
         db::write_collision_integrals_file(path, file);
         expect(db::read_collision_integrals_file(path) == file);
-        std::filesystem::remove(path);
     };
 
     "unknown and missing keys, another format or other units of a collision-integral file are errors"_test =
