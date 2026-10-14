@@ -22,7 +22,7 @@ namespace kind = canary::kind;
 constexpr double eps = std::numeric_limits<double>::epsilon();
 
 // Cerberus-like references: a proton mass, a low density, 1e4 K and 1 mm.
-constexpr canary::UnitScales<double, scaled> scales {{
+const canary::UnitScales<double, scaled> scales {{
   .mass = 1.6726e-27,
   .density = 1.0e-6,
   .temperature = 1.0e4,
@@ -103,6 +103,69 @@ void test_units()
         check.template operator()<long double>();
     };
 
+    "unit scale construction rejects unrepresentable fixed derived scales"_test = [] {
+        const auto check = []<typename P>() {
+            using Scales = canary::UnitScales<P, scaled>;
+            const P smallest = std::numeric_limits<P>::denorm_min();
+            const P largest = std::numeric_limits<P>::max();
+            const auto rejects = [](typename Scales::Input input, const char* name) {
+                std::string message;
+                try {
+                    (void)Scales {input};
+                } catch (const canary::ParameterError& error) {
+                    message = error.what();
+                }
+                expect(
+                  message.starts_with(std::string(name) + " scale must be finite and positive"))
+                  << message;
+            };
+            rejects({.mass = largest, .density = P(1), .temperature = smallest, .length = P(1)},
+                    "velocity");
+            rejects({.mass = smallest, .density = P(1), .temperature = largest, .length = smallest},
+                    "time");
+            rejects({.mass = largest, .density = P(1), .temperature = P(1), .length = largest},
+                    "time");
+            rejects({.mass = P(1), .density = largest, .temperature = P(1), .length = P(1e20)},
+                    "particle count");
+            rejects({.mass = P(1), .density = smallest, .temperature = P(1), .length = P(0.25)},
+                    "particle count");
+        };
+        check.template operator()<double>();
+        check.template operator()<long double>();
+    };
+
+    "derived scale validation retains representable extreme results"_test = [] {
+        const auto check = []<typename P>() {
+            const int exponent = 3 * (std::numeric_limits<P>::max_exponent / 4);
+            const P large = std::ldexp(P(1), exponent);
+            const P small = std::ldexp(P(1), -exponent);
+            const P length = std::ldexp(P(1), -exponent / 3);
+            const canary::UnitScales<P, scaled> small_velocity {
+              {.mass = large, .density = large, .temperature = small, .length = length}};
+            expect(canary::velocity_scale(small_velocity) ==
+                   std::sqrt(canary::constants::boltzmann<P>) * small);
+            expect(canary::count_scale(small_velocity) == small);
+            const canary::UnitScales<P, scaled> large_density_ratio {
+              {.mass = small, .density = large, .temperature = P(1), .length = length}};
+            expect(canary::count_scale(large_density_ratio) == large);
+            const P smallest = std::numeric_limits<P>::denorm_min();
+            const canary::UnitScales<P, scaled> subnormal_count {
+              {.mass = P(1), .density = smallest, .temperature = P(1), .length = P(1)}};
+            expect(canary::count_scale(subnormal_count) == smallest);
+        };
+        check.template operator()<double>();
+        check.template operator()<long double>();
+        for (const float value :
+             {std::numeric_limits<float>::denorm_min(), std::numeric_limits<float>::max()}) {
+            const canary::UnitScales<float, scaled> reference {
+              {.mass = value, .density = value, .temperature = value, .length = value}};
+            expect(std::isfinite(canary::time_scale(reference)) &&
+                   canary::time_scale(reference) > 0.0);
+            expect(std::isfinite(canary::count_scale(reference)) &&
+                   canary::count_scale(reference) > 0.0);
+        }
+    };
+
     "unit scales own their validated input and retain copy and assignment"_test = [] {
         using Scales = canary::UnitScales<double, scaled>;
         static_assert(!std::is_aggregate_v<Scales> && !std::is_default_constructible_v<Scales>);
@@ -112,7 +175,7 @@ void test_units()
         static_assert(std::same_as<decltype(scales.density()), double>);
         static_assert(std::same_as<decltype(scales.temperature()), double>);
         static_assert(std::same_as<decltype(scales.length()), double>);
-        static_assert(scales.mass() == 1.6726e-27 && scales.density() == 1.0e-6);
+        expect(scales.mass() == 1.6726e-27 && scales.density() == 1.0e-6);
         Scales::Input input {.mass = 2.0, .density = 3.0, .temperature = 4.0, .length = 5.0};
         const Scales original {input};
         input.mass = 9.0;
@@ -132,7 +195,7 @@ void test_units()
         expect(canary::boltzmann_constant(scales).value() == 1.0_d);
         expect(canary::boltzmann_constant(canary::UnitScales<double, si> {}).value() ==
                1.380649e-23);
-        constexpr canary::UnitScales<float, scaled> unit_float {{
+        const canary::UnitScales<float, scaled> unit_float {{
           .mass = 1.0F,
           .density = 1.0F,
           .temperature = 1.0F,

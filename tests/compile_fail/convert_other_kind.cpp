@@ -1,7 +1,7 @@
 // Conversion keeps the kind: an energy density does not become a pressure.
 #include <canary/units.hpp>
 
-constexpr canary::UnitScales<double, canary::scaled> scales {{1.0, 1.0, 1.0, 1.0}};
+const canary::UnitScales<double, canary::scaled> scales {{1.0, 1.0, 1.0, 1.0}};
 
 #ifdef CANARY_COMPILE_FAIL
 canary::Pressure<double, canary::scaled> bad =

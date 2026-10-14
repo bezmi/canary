@@ -6,6 +6,7 @@
 #include <canary/scalar.hpp>
 #include <cmath>
 #include <concepts>
+#include <cstdint>
 #include <format>
 #include <limits>
 #include <type_traits>
@@ -28,6 +29,80 @@ template <std::floating_point P>
 inline constexpr P universal_gas_constant = avogadro<P> * boltzmann<P>;
 }  // namespace constants
 
+namespace detail
+{
+// Positive host-side scale arithmetic with a separate binary exponent. Products
+// and quotients do not overflow before the final result is converted to W.
+template <std::floating_point W> struct BinaryScale {
+    W fraction;
+    std::int64_t exponent;
+
+    explicit BinaryScale(W value)
+    {
+        int e = 0;
+        fraction = std::frexp(value, &e);
+        exponent = e;
+    }
+
+    BinaryScale(W value, std::int64_t e) : BinaryScale(value) { exponent += e; }
+
+    BinaryScale operator*(const BinaryScale& other) const
+    { return {fraction * other.fraction, exponent + other.exponent}; }
+
+    BinaryScale operator/(const BinaryScale& other) const
+    { return {fraction / other.fraction, exponent - other.exponent}; }
+
+    BinaryScale square_root() const
+    {
+        const auto even_exponent = exponent - (exponent % 2 != 0 ? 1 : 0);
+        const W argument = exponent == even_exponent ? fraction : W(2) * fraction;
+        return {std::sqrt(argument), even_exponent / 2};
+    }
+
+    W value() const
+    {
+        if (exponent > std::numeric_limits<int>::max()) {
+            return std::numeric_limits<W>::infinity();
+        }
+        if (exponent < std::numeric_limits<int>::min()) { return W(0); }
+        return std::ldexp(fraction, static_cast<int>(exponent));
+    }
+};
+
+template <std::floating_point W> void check_scale(const char* name, W value)
+{
+    if (!(value > W(0)) || !std::isfinite(value)) {
+        throw ParameterError(
+          std::format("{} scale must be finite and positive, got {}", name, value));
+    }
+}
+
+template <std::floating_point W> W reference_velocity(W mass, W temperature)
+{
+    const W energy = constants::boltzmann<W> * temperature;
+    const W squared = energy / mass;
+    if (std::isnormal(energy) && std::isnormal(squared)) { return std::sqrt(squared); }
+    return (BinaryScale<W>(constants::boltzmann<W>) * BinaryScale<W>(temperature) /
+            BinaryScale<W>(mass))
+      .square_root()
+      .value();
+}
+
+template <std::floating_point W> W reference_count(W mass, W density, W length)
+{
+    const W number_density = density / mass;
+    const W line_count = number_density * length;
+    const W area_count = line_count * length;
+    const W count = area_count * length;
+    if (std::isnormal(number_density) && std::isnormal(line_count) && std::isnormal(area_count) &&
+        std::isnormal(count)) {
+        return count;
+    }
+    const BinaryScale<W> x(length);
+    return (BinaryScale<W>(density) / BinaryScale<W>(mass) * x * x * x).value();
+}
+}  // namespace detail
+
 // Reference scales of a unit system. A value in the system is the SI value
 // divided by the scale of its kind.
 template <std::floating_point P, UnitSystem U> struct UnitScales;
@@ -40,8 +115,9 @@ template <std::floating_point P> struct UnitScales<P, si> {};
 // T_ref [K] and length x_ref [m]. The velocity scale is sqrt(k_B T_ref /
 // m_ref), so the Boltzmann constant is 1 in this system. Charges are in
 // units of the elementary charge.
-// Construction requires finite, positive base scales. Input is copied;
-// subsequent changes to the input do not affect the validated value.
+// Host construction requires finite, positive base scales and derived
+// velocity, time and particle-count scales in common_type_t<double, P>. Input
+// is copied; subsequent changes do not affect the validated value.
 template <std::floating_point P> struct UnitScales<P, scaled>
 {
   public:
@@ -52,14 +128,21 @@ template <std::floating_point P> struct UnitScales<P, scaled>
         P length {};
     };
 
-    // Throws ParameterError naming an invalid base scale. An omitted input
-    // field is zero and is rejected. Valid inputs permit constant evaluation.
-    constexpr explicit UnitScales(Input input) : values_(input)
+    // Throws ParameterError naming an invalid base or derived scale. An
+    // omitted input field is zero and is rejected.
+    explicit UnitScales(Input input) : values_(input)
     {
-        check_base("mass", input.mass);
-        check_base("density", input.density);
-        check_base("temperature", input.temperature);
-        check_base("length", input.length);
+        detail::check_scale("mass", input.mass);
+        detail::check_scale("density", input.density);
+        detail::check_scale("temperature", input.temperature);
+        detail::check_scale("length", input.length);
+        using W = std::common_type_t<double, P>;
+        const W velocity = detail::reference_velocity(W(input.mass), W(input.temperature));
+        detail::check_scale("velocity", velocity);
+        detail::check_scale("time", W(input.length) / velocity);
+        detail::check_scale(
+          "particle count",
+          detail::reference_count(W(input.mass), W(input.density), W(input.length)));
     }
 
     [[nodiscard]] constexpr P mass() const { return values_.mass; }
@@ -69,14 +152,6 @@ template <std::floating_point P> struct UnitScales<P, scaled>
 
   private:
     Input values_;
-
-    static constexpr void check_base(const char* name, P value)
-    {
-        if (!(value > P(0)) || !(value <= std::numeric_limits<P>::max())) {
-            throw ParameterError(
-              std::format("{} scale must be finite and positive, got {}", name, value));
-        }
-    }
 };
 
 // Host-side derived scales use at least double precision and retain long
@@ -87,7 +162,7 @@ template <std::floating_point P>
 std::common_type_t<double, P> velocity_scale(const UnitScales<P, scaled>& s)
 {
     using W = std::common_type_t<double, P>;
-    return std::sqrt(constants::boltzmann<W> * W(s.temperature()) / W(s.mass()));
+    return detail::reference_velocity(W(s.mass()), W(s.temperature()));
 }
 
 // t_ref = x_ref / u_ref [s]
@@ -102,8 +177,7 @@ template <std::floating_point P>
 std::common_type_t<double, P> count_scale(const UnitScales<P, scaled>& s)
 {
     using W = std::common_type_t<double, P>;
-    const W number_density = W(s.density()) / W(s.mass());
-    return number_density * s.length() * s.length() * s.length();
+    return detail::reference_count(W(s.mass()), W(s.density()), W(s.length()));
 }
 
 namespace detail
