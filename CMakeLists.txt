@@ -30,11 +30,15 @@ if(PROJECT_IS_TOP_LEVEL)
   set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 endif()
 
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
 include(CanarySetupMdspan)
 
 add_library(canary INTERFACE)
 add_library(canary::canary ALIAS canary)
-target_include_directories(canary INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/include>)
+target_include_directories(canary INTERFACE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/include>
+  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 target_compile_features(canary INTERFACE cxx_std_20)
 target_link_libraries(canary INTERFACE mdspan::mdspan)
 
@@ -52,3 +56,19 @@ endif()
 if(CANARY_BUILD_BENCHMARKS)
   add_subdirectory(benchmarks)
 endif()
+
+install(DIRECTORY include/canary DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(TARGETS canary EXPORT canaryTargets)
+if(CANARY_BUILD_DATABASE)
+  install(TARGETS canary_database EXPORT canaryTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+endif()
+
+set(canary_cmake_install_dir "${CMAKE_INSTALL_LIBDIR}/cmake/canary")
+configure_package_config_file(cmake/canaryConfig.cmake.in
+  "${CMAKE_CURRENT_BINARY_DIR}/canaryConfig.cmake"
+  INSTALL_DESTINATION "${canary_cmake_install_dir}")
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/canaryConfig.cmake"
+  DESTINATION "${canary_cmake_install_dir}")
+install(EXPORT canaryTargets NAMESPACE canary::
+  DESTINATION "${canary_cmake_install_dir}")
