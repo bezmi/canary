@@ -256,8 +256,8 @@ double multi_temperature_case(const char* name,
           canary::as_kind<canary::kind::mode_temperature, si>(
             Kokkos::mdspan<const double, Kokkos::dextents<std::size_t, 1>>(t_m.data(), modes))));
         rho_e[i] = c.rho[i] * state.e.value();
-        for (std::size_t m = 0; m < modes; ++m) {
-            rho_e_m[(i * modes) + m] = c.rho[i] * state.mode_e[m].value();
+        for (const canary::ModeIndex m : canary::mode_indices(0, modes)) {
+            rho_e_m[(i * modes) + m.value()] = c.rho[i] * state.mode_e[m.value()].value();
         }
     }
     return time_per_cell(name, [&] {

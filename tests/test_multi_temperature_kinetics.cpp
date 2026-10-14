@@ -56,16 +56,38 @@ struct SpeciesQueryModel {
     Gas thermo;
 };
 
-int species_vibration_mode(const SpeciesQueryModel& gas, canary::SpeciesIndex index)
+canary::OptionalModeIndex species_vibration_mode(const SpeciesQueryModel& gas,
+                                                 canary::SpeciesIndex index)
 { return canary::species_vibration_mode(gas.thermo, index); }
 
-int electron_energy_mode(const SpeciesQueryModel& gas)
+canary::OptionalModeIndex electron_energy_mode(const SpeciesQueryModel& gas)
 { return canary::electron_energy_mode(gas.thermo); }
 
 canary::OptionalSpeciesIndex electron_species_index(const SpeciesQueryModel& gas)
 { return canary::electron_species_index(gas.thermo); }
 
+// Raw integer query results do not satisfy the typed mode contract.
+struct RawModeQueryModel {
+    using parameter_type = double;
+    using units = si;
+    static constexpr std::size_t mode_count = Gas::mode_count;
+    [[maybe_unused]] friend int species_vibration_mode(const RawModeQueryModel&,
+                                                       canary::SpeciesIndex)
+    { return -1; }
+    [[maybe_unused]] friend int electron_energy_mode(const RawModeQueryModel&) { return -1; }
+};
+
+template <typename Index>
+concept AcceptsModeEnergyIndex = requires(const Gas& gas, Index index, Temp temp) {
+    canary::species_mode_energy(gas, index, temp);
+};
+
 static_assert(canary::HasEnergyModes<SpeciesQueryModel>);
+static_assert(!canary::HasEnergyModes<RawModeQueryModel>);
+static_assert(AcceptsModeEnergyIndex<canary::ModeIndex>);
+static_assert(!AcceptsModeEnergyIndex<canary::SpeciesIndex>);
+static_assert(!AcceptsModeEnergyIndex<std::size_t>);
+static_assert(!AcceptsModeEnergyIndex<canary::OptionalModeIndex>);
 
 constexpr std::size_t species_count = 11;
 constexpr std::size_t reaction_count = 40;
@@ -308,13 +330,13 @@ Values evaluate(const M& mech, const X& exchange, const G& gas, const ReferenceS
     for (std::size_t i = 0; i < species_count; ++i) {
         out.production[i] = sources.species[i].value();
     }
-    for (std::size_t m = 0; m < mode_count; ++m) {
-        out.total[m] = sources.modes[m].value();
-        out.vt[m] = vt[m].value();
-        out.cv[m] = cv[m].value();
-        out.et[m] = et[m].value();
-        out.ve[m] = ve[m].value();
-        out.ce[m] = ce[m].value();
+    for (const canary::ModeIndex m : canary::mode_indices(0, mode_count)) {
+        out.total[m.value()] = sources.modes[m.value()].value();
+        out.vt[m.value()] = vt[m.value()].value();
+        out.cv[m.value()] = cv[m.value()].value();
+        out.et[m.value()] = et[m.value()].value();
+        out.ve[m.value()] = ve[m.value()].value();
+        out.ce[m.value()] = ce[m.value()].value();
     }
     return out;
 }
@@ -482,29 +504,31 @@ void test_multi_temperature_kinetics()
         }
         const auto no_electrons = canary::make_air5_two_temperature(si_scales).model;
         expect(!canary::electron_species_index(no_electrons));
-        expect(canary::species_vibration_mode(gas, canary::SpeciesIndex {0}) == 0_i);
-        expect(canary::species_vibration_mode(gas, canary::SpeciesIndex {11}) == -1_i);
+        expect(canary::species_vibration_mode(gas, canary::SpeciesIndex {0}) ==
+               canary::OptionalModeIndex {canary::ModeIndex {0}});
+        expect(!canary::species_vibration_mode(gas, canary::SpeciesIndex {11}));
     };
 
     "multi-temperature kinetics: the builders resolve modes and electrons"_test = [&] {
         for (std::size_t k = 0; k < reaction_count; ++k) {
             const auto& r = mech.reactions[k];
-            const bool forward_electron =
-              r.forward.translational_exponent != 1.0 && r.forward.other_mode == 1;
+            const bool forward_electron = r.forward.translational_exponent != 1.0 &&
+                                          r.forward.other_mode == canary::ModeIndex {1};
             expect(forward_electron == contains(forward_at_electron, k)) << k;
             const bool backward_electron = r.equilibrium_at_other_temperature;
             expect(backward_electron == contains(backward_at_electron, k)) << k;
-            if (backward_electron) { expect(r.backward.other_mode == 1_ul) << k; }
+            if (backward_electron) { expect(r.backward.other_mode == canary::ModeIndex {1}) << k; }
             // Dissociations of N2, O2 and NO: their vibration mode.
-            if (k <= 20) { expect(r.forward.other_mode == 0_ul) << k; }
+            if (k <= 20) { expect(r.forward.other_mode == canary::ModeIndex {0}) << k; }
         }
         expect(exchange.electron == canary::OptionalSpeciesIndex {canary::SpeciesIndex {10}} &&
-               exchange.electron_mode == 1_i);
+               exchange.electron_mode == canary::OptionalModeIndex {canary::ModeIndex {1}});
         for (const std::size_t i : std::array<std::size_t, 6> {0, 1, 4, 7, 8, 9}) {
-            expect(exchange.vibration_mode[i] == 0_i) << i;
+            expect(exchange.vibration_mode[i] == canary::OptionalModeIndex {canary::ModeIndex {0}})
+              << i;
         }
         for (const std::size_t i : std::array<std::size_t, 5> {2, 3, 5, 6, 10}) {
-            expect(exchange.vibration_mode[i] == -1) << i;
+            expect(!exchange.vibration_mode[i]) << i;
         }
         const auto& ve = exchange.vibration_electron[0];
         expect(ve.species == canary::SpeciesIndex {0});
@@ -609,19 +633,25 @@ void test_multi_temperature_kinetics()
                 cv_scale += boltzmann * c.dissociation_temperature.value() *
                             (got.forward[c.reaction] + got.backward[c.reaction]) / 2.0;
             }
-            for (std::size_t m = 0; m < mode_count; ++m) {
-                expect(std::abs(got.vt[m] - s.vt[m]) <= 5.0e-5 * std::abs(s.vt[m]))
-                  << s.name << m << got.vt[m] << s.vt[m];
-                expect(std::abs(got.cv[m] - s.cv[m]) <= 5.0e-5 * cv_scale)
-                  << s.name << m << got.cv[m] << s.cv[m];
-                expect(std::abs(got.et[m] - s.et[m]) <= 5.0e-5 * std::abs(s.et[m]))
-                  << s.name << m << got.et[m] << s.et[m];
-                expect(std::abs(got.ve[m] - s.ve[m]) <= 5.0e-5 * std::abs(s.ve[m]))
-                  << s.name << m << got.ve[m] << s.ve[m];
-                const double scale = std::abs(s.vt[m]) + cv_scale + std::abs(s.et[m]) +
-                                     std::abs(s.ve[m]) + std::abs(got.ce[m]);
-                expect(std::abs(got.total[m] - (s.total[m] + got.ce[m])) <= 5.0e-5 * scale)
-                  << s.name << m << got.total[m] << s.total[m] + got.ce[m];
+            for (const canary::ModeIndex m : canary::mode_indices(0, mode_count)) {
+                expect(std::abs(got.vt[m.value()] - s.vt[m.value()]) <=
+                       5.0e-5 * std::abs(s.vt[m.value()]))
+                  << s.name << m.value() << got.vt[m.value()] << s.vt[m.value()];
+                expect(std::abs(got.cv[m.value()] - s.cv[m.value()]) <= 5.0e-5 * cv_scale)
+                  << s.name << m.value() << got.cv[m.value()] << s.cv[m.value()];
+                expect(std::abs(got.et[m.value()] - s.et[m.value()]) <=
+                       5.0e-5 * std::abs(s.et[m.value()]))
+                  << s.name << m.value() << got.et[m.value()] << s.et[m.value()];
+                expect(std::abs(got.ve[m.value()] - s.ve[m.value()]) <=
+                       5.0e-5 * std::abs(s.ve[m.value()]))
+                  << s.name << m.value() << got.ve[m.value()] << s.ve[m.value()];
+                const double scale = std::abs(s.vt[m.value()]) + cv_scale +
+                                     std::abs(s.et[m.value()]) + std::abs(s.ve[m.value()]) +
+                                     std::abs(got.ce[m.value()]);
+                expect(std::abs(got.total[m.value()] - (s.total[m.value()] + got.ce[m.value()])) <=
+                       5.0e-5 * scale)
+                  << s.name << m.value() << got.total[m.value()]
+                  << s.total[m.value()] + got.ce[m.value()];
             }
             // Q_CE from its definition with canary's rates of progress.
             double ce = 0;
@@ -649,8 +679,8 @@ void test_multi_temperature_kinetics()
         const Mechanism with_gas = canary::make_air11_kim_jo(one.species, si_scales, p0, one.model);
         const Mechanism without = canary::make_air11_kim_jo(one.species, si_scales, p0);
         for (std::size_t k = 0; k < reaction_count; ++k) {
-            expect(with_gas.reactions[k].forward.other_mode == 0_ul);
-            expect(with_gas.reactions[k].backward.other_mode == 0_ul);
+            expect(with_gas.reactions[k].forward.other_mode == canary::ModeIndex {0});
+            expect(with_gas.reactions[k].backward.other_mode == canary::ModeIndex {0});
             expect(with_gas.reactions[k].equilibrium_at_other_temperature ==
                    without.reactions[k].equilibrium_at_other_temperature);
         }
@@ -744,7 +774,8 @@ void test_multi_temperature_kinetics()
               none);
         };
         // Without other_temperature: the first reactant with a vibration.
-        expect(build(o2(rate(0.5, nullptr)), split.model).forward.other_mode == 1_ul);
+        expect(build(o2(rate(0.5, nullptr)), split.model).forward.other_mode ==
+               canary::ModeIndex {1});
         expect(
           build(reaction("N2 + O2 <=> N + N + O2",
                          coefficients({{.name = "N2", .value = 1.0}, {.name = "O2", .value = 1.0}}),
@@ -753,26 +784,28 @@ void test_multi_temperature_kinetics()
                          BackwardRateModel::equilibrium,
                          none),
                 split.model)
-            .forward.other_mode == 0_ul);
+            .forward.other_mode == canary::ModeIndex {0});
         // A species name: the mode of its vibration; electron: the electron
         // mode.
-        expect(build(o2(rate(0.5, "N2")), split.model).forward.other_mode == 0_ul);
-        expect(build(o2(rate(0.5, "NO")), split.model).forward.other_mode == 1_ul);
-        expect(build(o2(rate(0.5, "electron")), split.model).forward.other_mode == 2_ul);
+        expect(build(o2(rate(0.5, "N2")), split.model).forward.other_mode == canary::ModeIndex {0});
+        expect(build(o2(rate(0.5, "NO")), split.model).forward.other_mode == canary::ModeIndex {1});
+        expect(build(o2(rate(0.5, "electron")), split.model).forward.other_mode ==
+               canary::ModeIndex {2});
         // s = 1 without a vibrating reactant is accepted.
-        expect(build(ionise(rate(1.0, nullptr)), split.model).forward.other_mode == 0_ul);
+        expect(build(ionise(rate(1.0, nullptr)), split.model).forward.other_mode ==
+               canary::ModeIndex {0});
         // The backward Arrhenius rate resolves with the reactant list; an
         // equilibrium backward rate only with an other temperature.
         const auto arrhenius =
           build(o2(rate(1.0, nullptr), BackwardRateModel::arrhenius, rate(0.5, nullptr)),
                 split.model);
-        expect(arrhenius.backward.other_mode == 1_ul &&
+        expect(arrhenius.backward.other_mode == canary::ModeIndex {1} &&
                !arrhenius.equilibrium_at_other_temperature);
         const auto at_electron =
           build(o2(rate(1.0, nullptr), BackwardRateModel::equilibrium, rate(1.0, "electron")),
                 split.model);
         expect(at_electron.equilibrium_at_other_temperature &&
-               at_electron.backward.other_mode == 2_ul);
+               at_electron.backward.other_mode == canary::ModeIndex {2});
         expect(!build(o2(rate(1.0, nullptr)), split.model).equilibrium_at_other_temperature);
         // One mode: every rate resolves to it.
         const auto one = canary::make_multi_temperature_mixture(canary::air11_species,
@@ -780,8 +813,10 @@ void test_multi_temperature_kinetics()
                                                                 canary::air11_electronic_levels,
                                                                 single_mode,
                                                                 si_scales);
-        expect(build(ionise(rate(0.5, nullptr)), one.model).forward.other_mode == 0_ul);
-        expect(build(o2(rate(0.5, "electron")), one.model).forward.other_mode == 0_ul);
+        expect(build(ionise(rate(0.5, nullptr)), one.model).forward.other_mode ==
+               canary::ModeIndex {0});
+        expect(build(o2(rate(0.5, "electron")), one.model).forward.other_mode ==
+               canary::ModeIndex {0});
 
         const auto fails = [&](const canary::ReactionInput<3>& r, std::string_view message) {
             const std::string got = error_message([&] { (void)build(r, split.model); });
@@ -830,8 +865,8 @@ void test_multi_temperature_kinetics()
                                                    air5.model)
               .reactions[0];
         };
-        expect(build5(rate(0.5, "N")).forward.other_mode == 0_ul);
-        expect(build5(rate(0.5, nullptr)).forward.other_mode == 0_ul);
+        expect(build5(rate(0.5, "N")).forward.other_mode == canary::ModeIndex {0});
+        expect(build5(rate(0.5, nullptr)).forward.other_mode == canary::ModeIndex {0});
         const std::string got = error_message([&] { (void)build5(rate(0.5, "electron")); });
         expect(got ==
                "reaction 0 (N + O <=> NO): forward rate: other temperature \"electron\": the model "
@@ -914,11 +949,13 @@ void test_multi_temperature_kinetics()
             double sum = 0;
             double expected = 0;
             double scale = 0;
-            for (std::size_t m = 0; m < mode_count; ++m) {
-                sum += got.total[m];
-                expected += got.vt[m] + got.cv[m] + got.et[m] + got.ce[m];
-                scale += std::abs(got.vt[m]) + std::abs(got.cv[m]) + std::abs(got.et[m]) +
-                         std::abs(got.ve[m]) + std::abs(got.ce[m]);
+            for (const canary::ModeIndex m : canary::mode_indices(0, mode_count)) {
+                sum += got.total[m.value()];
+                expected +=
+                  got.vt[m.value()] + got.cv[m.value()] + got.et[m.value()] + got.ce[m.value()];
+                scale += std::abs(got.vt[m.value()]) + std::abs(got.cv[m.value()]) +
+                         std::abs(got.et[m.value()]) + std::abs(got.ve[m.value()]) +
+                         std::abs(got.ce[m.value()]);
             }
             expect(std::abs(sum - expected) <= 1.0e-14 * scale) << s.name << sum << expected;
             // V-T has the sign of T - T_v in the vibration mode.
@@ -1029,8 +1066,8 @@ void test_multi_temperature_kinetics()
           const double p_e = n_e * boltzmann * s.t_e;
           const double inverse_tau =
             (p_e / atmosphere) * std::pow(10.0, -quadratic(2.36, -17.9, 24.35, s.t_e));
-          const auto e_te = canary::species_mode_energy(gas, 0, Temp {s.t_e});
-          const auto e_tv = canary::species_mode_energy(gas, 0, Temp {s.t_v});
+          const auto e_te = canary::species_mode_energy(gas, canary::ModeIndex {0}, Temp {s.t_e});
+          const auto e_tv = canary::species_mode_energy(gas, canary::ModeIndex {0}, Temp {s.t_v});
           const double expected =
             s.rho * mix_s.fractions[0].value() * (e_te[0].value() - e_tv[0].value()) * inverse_tau;
           // 10^(-f) from exp(-f ln 10) with f of about -10: a few ulp.
@@ -1548,7 +1585,7 @@ void test_multi_temperature_kinetics()
                                                                             air5_mech,
                                                                             air5.model,
                                                                             si_scales);
-        expect(!vibration_only.electron && vibration_only.electron_mode == -1_i);
+        expect(!vibration_only.electron && !vibration_only.electron_mode);
     };
     "multi-temperature exchange rejects duplicate physical electron processes"_test = [&] {
         const auto build = [&](const auto& electrons) {

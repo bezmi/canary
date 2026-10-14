@@ -8,6 +8,8 @@
 #include <canary/status.hpp>
 #include <concepts>
 #include <cstddef>
+#include <iterator>
+#include <limits>
 #include <type_traits>
 
 namespace canary
@@ -27,6 +29,99 @@ class ModeIndex
   private:
     std::size_t value_ {0};
 };
+
+// An optional mode identity in one size_t. Default construction denotes
+// absence. A present index must be less than SIZE_MAX; dereference requires
+// presence. The containing model determines the mode-count bound.
+class OptionalModeIndex
+{
+  public:
+    CANARY_HOST_DEVICE constexpr OptionalModeIndex() noexcept {}
+    CANARY_HOST_DEVICE constexpr explicit OptionalModeIndex(ModeIndex index) noexcept :
+        value_(index.value())
+    { CANARY_ASSERT(value_ < std::numeric_limits<std::size_t>::max()); }
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr bool has_value() const noexcept
+    { return value_ != std::numeric_limits<std::size_t>::max(); }
+    CANARY_HOST_DEVICE constexpr explicit operator bool() const noexcept { return has_value(); }
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr ModeIndex operator*() const noexcept
+    {
+        CANARY_ASSERT(has_value());
+        return ModeIndex {value_};
+    }
+    friend CANARY_HOST_DEVICE constexpr bool operator==(OptionalModeIndex,
+                                                        OptionalModeIndex) noexcept = default;
+
+  private:
+    std::size_t value_ {std::numeric_limits<std::size_t>::max()};
+};
+
+// Consecutive mode identities in [first, last). The endpoint may be SIZE_MAX;
+// it is never yielded. Iteration retains a native-size position.
+class ModeIndexRange
+{
+  public:
+    struct sentinel {
+        std::size_t last {0};
+    };
+    class iterator
+    {
+      public:
+        using value_type = ModeIndex;
+        using difference_type = std::ptrdiff_t;
+        using iterator_concept = std::forward_iterator_tag;
+        CANARY_HOST_DEVICE constexpr iterator() noexcept {}
+        [[nodiscard]] CANARY_HOST_DEVICE constexpr ModeIndex operator*() const noexcept
+        { return ModeIndex {position_}; }
+        CANARY_HOST_DEVICE constexpr iterator& operator++() noexcept
+        {
+            CANARY_ASSERT(position_ < std::numeric_limits<std::size_t>::max());
+            ++position_;
+            return *this;
+        }
+        CANARY_HOST_DEVICE constexpr iterator operator++(int) noexcept
+        {
+            const iterator previous = *this;
+            ++*this;
+            return previous;
+        }
+        friend CANARY_HOST_DEVICE constexpr bool operator==(iterator a, iterator b) noexcept
+        { return a.position_ == b.position_; }
+        friend CANARY_HOST_DEVICE constexpr bool operator==(iterator a, sentinel b) noexcept
+        { return a.position_ >= b.last; }
+
+      private:
+        CANARY_HOST_DEVICE constexpr explicit iterator(std::size_t position) noexcept :
+            position_(position)
+        {
+        }
+        friend class ModeIndexRange;
+        std::size_t position_ {0};
+    };
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr iterator begin() const noexcept
+    { return iterator {first_}; }
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr sentinel end() const noexcept { return {last_}; }
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr std::size_t size() const noexcept
+    { return last_ - first_; }
+
+  private:
+    CANARY_HOST_DEVICE constexpr ModeIndexRange(std::size_t first, std::size_t last) noexcept :
+        first_(first), last_(last)
+    {
+    }
+    friend CANARY_HOST_DEVICE constexpr ModeIndexRange mode_indices(std::size_t first,
+                                                                    std::size_t last) noexcept;
+    std::size_t first_;
+    std::size_t last_;
+};
+
+// Mode identities from first up to, excluding, last. Requires first <= last.
+// Equal bounds produce an empty range. No allocation or throwing access.
+[[nodiscard]] CANARY_HOST_DEVICE constexpr ModeIndexRange mode_indices(std::size_t first,
+                                                                       std::size_t last) noexcept
+{
+    CANARY_ASSERT(first <= last);
+    return {first, last};
+}
 
 // A thermodynamic state with value type T in unit system U: the members
 // rho, e (internal energy per unit mass), p and temp, and the member types

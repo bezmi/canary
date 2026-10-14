@@ -684,12 +684,12 @@ CANARY_HOST_DEVICE std::array<SpecificEnergy<T, U>, N>
 // The mode that holds the vibration of species i: the single mode, which
 // holds the vibrational-electronic energy of every species.
 template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
-CANARY_HOST_DEVICE constexpr int
+CANARY_HOST_DEVICE constexpr OptionalModeIndex
   species_vibration_mode(const TwoTemperatureMixture<P, U, N, S>& /*gas*/,
                          SpeciesIndex index) noexcept
 {
     const auto i = index.value();
-    return i < N ? 0 : -1;
+    return i < N ? OptionalModeIndex {ModeIndex {0}} : OptionalModeIndex {};
 }
 
 // The model has no free-electron species.
@@ -698,11 +698,11 @@ CANARY_HOST_DEVICE constexpr OptionalSpeciesIndex
   electron_species_index(const TwoTemperatureMixture<P, U, N, S>& /*gas*/) noexcept
 { return {}; }
 
-// -1: the model has no free electrons.
+// The model has no free-electron energy mode.
 template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
-CANARY_HOST_DEVICE constexpr int
+CANARY_HOST_DEVICE constexpr OptionalModeIndex
   electron_energy_mode(const TwoTemperatureMixture<P, U, N, S>& /*gas*/) noexcept
-{ return -1; }
+{ return {}; }
 
 // Energy per unit mass of every species in mode m (which must be 0) at
 // temperature temp: species_vibrational_electronic_energy.
@@ -710,11 +710,11 @@ template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::siz
     requires ScalarWith<T, P> && HasLog<T>
 CANARY_HOST_DEVICE std::array<SpecificEnergy<T, U>, N>
   species_mode_energy(const TwoTemperatureMixture<P, U, N, S>& gas,
-                      [[maybe_unused]] std::size_t m,
+                      [[maybe_unused]] ModeIndex m,
                       Temperature<T, U> temp)
 {
     // NOLINTNEXTLINE(misc-static-assert): run-time mode index
-    CANARY_ASSERT(m == 0);
+    CANARY_ASSERT(m == ModeIndex {0});
     return species_vibrational_electronic_energy(gas, temp);
 }
 

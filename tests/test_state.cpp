@@ -8,6 +8,7 @@
 #include <canary/status.hpp>
 #include <concepts>
 #include <limits>
+#include <ranges>
 #include <span>
 #include <type_traits>
 
@@ -64,6 +65,23 @@ static_assert(canary::ModeIndex {std::numeric_limits<std::size_t>::max()}.value(
               std::numeric_limits<std::size_t>::max());
 static_assert(noexcept(canary::ModeIndex {1}.value()));
 static_assert(noexcept(canary::ModeIndex {1} == canary::ModeIndex {2}));
+
+static_assert(sizeof(canary::OptionalModeIndex) == sizeof(std::size_t));
+static_assert(std::is_trivially_copyable_v<canary::OptionalModeIndex>);
+static_assert(std::is_nothrow_constructible_v<canary::OptionalModeIndex, canary::ModeIndex>);
+static_assert(!std::constructible_from<canary::OptionalModeIndex, std::size_t>);
+static_assert(!std::constructible_from<canary::OptionalModeIndex, canary::SpeciesIndex>);
+static_assert(!std::constructible_from<canary::OptionalModeIndex, canary::OptionalSpeciesIndex>);
+static_assert(!std::convertible_to<canary::ModeIndex, canary::OptionalModeIndex>);
+static_assert(!canary::OptionalModeIndex {}.has_value());
+static_assert(*canary::OptionalModeIndex {canary::ModeIndex {0}} == canary::ModeIndex {0});
+static_assert(noexcept(*canary::OptionalModeIndex {canary::ModeIndex {0}}));
+static_assert(std::ranges::forward_range<canary::ModeIndexRange>);
+static_assert(std::ranges::sized_range<canary::ModeIndexRange>);
+static_assert(std::same_as<std::ranges::range_value_t<canary::ModeIndexRange>, canary::ModeIndex>);
+static_assert(noexcept(canary::mode_indices(0, 1)));
+static_assert(noexcept(++std::declval<canary::ModeIndexRange::iterator&>()));
+static_assert(canary::mode_indices(2, 5).size() == 3);
 
 static_assert(canary::ThermoStateOf<canary::ThermoState<double, si>, double, si>);
 static_assert(canary::ThermoStateOf<canary::ThermoState<D, scaled>, D, scaled>);
@@ -127,6 +145,41 @@ static_assert(sizeof(canary::MultiTemperatureProperties<D, scaled, 2>) == 7 * si
 void test_state()
 {
     using namespace boost::ut;
+
+    "optional modes distinguish absence from mode zero"_test = [] {
+        const canary::OptionalModeIndex absent {};
+        const canary::OptionalModeIndex zero {canary::ModeIndex {0}};
+        const canary::OptionalModeIndex last {
+          canary::ModeIndex {std::numeric_limits<std::size_t>::max() - 1}};
+        expect(!absent);
+        expect(zero.has_value());
+        expect((*zero).value() == 0u);
+        expect(zero != absent);
+        expect((*last).value() == std::numeric_limits<std::size_t>::max() - 1);
+        expect(last == canary::OptionalModeIndex {*last});
+    };
+
+    "mode ranges preserve bounds and independent iterator positions"_test = [] {
+        std::array<std::size_t, 3> visited {};
+        std::size_t count = 0;
+        for (const canary::ModeIndex mode : canary::mode_indices(2, 5)) {
+            visited[count++] = mode.value();
+        }
+        expect(count == 3u);
+        expect(visited == std::array<std::size_t, 3> {2, 3, 4});
+        auto current = canary::mode_indices(2, 5).begin();
+        const auto previous = current++;
+        expect((*previous).value() == 2u && (*current).value() == 3u);
+        const auto maximum = std::numeric_limits<std::size_t>::max();
+        const auto empty = canary::mode_indices(maximum, maximum);
+        expect(empty.size() == 0u && empty.begin() == empty.end());
+        count = 0;
+        for (const canary::ModeIndex mode : canary::mode_indices(maximum - 1, maximum)) {
+            expect(mode.value() == maximum - 1);
+            ++count;
+        }
+        expect(count == 1u);
+    };
 
     "a closure holds the state members and the status"_test = [] {
         const canary::Closure<double, si> c {

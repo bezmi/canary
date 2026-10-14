@@ -144,7 +144,7 @@ template <std::floating_point P, UnitSystem U> struct ArrheniusRate {
     P n;
     Temperature<P, U> activation_temperature;
     P translational_exponent;
-    std::size_t other_mode;
+    ModeIndex other_mode;
 };
 
 // One reaction of a mechanism over N species, indexed as the species of the
@@ -353,7 +353,7 @@ ArrheniusRate<P, U> arrhenius_rate(const ArrheniusInput& input,
       .activation_temperature =
         Temperature<P, U> {static_cast<P>(input.activation_temperature / tau)},
       .translational_exponent = static_cast<P>(s_t),
-      .other_mode = 0,
+      .other_mode = ModeIndex {0},
     };
 }
 
@@ -361,10 +361,10 @@ ArrheniusRate<P, U> arrhenius_rate(const ArrheniusInput& input,
 // the single second temperature of a two-temperature evaluation (mode 0).
 struct SingleOtherTemperature {
     template <std::size_t K>
-    std::size_t operator()(const ArrheniusInput& /*rate*/,
-                           const SpeciesCoefficients<K>& /*reactants*/,
-                           std::string_view /*role*/) const
-    { return 0; }
+    ModeIndex operator()(const ArrheniusInput& /*rate*/,
+                         const SpeciesCoefficients<K>& /*reactants*/,
+                         std::string_view /*role*/) const
+    { return ModeIndex {0}; }
 };
 
 // Reaction of input with the other mode of each rate from
@@ -529,12 +529,12 @@ ReactionMechanism<P, U, N, R> make_reaction_mechanism(const MechanismInput<R, K>
 // own temperature T_m. species_vibration_mode(gas, i) is the mode that holds
 // the vibration of species i (in the model's species order) and
 // electron_energy_mode(gas) the mode that holds the energy of the free
-// electrons; each is -1 when there is none.
+// electrons; each returns absence when there is none.
 template <typename G>
 concept HasEnergyModes = GasModelType<G> && requires(const G& gas, SpeciesIndex i) {
     { G::mode_count } -> std::convertible_to<std::size_t>;
-    { species_vibration_mode(gas, i) } -> std::same_as<int>;
-    { electron_energy_mode(gas) } -> std::same_as<int>;
+    { species_vibration_mode(gas, i) } -> std::same_as<OptionalModeIndex>;
+    { electron_energy_mode(gas) } -> std::same_as<OptionalModeIndex>;
 };
 
 namespace detail
@@ -548,34 +548,34 @@ template <HasEnergyModes G, std::size_t N> struct ModelOtherTemperature {
     const std::array<std::string_view, N>* names;
 
     template <std::size_t K>
-    std::size_t operator()(const ArrheniusInput& rate,
-                           const SpeciesCoefficients<K>& reactants,
-                           std::string_view role) const
+    ModeIndex operator()(const ArrheniusInput& rate,
+                         const SpeciesCoefficients<K>& reactants,
+                         std::string_view role) const
     {
         const char* name = rate.other_temperature;
         if (name == nullptr) {
-            if (G::mode_count == 1) { return 0; }
+            if (G::mode_count == 1) { return ModeIndex {0}; }
             for (std::size_t e = 0; e < static_cast<std::size_t>(reactants.count); ++e) {
                 const auto index = species_index(*names, reactants.entries[e].name);
                 if (!index) { throw ParameterError("unknown reactant species for mode selection"); }
-                const int mode = species_vibration_mode(*gas, *index);
-                if (mode >= 0) { return static_cast<std::size_t>(mode); }
+                const OptionalModeIndex mode = species_vibration_mode(*gas, *index);
+                if (mode.has_value()) { return *mode; }
             }
             if (rate.translational_exponent != 1.0) {
                 throw ParameterError(std::format(
                   "{} rate: no reactant has a vibration component to give the other temperature",
                   role));
             }
-            return 0;
+            return ModeIndex {0};
         }
         if (std::string_view {name} == "electron") {
-            const int mode = electron_energy_mode(*gas);
-            if (mode < 0) {
+            const OptionalModeIndex mode = electron_energy_mode(*gas);
+            if (!mode) {
                 throw ParameterError(std::format(
                   "{} rate: other temperature \"electron\": the model has no free electrons",
                   role));
             }
-            return static_cast<std::size_t>(mode);
+            return *mode;
         }
         const auto i = species_index(*names, name);
         if (!i) {
@@ -584,14 +584,14 @@ template <HasEnergyModes G, std::size_t N> struct ModelOtherTemperature {
                           role,
                           name));
         }
-        const int mode = species_vibration_mode(*gas, *i);
-        if (mode < 0) {
+        const OptionalModeIndex mode = species_vibration_mode(*gas, *i);
+        if (!mode) {
             throw ParameterError(std::format(
               "{} rate: other temperature \"{}\": the species has no vibration component",
               role,
               name));
         }
-        return static_cast<std::size_t>(mode);
+        return *mode;
     }
 };
 
@@ -705,13 +705,13 @@ CANARY_HOST_DEVICE T
 // Index into the M other temperatures of rates_of_progress_at of a rate
 // with the given other mode: 0 with one other temperature (T_ve of a
 // two-temperature evaluation, or the only mode), the mode otherwise.
-template <std::size_t M> CANARY_HOST_DEVICE constexpr std::size_t other_index(std::size_t mode)
+template <std::size_t M> CANARY_HOST_DEVICE constexpr ModeIndex other_index(ModeIndex mode)
 {
     if constexpr (M == 1) {
-        return 0;
+        return ModeIndex {0};
     } else {
         // NOLINTNEXTLINE(misc-static-assert): run-time mode index
-        CANARY_ASSERT(mode < M);
+        CANARY_ASSERT(mode.value() < M);
         return mode;
     }
 }
@@ -727,7 +727,10 @@ CANARY_HOST_DEVICE T
 {
     if constexpr (M > 0) {
         if (rate.translational_exponent != P(1)) {
-            return arrhenius_exponent(rate, ln_t, inv_t, ln_ratio[other_index<M>(rate.other_mode)]);
+            return arrhenius_exponent(rate,
+                                      ln_t,
+                                      inv_t,
+                                      ln_ratio[other_index<M>(rate.other_mode).value()]);
         }
     }
     return arrhenius_exponent(rate, ln_t, inv_t);
@@ -821,15 +824,15 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
         for (const Reaction<P, U, N>& r : mech.reactions) {
             if (r.backward_model == BackwardRateModel::equilibrium &&
                 r.equilibrium_at_other_temperature) {
-                used[other_index<M>(r.backward.other_mode)] = true;
+                used[other_index<M>(r.backward.other_mode).value()] = true;
             }
         }
-        for (std::size_t m = 0; m < M; ++m) {
-            ln_ratio[m] = math::log(T(other[m] / t));
-            if (!used[m]) { continue; }
-            ln_other[m] = math::log(other[m]);
-            inv_other[m] = T(V(1)) / other[m];
-            at_other[m] = equilibrium_terms(mech, gas, other[m]);
+        for (const ModeIndex m : mode_indices(0, M)) {
+            ln_ratio[m.value()] = math::log(T(other[m.value()] / t));
+            if (!used[m.value()]) { continue; }
+            ln_other[m.value()] = math::log(other[m.value()]);
+            inv_other[m.value()] = T(V(1)) / other[m.value()];
+            at_other[m.value()] = equilibrium_terms(mech, gas, other[m.value()]);
         }
     }
 
@@ -845,7 +848,7 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
                   arrhenius_exponent(r.forward,
                                      ln_t,
                                      inv_t,
-                                     ln_ratio[other_index<M>(r.forward.other_mode)]);
+                                     ln_ratio[other_index<M>(r.forward.other_mode).value()]);
             }
         }
         const T k_f = T(r.forward.A * math::exp(controlled_exponent));
@@ -855,11 +858,11 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
             if constexpr (M > 0) { at_other_temperature = r.equilibrium_at_other_temperature; }
             T exponent = forward_exponent;
             if (at_other_temperature) {
-                const std::size_t m = other_index<M>(r.backward.other_mode);
-                exponent =
-                  equilibrium_exponent(r,
-                                       arrhenius_exponent(r.forward, ln_other[m], inv_other[m]),
-                                       at_other[m]);
+                const ModeIndex m = other_index<M>(r.backward.other_mode);
+                exponent = equilibrium_exponent(
+                  r,
+                  arrhenius_exponent(r.forward, ln_other[m.value()], inv_other[m.value()]),
+                  at_other[m.value()]);
             } else {
                 exponent = equilibrium_exponent(r, forward_exponent, at_t);
             }
@@ -970,7 +973,9 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
                     const std::array<ModeTemperature<T, U>, M>& mode_temp)
 {
     std::array<T, M> other {};
-    for (std::size_t m = 0; m < M; ++m) { other[m] = mode_temp[m].value(); }
+    for (const ModeIndex m : mode_indices(0, M)) {
+        other[m.value()] = mode_temp[m.value()].value();
+    }
     return detail::rates_of_progress_at<M>(mech,
                                            gas,
                                            mix,

@@ -350,11 +350,15 @@ void check_state(const C& c,
     const double e_scale = std::max(std::abs(expected.e.value()), 1.0e5);
     expect(close_to(c.state.e.value(), expected.e.value(), bound, e_scale)) << label;
     expect(relative(c.state.p.value(), expected.p.value(), bound)) << label;
-    for (std::size_t m = 0; m < M; ++m) {
-        expect(relative(c.state.mode_temp[m].value(), expected_t_m[m], bound))
-          << label << m << c.state.mode_temp[m].value() << expected_t_m[m];
-        expect(close_to(c.state.mode_e[m].value(), expected.mode_e[m].value(), bound, e_scale))
-          << label << m << c.state.mode_e[m].value() << expected.mode_e[m].value();
+    for (const canary::ModeIndex m : canary::mode_indices(0, M)) {
+        expect(relative(c.state.mode_temp[m.value()].value(), expected_t_m[m.value()], bound))
+          << label << m.value() << c.state.mode_temp[m.value()].value() << expected_t_m[m.value()];
+        expect(close_to(c.state.mode_e[m.value()].value(),
+                        expected.mode_e[m.value()].value(),
+                        bound,
+                        e_scale))
+          << label << m.value() << c.state.mode_e[m.value()].value()
+          << expected.mode_e[m.value()].value();
     }
 }
 
@@ -380,9 +384,10 @@ void check_inversion(const G& gas,
                 expect(base.status == Status::Valid);
                 std::array<double, M> rho_e_m {};
                 std::array<double, M> solved_t_m {};
-                for (std::size_t m = 0; m < M; ++m) {
-                    rho_e_m[m] = rho_value * base.state.mode_e[m].value();
-                    solved_t_m[m] = canary::detail::mode_present(gas, values, m) ? t_m[m] : t;
+                for (const canary::ModeIndex m : canary::mode_indices(0, M)) {
+                    rho_e_m[m.value()] = rho_value * base.state.mode_e[m.value()].value();
+                    solved_t_m[m.value()] =
+                      canary::detail::mode_present(gas, values, m) ? t_m[m.value()] : t;
                 }
                 const auto temps = mode_temperatures<si>(t_m);
                 const auto energies = mode_energy_densities<si>(rho_e_m);
@@ -481,12 +486,14 @@ void check_derivatives(const G& gas,
                                             mode_temperatures<si>(modes));
         std::array<double, M + 3> out {};
         out[0] = c.state.e.value();
-        for (std::size_t m = 0; m < M; ++m) { out[1 + m] = c.state.mode_e[m].value(); }
+        for (const canary::ModeIndex m : canary::mode_indices(0, M)) {
+            out[1 + m.value()] = c.state.mode_e[m.value()].value();
+        }
         out[M + 1] = c.state.p.value();
         out[M + 2] = canary::properties(gas, mix, c.state).sound_speed.value();
         return out;
     };
-    // The same with dual numbers, seeded in T (variable 0), T_m (1 + m) or
+    // The same with dual numbers, seeded in T (variable 0), T_m (1 + m.value()) or
     // y[k] (M + 1).
     const auto evaluate_dual = [&](std::size_t variable) {
         std::array<D, N> y_d {};
@@ -494,7 +501,9 @@ void check_derivatives(const G& gas,
             y_d[i] = D(y[i], variable == M + 1 && i == k ? 1.0 : 0.0);
         }
         std::array<D, M> t_m_d {};
-        for (std::size_t m = 0; m < M; ++m) { t_m_d[m] = D(t_m[m], variable == 1 + m ? 1.0 : 0.0); }
+        for (const canary::ModeIndex m : canary::mode_indices(0, M)) {
+            t_m_d[m.value()] = D(t_m[m.value()], variable == 1 + m.value() ? 1.0 : 0.0);
+        }
         const auto mix = canary::mixture(gas, fractions(y_d));
         const auto c =
           canary::thermo_state(gas,
@@ -504,7 +513,9 @@ void check_derivatives(const G& gas,
                                mode_temperatures<si>(t_m_d));
         std::array<double, M + 3> out {};
         out[0] = c.state.e.value().dual();
-        for (std::size_t m = 0; m < M; ++m) { out[1 + m] = c.state.mode_e[m].value().dual(); }
+        for (const canary::ModeIndex m : canary::mode_indices(0, M)) {
+            out[1 + m.value()] = c.state.mode_e[m.value()].value().dual();
+        }
         out[M + 1] = c.state.p.value().dual();
         out[M + 2] = canary::properties(gas, mix, c.state).sound_speed.value().dual();
         return out;
@@ -815,9 +826,9 @@ void test_multi_temperature()
       [&] {
           expect(built11.species.n == 11_i);
           expect(!air4.electron);
-          expect(air4.electron_mode == -1_i);
+          expect(!air4.electron_mode);
           expect(air11.electron == canary::OptionalSpeciesIndex {canary::SpeciesIndex {10}});
-          expect(air11.electron_mode == 1_i);
+          expect(air11.electron_mode == canary::OptionalModeIndex {canary::ModeIndex {1}});
           for (std::size_t i = 0; i < 11; ++i) {
               expect(air11.thermally_perfect.gas_constant[i] == single11.gas_constant[i]);
               const double r_i = single11.gas_constant[i].value();
@@ -882,7 +893,7 @@ void test_multi_temperature()
                                                      canary::UnitScales<double, si> {});
             expect(result.model.electron ==
                    canary::OptionalSpeciesIndex {canary::SpeciesIndex {electron}});
-            expect(result.model.electron_mode == 1_i);
+            expect(result.model.electron_mode == canary::OptionalModeIndex {canary::ModeIndex {1}});
             expect(result.model.mode_components[1][electron].electron);
             expect(!result.model.mode_components[1][2].electron);
         }
@@ -1110,18 +1121,20 @@ void test_multi_temperature()
               expect(c.status == Status::Valid);
               double e_m = 0;
               double ref_e = ref.u;
-              for (std::size_t m = 0; m < 3; ++m) {
-                  e_m += c.state.mode_e[m].value();
-                  ref_e += ref.u_m[m];
+              for (const canary::ModeIndex m : canary::mode_indices(0, 3)) {
+                  e_m += c.state.mode_e[m.value()].value();
+                  ref_e += ref.u_m[m.value()];
               }
               const double floor = 1.0e-3 * std::abs(ref_e);
               expect(close_to(c.state.p.value(), ref.p, 2.0e-5, 0.0)) << ref.temp;
               expect(canary::electron_pressure(air4, mix, c.state).value() == 0.0);
               expect(close_to(c.state.e.value() - e_m, ref.u, 2.0e-5, floor))
                 << ref.temp << c.state.e.value() - e_m << ref.u;
-              for (std::size_t m = 0; m < 3; ++m) {
-                  expect(close_to(c.state.mode_e[m].value(), ref.u_m[m], 2.0e-5, floor))
-                    << ref.temp << m << c.state.mode_e[m].value() << ref.u_m[m];
+              for (const canary::ModeIndex m : canary::mode_indices(0, 3)) {
+                  expect(
+                    close_to(c.state.mode_e[m.value()].value(), ref.u_m[m.value()], 2.0e-5, floor))
+                    << ref.temp << m.value() << c.state.mode_e[m.value()].value()
+                    << ref.u_m[m.value()];
               }
               const auto props = canary::properties(air4, mix, c.state);
               expect(relative(props.sound_speed.value(), ref.a, 1.0e-5))
@@ -1156,9 +1169,9 @@ void test_multi_temperature()
                 << ref.temp;
               expect(close_to(c.state.e.value() - e_m, ref.u, 2.0e-5, floor))
                 << ref.temp << c.state.e.value() - e_m << ref.u;
-              for (std::size_t m = 0; m < 2; ++m) {
-                  expect(close_to(c.state.mode_e[m].value(), u_m[m], 2.0e-5, floor))
-                    << ref.temp << m << c.state.mode_e[m].value() << u_m[m];
+              for (const canary::ModeIndex m : canary::mode_indices(0, 2)) {
+                  expect(close_to(c.state.mode_e[m.value()].value(), u_m[m.value()], 2.0e-5, floor))
+                    << ref.temp << m.value() << c.state.mode_e[m.value()].value() << u_m[m.value()];
               }
               const auto props = canary::properties(air11, mix, c.state);
               expect(relative(props.sound_speed.value(), ref.a, 1.0e-5))
@@ -1197,7 +1210,7 @@ void test_multi_temperature()
           const auto two = canary::make_air5_two_temperature<double>(si_scales).model;
           const auto mix = mixture(air4, fractions(air5_molecules));
           // Mode m holds the vibration and electronic energy of molecule
-          // index[m] only.
+          // index[m.value()] only.
           constexpr std::array<std::size_t, 3> molecule {0, 1, 4};
           for (const std::array<double, 3> t_m : {
                  std::array {300.0, 300.0, 300.0},
@@ -1206,19 +1219,21 @@ void test_multi_temperature()
                }) {
               const auto c =
                 thermo_state(air4, mix, Rho {0.1}, Temp {5000.0}, mode_temperatures<si>(t_m));
-              for (std::size_t m = 0; m < 3; ++m) {
+              for (const canary::ModeIndex m : canary::mode_indices(0, 3)) {
                   const auto e_ve =
-                    canary::species_vibrational_electronic_energy(two, Temp {t_m[m]});
-                  const std::size_t i = molecule[m];
+                    canary::species_vibrational_electronic_energy(two, Temp {t_m[m.value()]});
+                  const std::size_t i = molecule[m.value()];
                   // Both are y_i (h_i - cp_tr,i (T - T_ref) - dh_f,i) with
                   // the same terms; 4 eps of the largest term.
                   const double scale =
-                    air5_molecules[i] * (std::abs(two.formation_enthalpy[i].value()) +
-                                         (two.translational_rotational_cp[i].value() * t_m[m]) +
-                                         std::abs(e_ve[i].value()));
-                  expect(std::abs(c.state.mode_e[m].value() -
+                    air5_molecules[i] *
+                    (std::abs(two.formation_enthalpy[i].value()) +
+                     (two.translational_rotational_cp[i].value() * t_m[m.value()]) +
+                     std::abs(e_ve[i].value()));
+                  expect(std::abs(c.state.mode_e[m.value()].value() -
                                   (air5_molecules[i] * e_ve[i].value())) <= 4.0 * eps * scale)
-                    << m << c.state.mode_e[m].value() << air5_molecules[i] * e_ve[i].value();
+                    << m.value() << c.state.mode_e[m.value()].value()
+                    << air5_molecules[i] * e_ve[i].value();
               }
           }
       };
@@ -1334,7 +1349,8 @@ void test_multi_temperature()
         const std::array t_m {9000.0, 12000.0};
         const auto base =
           thermo_state(air11, mix, Rho {1.0}, Temp {14000.0}, mode_temperatures<si>(t_m));
-        const auto props = canary::detail::mode_energy(air11, mix.fractions, 1, 12000.0);
+        const auto props =
+          canary::detail::mode_energy(air11, mix.fractions, canary::ModeIndex {1}, 12000.0);
         // d T_e / d e_m at fixed rho = 1, e and the other mode energy.
         const std::array rho_e_m {
           D(base.state.mode_e[0].value()),
@@ -1372,16 +1388,18 @@ void test_multi_temperature()
                     std::array<double, M> t_m_s {};
                     std::array<double, M> rho_e_m {};
                     std::array<double, M> rho_e_m_s {};
-                    for (std::size_t m = 0; m < M; ++m) {
-                        t_m_s[m] = canary::convert<scaled>(
-                                     canary::ModeTemperature<double, si> {t_m_values[m]},
-                                     reference_scales)
-                                     .value();
-                        rho_e_m[m] = rho_value * base.state.mode_e[m].value();
-                        rho_e_m_s[m] = canary::convert<scaled>(
-                                         canary::ModeEnergyDensity<double, si> {rho_e_m[m]},
-                                         reference_scales)
-                                         .value();
+                    for (const canary::ModeIndex m : canary::mode_indices(0, M)) {
+                        t_m_s[m.value()] =
+                          canary::convert<scaled>(
+                            canary::ModeTemperature<double, si> {t_m_values[m.value()]},
+                            reference_scales)
+                            .value();
+                        rho_e_m[m.value()] = rho_value * base.state.mode_e[m.value()].value();
+                        rho_e_m_s[m.value()] =
+                          canary::convert<scaled>(
+                            canary::ModeEnergyDensity<double, si> {rho_e_m[m.value()]},
+                            reference_scales)
+                            .value();
                     }
                     const RhoE rho_e {rho_value * base.state.e.value()};
                     const auto compare = [&](const auto& a, const auto& b) {
@@ -1395,16 +1413,16 @@ void test_multi_temperature()
                         expect(relative(convert(b.state.p), a.state.p.value(), 1.0e-12))
                           << rho_value << t;
                         expect(close_to(convert(b.state.e), a.state.e.value(), 1.0e-12, e_scale));
-                        for (std::size_t m = 0; m < M; ++m) {
-                            expect(relative(convert(b.state.mode_temp[m]),
-                                            a.state.mode_temp[m].value(),
+                        for (const canary::ModeIndex m : canary::mode_indices(0, M)) {
+                            expect(relative(convert(b.state.mode_temp[m.value()]),
+                                            a.state.mode_temp[m.value()].value(),
                                             1.0e-12))
-                              << rho_value << t << m;
-                            expect(close_to(convert(b.state.mode_e[m]),
-                                            a.state.mode_e[m].value(),
+                              << rho_value << t << m.value();
+                            expect(close_to(convert(b.state.mode_e[m.value()]),
+                                            a.state.mode_e[m.value()].value(),
                                             1.0e-12,
                                             e_scale))
-                              << rho_value << t << m;
+                              << rho_value << t << m.value();
                         }
                     };
                     compare(base,
