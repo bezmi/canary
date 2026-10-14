@@ -3,21 +3,44 @@
 
 #include <algorithm>
 #include <array>
-#include <cmath>
-#include <concepts>
-#include <cstddef>
 #include <canary/config.hpp>
 #include <canary/quantity.hpp>
 #include <canary/scalar.hpp>
 #include <canary/status.hpp>
+#include <cmath>
+#include <concepts>
+#include <cstddef>
 #include <limits>
 #include <mdspan/mdspan.hpp>
+#include <optional>
+#include <span>
 #include <string_view>
 #include <type_traits>
 #include <utility>
 
 namespace canary
 {
+
+// Host construction requires an explicit role, independent of species names
+// and ordering. The numerical mixture supports at most one free-electron species.
+enum class SpeciesRole { unspecified, heavy, electron };
+
+// Nuclear composition of one species. Host construction requires nonempty,
+// distinct element identifiers and positive counts. Free electrons have no
+// nuclear elements; their charge is specified separately.
+struct ElementCount {
+    std::string_view element;
+    unsigned count;
+};
+
+// Borrowed host metadata. Element entries and their identifiers must remain
+// alive and unmodified until construction finishes. Missing elements indicate
+// unknown composition; a present empty span specifies no nuclear elements.
+// Reaction construction requires known composition for every participant.
+struct SpeciesMetadataView {
+    SpeciesRole role {SpeciesRole::unspecified};
+    std::optional<std::span<const ElementCount>> elements;
+};
 
 // Particle mass and charge of each species, in the model's unit system. Only
 // the first n entries are used. Arithmetic requires 1 <= n <= Capacity
