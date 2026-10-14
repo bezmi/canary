@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <limits>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace
@@ -103,7 +104,7 @@ Reference reference_at(const Data& data, double t)
         const double start = data.breaks[i] - (data.blends[i - 1] / 2);
         const double end = data.breaks[i] + (data.blends[i - 1] / 2);
         if (t >= start && t <= end) {
-            const long double lambda = (t - start) / data.blends[i - 1];
+            const long double lambda = (t - start) / (end - start);
             const auto lower = segment(data, i - 1);
             const auto upper = segment(data, i);
             std::array<long double, 9> a {};
@@ -335,6 +336,29 @@ void test_nasa9()
                 expect(cp_h.cp_over_r.real() == evaluate(curve, t).cp);
             }
         }
+    };
+
+    "rounded transition endpoints retain adjacent heat capacities"_test = [] {
+        const auto check = []<typename P> {
+            Data data {};
+            data.segments = 2;
+            data.breaks = {0.75, 1.5, 3.0};
+            data.blends[0] = 1.5 * (std::nextafter(P(1.5), P(2)) - P(1.5));
+            // The rounded endpoint separation is larger than the stored width.
+            // Heat capacity remains between the adjacent values throughout.
+            data.a[0][2] = 5;
+            data.a[1][2] = 2;
+            const auto curve = canary::make_nasa9_curve(data, P(1));
+            const P start = curve.breaks[1] - curve.blends[0] / P(2);
+            const P end = curve.breaks[1] + curve.blends[0] / P(2);
+            expect(end - start != curve.blends[0]);
+            for (const auto [t, cp] : std::array {std::pair {start, P(5)}, std::pair {end, P(2)}}) {
+                const auto values = canary::nasa9_cp_h(curve, t, std::log(t));
+                expect(values.cp_over_r == cp);
+            }
+        };
+        check.template operator()<float>();
+        check.template operator()<double>();
     };
 
     "NASA9 construction checks capacity throughout segments and transitions"_test = [] {

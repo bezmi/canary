@@ -78,7 +78,8 @@ namespace detail
 // Coefficients of the curve at the value part t:
 // - inside the closed blending region [b_i - w_i / 2, b_i + w_i / 2] of an
 //   interior boundary b_i: lambda * (segment above) + (1 - lambda) *
-//   (segment below), with lambda = (t - (b_i - w_i / 2)) / w_i;
+//   (segment below), with lambda = (t - start) / (end - start) using
+//   the rounded endpoints start = b_i - w_i/2 and end = b_i + w_i/2;
 // - otherwise those of the segment that contains t.
 // lambda is computed in P from the value part only, so a dual-number
 // temperature treats it as a constant. Outside blending regions lambda is 0 and the
@@ -98,7 +99,7 @@ CANARY_HOST_DEVICE constexpr std::array<P, 9> nasa9_coefficients(const Nasa9Curv
         if (tc >= start && tc <= end) {
             below = i - 1;
             above = i;
-            lambda = (tc - start) / width;
+            lambda = (tc - start) / (end - start);
         } else if (tc > end) {
             below = i;
             above = i;
@@ -274,7 +275,8 @@ void check_nasa9_curve(const Nasa9Curve<P, S>& curve)
         const auto upper = capacity_polynomial(curve.b[i], start, end);
         const auto extent = CapacityInterval {static_cast<long double>(end)} -
                             CapacityInterval {static_cast<long double>(start)};
-        const long double reciprocal = 1.0L / static_cast<long double>(width);
+        const P span = end - start;
+        const long double reciprocal = 1.0L / static_cast<long double>(span);
         const auto ratio = extent * capacity_bounds(reciprocal, reciprocal);
         auto blend = lower;
         for (std::size_t k = 0; k + 1 < blend.size(); ++k) {
