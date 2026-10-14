@@ -4,10 +4,6 @@
 #include <algorithm>
 #include <array>
 #include <boost/ut.hpp>
-#include <cmath>
-#include <concepts>
-#include <cstddef>
-#include <format>
 #include <canary/build.hpp>
 #include <canary/data/air5.hpp>
 #include <canary/data/air5_transport.hpp>
@@ -24,6 +20,10 @@
 #include <canary/transport/prandtl.hpp>
 #include <canary/transport/transport.hpp>
 #include <canary/units.hpp>
+#include <cmath>
+#include <concepts>
+#include <cstddef>
+#include <format>
 #include <limits>
 #include <mdspan/mdspan.hpp>
 #include <numbers>
@@ -1074,22 +1074,21 @@ void test_mixture_transport()
         });
         expect(message == "no collision integrals for the pair (NO, NO)") << message;
     };
-    "mixture transport: the Gupta-Yos builder rejects a rotational degree not 0, 2 or 3"_test =
-      [&] {
-          for (const int d : {-1, 1, 4}) {
-              const std::string message = error_message([&] {
-                  (void)canary::make_gupta_yos_transport(canary::air5_collision_integrals,
-                                                         canary::detail::air5_species_names,
-                                                         air.species,
-                                                         std::array {2, 2, d, 0, 2},
-                                                         si_scales);
-              });
-              expect(message == std::format("species N: rotational degrees of freedom must be 0, 2 "
-                                            "or 3, got {}",
-                                            d))
-                << message;
-          }
-      };
+    "mixture transport: the Gupta-Yos builder rejects a rotational degree not 0 or 2"_test = [&] {
+        for (const int d : {-1, 1, 3, 4}) {
+            const std::string message = error_message([&] {
+                (void)canary::make_gupta_yos_transport(canary::air5_collision_integrals,
+                                                       canary::detail::air5_species_names,
+                                                       air.species,
+                                                       std::array {2, 2, d, 0, 2},
+                                                       si_scales);
+            });
+            expect(
+              message ==
+              std::format("species N: rotational degrees of freedom must be 0 or 2, got {}", d))
+              << message;
+        }
+    };
     "mixture transport: the builders reject species data of another size"_test = [&] {
         auto species = air.species;
         species.n = 4;

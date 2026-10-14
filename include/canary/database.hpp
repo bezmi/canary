@@ -129,16 +129,14 @@
 //     "reference": "...", "notes": "..."
 //   }
 // "high_temperature_correction", the cross-section parameters, the
-// correction's "reference_temperature" and "exponent", "reference" and
-// "notes" are optional; every other key is required (the five lists may be
+// "reference" and "notes" are optional. The correction requires
+// "reference_temperature" only for park_1993 and "exponent" only for kim_2021;
+// these keys are forbidden for the other models. Every other key is required (the five lists may be
 // empty), and unknown keys are errors. "reaction" is the 0-based index of
 // the reaction in the mechanism used with the file; the ionisation energy of
 // an electron_impact_ionisation species comes from the species file.
 
 #include <array>
-#include <cstddef>
-#include <filesystem>
-#include <format>
 #include <canary/build.hpp>
 #include <canary/energy_exchange.hpp>
 #include <canary/models/multi_temperature.hpp>
@@ -146,6 +144,9 @@
 #include <canary/nasa9.hpp>
 #include <canary/reactions.hpp>
 #include <canary/transport/mixture.hpp>
+#include <cstddef>
+#include <filesystem>
+#include <format>
 #include <map>
 #include <optional>
 #include <stdexcept>
@@ -346,7 +347,9 @@ struct ExchangeUnits {
 // High-temperature correction of a relaxation time, by its collision
 // cross-section sigma in m^2: model "park_1985" (sigma constant),
 // "park_1993" (sigma (reference_temperature / T)^2, reference_temperature in
-// K) or "kim_2021" (sigma T^exponent, T in K).
+// K) or "kim_2021" (sigma T^exponent, T in K). The reference_temperature
+// is required only for park_1993; exponent is required only for kim_2021.
+// Both fields are rejected when they do not apply to the selected model.
 struct HighTemperatureCorrectionRecord {
     std::string model;
     double cross_section {};
@@ -814,8 +817,6 @@ EnergyExchangeInput<V, C> energy_exchange_input(const EnergyExchangeFile& file)
         pair.correction = {.model = RelaxationCorrection::none};
         if (correction) {
             pair.correction.cross_section = correction->cross_section;
-            pair.correction.reference_temperature = correction->reference_temperature.value_or(0.0);
-            pair.correction.exponent = correction->exponent.value_or(0.0);
             if (correction->model == "park_1985") {
                 pair.correction.model = RelaxationCorrection::park_1985;
             } else if (correction->model == "park_1993") {
@@ -828,6 +829,24 @@ EnergyExchangeInput<V, C> energy_exchange_input(const EnergyExchangeFile& file)
                   entry,
                   correction->model));
             }
+            const auto require_field = [&](std::string_view name, bool present, bool required) {
+                if (required && !present) {
+                    throw ParameterError(
+                      std::format("{}: {} correction requires {}", entry, correction->model, name));
+                }
+                if (!required && present) {
+                    throw ParameterError(
+                      std::format("{}: {} correction forbids {}", entry, correction->model, name));
+                }
+            };
+            require_field("reference_temperature",
+                          correction->reference_temperature.has_value(),
+                          pair.correction.model == RelaxationCorrection::park_1993);
+            require_field("exponent",
+                          correction->exponent.has_value(),
+                          pair.correction.model == RelaxationCorrection::kim_2021);
+            pair.correction.reference_temperature = correction->reference_temperature.value_or(0.0);
+            pair.correction.exponent = correction->exponent.value_or(0.0);
         }
     }
     for (std::size_t k = 0; k < C; ++k) {

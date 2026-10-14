@@ -759,6 +759,43 @@ int main()
         (void)canary::make_air5_park_exchange(built.species, mechanism, scales);
     };
 
+    "energy-exchange corrections require only their model-specific fields"_test = [] {
+        const auto original = db::read_energy_exchange_file(exchange_path());
+        for (const std::string_view model : {"park_1985", "park_1993", "kim_2021"}) {
+            for (unsigned fields = 0; fields < 4; ++fields) {
+                auto file = original;
+                auto& correction =
+                  *file.vibration_translation[0].relaxation_time.high_temperature_correction;
+                correction.model = model;
+                correction.reference_temperature =
+                  (fields & 1U) ? std::optional {3000.0} : std::nullopt;
+                correction.exponent = (fields & 2U) ? std::optional {0.0} : std::nullopt;
+                const bool valid = (model == "park_1985" && fields == 0) ||
+                                   (model == "park_1993" && fields == 1) ||
+                                   (model == "kim_2021" && fields == 2);
+                if (valid) {
+                    const auto parsed = db::parse_energy_exchange(db::write_energy_exchange(file));
+                    const auto input = db::energy_exchange_input<15, 3>(parsed);
+                    expect(input.vibration_translation[0].correction.reference_temperature ==
+                           correction.reference_temperature.value_or(0.0));
+                    expect(input.vibration_translation[0].correction.exponent == 0.0);
+                } else {
+                    std::string message;
+                    try {
+                        (void)db::energy_exchange_input<15, 3>(file);
+                    } catch (const canary::ParameterError& error) {
+                        message = error.what();
+                    }
+                    expect(message.starts_with("vibration_translation 0 (N2-N): ")) << message;
+                    expect(message.find(model) != std::string::npos) << message;
+                    expect(message.find("requires") != std::string::npos ||
+                           message.find("forbids") != std::string::npos)
+                      << message;
+                }
+            }
+        }
+    };
+
     "energy-exchange conversion errors name the entry and the problem"_test = [] {
         const db::EnergyExchangeFile file = db::read_energy_exchange_file(exchange_path());
         expect(throws_parameter_error([&] { (void)db::energy_exchange_input<14, 3>(file); }));

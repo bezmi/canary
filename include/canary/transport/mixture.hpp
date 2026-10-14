@@ -52,11 +52,6 @@
 // the denominator is zero (no other species present).
 
 #include <array>
-#include <cmath>
-#include <concepts>
-#include <cstddef>
-#include <cstdint>
-#include <format>
 #include <canary/build.hpp>
 #include <canary/config.hpp>
 #include <canary/models/thermally_perfect.hpp>
@@ -67,6 +62,11 @@
 #include <canary/thermo.hpp>
 #include <canary/transport/transport.hpp>
 #include <canary/units.hpp>
+#include <cmath>
+#include <concepts>
+#include <cstddef>
+#include <cstdint>
+#include <format>
 #include <numbers>
 #include <string_view>
 
@@ -549,7 +549,7 @@ CollisionTermFit<P> collision_term_fit(const CollisionFitInput& fit, double a, d
 // into the cubics of CollisionTermFit, in the model units of Delta (those of
 // a particle mass over a dynamic viscosity). Throws ParameterError when:
 // - species.n is not N, or a name is listed twice;
-// - a number of rotational degrees of freedom is not 0, 2 or 3 (with the
+// - a number of rotational degrees of freedom is not 0 or 2 (with the
 //   species name in the message);
 // - with "collision pair <index> (<first>, <second>)" in the message, a
 //   pair names a species that is null or unknown, is listed twice, or has a
@@ -566,9 +566,9 @@ GuptaYosTransport<P, U, N> make_gupta_yos_transport(const std::array<CollisionPa
     detail::check_transport_species(names, species);
     for (std::size_t i = 0; i < N; ++i) {
         const int d = rotational_degrees[i];
-        if (d != 0 && d != 2 && d != 3) {
+        if (d != 0 && d != 2) {
             throw ParameterError(
-              std::format("species {}: rotational degrees of freedom must be 0, 2 or 3, got {}",
+              std::format("species {}: rotational degrees of freedom must be 0 or 2, got {}",
                           names[i],
                           d));
         }
