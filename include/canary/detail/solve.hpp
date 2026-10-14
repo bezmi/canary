@@ -56,6 +56,8 @@ template <Scalar T> struct SolveResult {
 // relative_tolerance * |x|. The bracket shrinks to the side where f changes sign. After
 // max_iterations it stops with status NotConverged and returns the last
 // bounded iterate as a constant with zero derivative; f_full is not called.
+// A nonfinite interior residual immediately returns Invalid with the current
+// bounded iterate as a constant; f_full is not called.
 //
 // When T is not the value type (a dual number), f_full is evaluated at
 // the converged value as a constant. The returned value is unchanged and
@@ -101,6 +103,7 @@ CANARY_HOST_DEVICE SolveResult<T> solve(const FValue& f_value,
 
         for (int i = 0; i < settings.max_iterations; ++i) {
             const Residual<V> r = f_value(x);
+            if (!std::isfinite(r.value)) { return {.root = T(x), .status = Status::Invalid}; }
             if (r.value == V(0)) {
                 status = Status::Valid;
                 break;

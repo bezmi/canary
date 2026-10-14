@@ -401,6 +401,55 @@ void test_solve()
         check.template operator()<double>();
     };
 
+    "nonfinite interior residuals stop at a constant bounded iterate"_test = [] {
+        const auto check = []<std::floating_point V>() {
+            using Dual = canary::test::Dual<V>;
+            const Bracket<V> bracket {.lower = V(0), .upper = V(2)};
+            const SolveSettings<V> limits {.relative_tolerance = V(0.01), .max_iterations = 50};
+            // The invalid point is the initial guess, a Newton candidate, or a
+            // bisection candidate when the derivative is zero.
+            for (const V invalid_point : {V(0.5), V(1), V(1.25)}) {
+                for (const V slope : {V(-1), V(1)}) {
+                    for (const V invalid_value : {std::numeric_limits<V>::quiet_NaN(),
+                                                  std::numeric_limits<V>::infinity(),
+                                                  -std::numeric_limits<V>::infinity()}) {
+                        int value_calls = 0;
+                        int full_calls = 0;
+                        const auto f_value = [&](V x) {
+                            ++value_calls;
+                            return Residual<V> {
+                              .value = x == invalid_point ? invalid_value : slope * (x - V(1)),
+                              .derivative = invalid_point == V(1.25) ? V(0) : slope,
+                            };
+                        };
+                        const auto f_full = [&](Dual x) {
+                            ++full_calls;
+                            return Residual<Dual> {.value = x - Dual(V(1), V(1)),
+                                                   .derivative = Dual(V(1))};
+                        };
+                        const int expected_calls = invalid_point == V(0.5) ? 3 : 4;
+                        const auto plain = solve<V>(f_value, f_value, bracket, V(0.5), limits);
+                        expect(plain.status == Status::Invalid);
+                        expect(plain.root == invalid_point);
+                        expect(plain.root >= bracket.lower && plain.root <= bracket.upper);
+                        expect(value_calls == expected_calls);
+                        value_calls = 0;
+                        const auto dual = solve<Dual>(f_value, f_full, bracket, V(0.5), limits);
+                        expect(dual.status == Status::Invalid);
+                        expect(dual.root.real() == invalid_point);
+                        expect(dual.root.real() >= bracket.lower &&
+                               dual.root.real() <= bracket.upper);
+                        expect(dual.root.dual() == V(0));
+                        expect(value_calls == expected_calls);
+                        expect(full_calls == 0_i);
+                    }
+                }
+            }
+        };
+        check.template operator()<float>();
+        check.template operator()<double>();
+    };
+
     "a bracket without a sign change gives Invalid"_test = [] {
         const auto f = [](double x) { return cubic(x, 10.0); };
         expect(
