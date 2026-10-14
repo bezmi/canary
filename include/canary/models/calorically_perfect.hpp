@@ -52,28 +52,15 @@ CaloricallyPerfect<P, U> calorically_perfect_from(SpecificGasConstant<P, U> gas_
                       gamma.value()));
     }
     const SpecificHeat<P, U> cv = isochoric_specific_heat(gas_constant, gamma);
+    const SpecificHeat<P, U> cp = isobaric_specific_heat(cv, gamma);
+    require_positive("isochoric specific heat", cv.value());
+    require_positive("isobaric specific heat", cp.value());
     return {
       .gas_constant = gas_constant,
       .cv = cv,
-      .cp = isobaric_specific_heat(cv, gamma),
+      .cp = cp,
       .gamma = gamma,
     };
-}
-
-// Valid when density, energy per unit volume and temperature have finite,
-// positive value parts; Invalid otherwise.
-template <Scalar T, UnitSystem U>
-CANARY_HOST_DEVICE constexpr Status
-  state_status(Density<T, U> rho, EnergyDensity<T, U> rho_e, Temperature<T, U> temp)
-{
-    using V = ScalarTraits<T>::value_type;
-    const auto positive = [](T x) {
-        const V v = ScalarTraits<T>::value(x);
-        return std::isfinite(v) && v > V(0);
-    };
-    return positive(rho.value()) && positive(rho_e.value()) && positive(temp.value())
-             ? Status::Valid
-             : Status::Invalid;
 }
 
 }  // namespace detail
@@ -81,7 +68,8 @@ CANARY_HOST_DEVICE constexpr Status
 // Model from particle mass, charge, Boltzmann constant (exactly 1 in scaled
 // units, see boltzmann_constant) and heat capacity ratio, with its species
 // data. Throws ParameterError when the mass or the Boltzmann constant is not
-// positive, the charge is not finite, or gamma is not greater than 1.
+// positive, the charge is not finite, gamma is not greater than 1, or either
+// derived specific heat is not finite and positive.
 template <std::floating_point P, UnitSystem U>
 Built<CaloricallyPerfect<P, U>, SpeciesData<P, U, 1>>
   make_calorically_perfect(ParticleMass<P, U> mass,
@@ -119,6 +107,26 @@ template <Scalar C, UnitSystem U> struct PerfectCoefficients {
     SpecificHeat<C, U> cp;
 };
 
+// Every state value, energy density and coefficient must have a finite,
+// positive value part; gamma must exceed one. Derivatives do not set validity.
+template <Scalar T, Scalar C, UnitSystem U>
+CANARY_HOST_DEVICE constexpr Status state_status(const PerfectCoefficients<C, U>& k,
+                                                 const ThermoState<T, U>& state,
+                                                 EnergyDensity<T, U> rho_e)
+{
+    const auto positive = []<Scalar S>(S x) {
+        using V = ScalarTraits<S>::value_type;
+        const V v = ScalarTraits<S>::value(x);
+        return std::isfinite(v) && v > V(0);
+    };
+    return positive(state.rho.value()) && positive(state.e.value()) && positive(state.p.value()) &&
+               positive(state.temp.value()) && positive(rho_e.value()) &&
+               positive(k.gas_constant.value()) && positive(k.cv.value()) &&
+               positive(k.cp.value()) && positive(k.gamma.value() - C(1))
+             ? Status::Valid
+             : Status::Invalid;
+}
+
 // p = (gamma - 1) rho_e, T = p / (rho R), e = rho_e / rho.
 template <Scalar T, Scalar C, UnitSystem U>
     requires ScalarPair<T, C>
@@ -128,10 +136,11 @@ CANARY_HOST_DEVICE Closure<T, U> perfect_from_rho_rho_e(const PerfectCoefficient
 {
     const Pressure<T, U> p {pressure(k.gamma, rho_e)};
     const Temperature<T, U> temp {temperature(p, rho, k.gas_constant)};
-    return {
-      .state = {.rho = rho, .e = specific_energy(rho_e, rho), .p = p, .temp = temp},
-      .status = state_status(rho, rho_e, temp),
-    };
+    const ThermoState<T, U> state {.rho = rho,
+                                   .e = specific_energy(rho_e, rho),
+                                   .p = p,
+                                   .temp = temp};
+    return {.state = state, .status = state_status(k, state, rho_e)};
 }
 
 // rho_e = rho e, then as above; the given e is kept.
@@ -140,9 +149,11 @@ template <Scalar T, Scalar C, UnitSystem U>
 CANARY_HOST_DEVICE Closure<T, U>
   perfect_from_rho_e(const PerfectCoefficients<C, U>& k, Density<T, U> rho, SpecificEnergy<T, U> e)
 {
-    auto c = perfect_from_rho_rho_e(k, rho, energy_density(rho, e));
-    c.state.e = e;
-    return c;
+    const EnergyDensity<T, U> rho_e {energy_density(rho, e)};
+    const Pressure<T, U> p {pressure(k.gamma, rho_e)};
+    const Temperature<T, U> temp {temperature(p, rho, k.gas_constant)};
+    const ThermoState<T, U> state {.rho = rho, .e = e, .p = p, .temp = temp};
+    return {.state = state, .status = state_status(k, state, rho_e)};
 }
 
 // rho_e = p / (gamma - 1), T = p / (rho R).
@@ -153,10 +164,11 @@ CANARY_HOST_DEVICE Closure<T, U>
 {
     const EnergyDensity<T, U> rho_e {energy_density(k.gamma, p)};
     const Temperature<T, U> temp {temperature(p, rho, k.gas_constant)};
-    return {
-      .state = {.rho = rho, .e = specific_energy(rho_e, rho), .p = p, .temp = temp},
-      .status = state_status(rho, rho_e, temp),
-    };
+    const ThermoState<T, U> state {.rho = rho,
+                                   .e = specific_energy(rho_e, rho),
+                                   .p = p,
+                                   .temp = temp};
+    return {.state = state, .status = state_status(k, state, rho_e)};
 }
 
 // p = rho R T, e = cv T.
@@ -167,16 +179,13 @@ CANARY_HOST_DEVICE Closure<T, U> perfect_from_rho_temp(const PerfectCoefficients
                                                        Temperature<T, U> temp)
 {
     const SpecificEnergy<T, U> e {specific_energy(k.cv, temp)};
-    return {
-      .state =
-        {
-          .rho = rho,
-          .e = e,
-          .p = Pressure<T, U> {pressure(rho, k.gas_constant, temp)},
-          .temp = temp,
-        },
-      .status = state_status(rho, energy_density(rho, e), temp),
+    const ThermoState<T, U> state {
+      .rho = rho,
+      .e = e,
+      .p = Pressure<T, U> {pressure(rho, k.gas_constant, temp)},
+      .temp = temp,
     };
+    return {.state = state, .status = state_status(k, state, energy_density(rho, e))};
 }
 
 // rho = p / (R T), e = cv T.
@@ -187,10 +196,8 @@ CANARY_HOST_DEVICE Closure<T, U>
 {
     const Density<T, U> rho {density(p, k.gas_constant, temp)};
     const SpecificEnergy<T, U> e {specific_energy(k.cv, temp)};
-    return {
-      .state = {.rho = rho, .e = e, .p = p, .temp = temp},
-      .status = state_status(rho, energy_density(rho, e), temp),
-    };
+    const ThermoState<T, U> state {.rho = rho, .e = e, .p = p, .temp = temp};
+    return {.state = state, .status = state_status(k, state, energy_density(rho, e))};
 }
 
 // cv, cp, gamma and R, and the sound speed a = sqrt(gamma p / rho).

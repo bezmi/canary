@@ -227,4 +227,100 @@ void test_calorically_perfect()
         expect(throws<canary::ParameterError>([&] { from_m(1.0, 0.0, -1.0); }));
         expect(nothrow([&] { from_m(1.0, -1.0, 1.0); }));
     };
+    "derived heat capacities must remain finite and positive"_test = [] {
+        const auto check = []<typename T>() {
+            const T max = std::numeric_limits<T>::max();
+            const T tiny = std::numeric_limits<T>::denorm_min();
+            const T near_one = std::nextafter(T(1), T(2));
+            const auto make = [](T r, T gamma) {
+                return canary::make_calorically_perfect(canary::SpecificGasConstant<T, si> {r},
+                                                        canary::HeatCapacityRatio<T> {gamma});
+            };
+            expect(throws<canary::ParameterError>([&] { make(max / T(2), near_one); }));
+            expect(throws<canary::ParameterError>([&] { make(max * T(0.75), T(2)); }));
+            expect(throws<canary::ParameterError>([&] { make(tiny, max / T(2)); }));
+            expect(nothrow([&] { make(T(1), near_one); }));
+            expect(nothrow([&] { make(tiny, T(2)); }));
+        };
+        check.template operator()<float>();
+        check.template operator()<double>();
+    };
+
+    "calorically perfect closures reject unrepresentable returned fields"_test = [] {
+        const auto check = []<typename T>() {
+            using Density = canary::Density<T, si>;
+            using Energy = canary::SpecificEnergy<T, si>;
+            using EnergyDensity = canary::EnergyDensity<T, si>;
+            using Pressure = canary::Pressure<T, si>;
+            using Temperature = canary::Temperature<T, si>;
+            const T max = std::numeric_limits<T>::max();
+            const T tiny = std::numeric_limits<T>::denorm_min();
+            const auto make = [](T r, T gamma) {
+                return canary::make_calorically_perfect(canary::SpecificGasConstant<T, si> {r},
+                                                        canary::HeatCapacityRatio<T> {gamma});
+            };
+            const auto normal = make(T(1), T(2));
+            const auto p_over =
+              thermo_state(make(T(4), T(5)), Density {max / T(2)}, Temperature {T(1)});
+            expect(p_over.status == Status::Invalid && std::isinf(p_over.state.p.value()));
+            expect(p_over.state.e.value() == T(1) && p_over.state.temp.value() == T(1));
+            const auto p_under = thermo_state(make(tiny, std::nextafter(T(1), T(2))),
+                                              Density {T(1)},
+                                              Temperature {T(0.5)});
+            expect(p_under.status == Status::Invalid && p_under.state.p.value() == T(0));
+            expect(p_under.state.e.value() > T(0));
+            const auto e_over =
+              thermo_state(make(T(4), T(1.5)), Density {T(0.25)}, EnergyDensity {max / T(2)});
+            expect(e_over.status == Status::Invalid && std::isinf(e_over.state.e.value()));
+            expect(std::isfinite(e_over.state.p.value()) &&
+                   std::isfinite(e_over.state.temp.value()));
+            const auto e_under =
+              thermo_state(make(tiny, T(2)), Density {T(2)}, EnergyDensity {tiny});
+            expect(e_under.status == Status::Invalid && e_under.state.e.value() == T(0));
+            expect(e_under.state.p.value() > T(0) && e_under.state.temp.value() > T(0));
+            const auto rho_over =
+              thermo_state(normal, Pressure {max / T(2)}, Temperature {T(0.25)});
+            expect(rho_over.status == Status::Invalid && std::isinf(rho_over.state.rho.value()));
+            const auto rho_under = thermo_state(normal, Pressure {tiny}, Temperature {max});
+            expect(rho_under.status == Status::Invalid && rho_under.state.rho.value() == T(0));
+            const auto t_over = thermo_state(normal, Density {T(0.25)}, Pressure {max / T(2)});
+            expect(t_over.status == Status::Invalid && std::isinf(t_over.state.temp.value()));
+            const auto t_under = thermo_state(make(T(4), T(2)), Density {T(1)}, Pressure {tiny});
+            expect(t_under.status == Status::Invalid && t_under.state.temp.value() == T(0));
+            const auto rho_e_over = thermo_state(normal, Density {T(2)}, Energy {max});
+            expect(rho_e_over.status == Status::Invalid && rho_e_over.state.e.value() == max);
+            const auto rho_e_under = thermo_state(normal, Density {T(0.5)}, Energy {tiny});
+            expect(rho_e_under.status == Status::Invalid && rho_e_under.state.e.value() == tiny);
+
+            // Public aggregates can bypass the checked host factory.
+            for (T value : {T(0),
+                            T(-1),
+                            std::numeric_limits<T>::infinity(),
+                            std::numeric_limits<T>::quiet_NaN()}) {
+                for (int member = 0; member < 4; ++member) {
+                    auto gas = normal;
+                    if (member == 0) {
+                        gas.gas_constant = canary::SpecificGasConstant<T, si> {value};
+                    }
+                    if (member == 1) { gas.cv = canary::SpecificHeat<T, si> {value}; }
+                    if (member == 2) { gas.cp = canary::SpecificHeat<T, si> {value}; }
+                    if (member == 3) { gas.gamma = canary::HeatCapacityRatio<T> {value}; }
+                    const std::array closures {
+                      thermo_state(gas, Density {T(1)}, EnergyDensity {T(1)}),
+                      thermo_state(gas, Density {T(1)}, Energy {T(1)}),
+                      thermo_state(gas, Density {T(1)}, Pressure {T(1)}),
+                      thermo_state(gas, Density {T(1)}, Temperature {T(1)}),
+                      thermo_state(gas, Pressure {T(1)}, Temperature {T(1)})};
+                    for (const auto& closure : closures) {
+                        expect(closure.status == Status::Invalid);
+                    }
+                }
+            }
+            const auto near_one = make(T(1), std::nextafter(T(1), T(2)));
+            expect(thermo_state(near_one, Density {T(1)}, Temperature {T(1)}).status ==
+                   Status::Valid);
+        };
+        check.template operator()<float>();
+        check.template operator()<double>();
+    };
 }
