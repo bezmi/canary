@@ -301,6 +301,73 @@ void test_units()
         expect(within_ulp(p_s, rho_s * temp_s / m_s, 16.0)) << p_s << rho_s * temp_s / m_s;
     };
 
+    "dimension factors retain finite results across extreme intermediate products"_test = [] {
+        const double large = std::ldexp(1.0, 800);
+        const canary::UnitScales<double, scaled> reference {
+          {.mass = large, .density = large, .temperature = 1.0, .length = std::ldexp(1.0, 200)}};
+        expect(scale_factor<kind::density>(reference) == large);
+        expect(scale_factor<kind::particle_mass>(reference) == large);
+        const canary::UnitScales<double, scaled> subnormal_count {
+          {.mass = 1.0,
+           .density = std::numeric_limits<double>::denorm_min(),
+           .temperature = 1.0,
+           .length = 1.0}};
+        expect(scale_factor<kind::charge>(subnormal_count) ==
+               canary::constants::elementary_charge<double>);
+        expect(scale_factor<kind::particle_mass>(subnormal_count) == 1.0);
+        expect(scale_factor<kind::density>(subnormal_count) ==
+               std::numeric_limits<double>::denorm_min());
+    };
+
+    "dimension exponents cover the integer range without linear iteration"_test = [] {
+        const canary::UnitScales<double, scaled> reference {
+          {.mass = 1.0, .density = 1.0, .temperature = 2.0, .length = 2.0}};
+        const int largest = std::numeric_limits<int>::max();
+        const int smallest = std::numeric_limits<int>::min();
+        expect(scale_factor(canary::Dimension {.length = largest, .temperature = -largest},
+                            reference) == 1.0);
+        expect(scale_factor(canary::Dimension {.length = smallest, .temperature = largest},
+                            reference) == 0.5);
+        expect(throws<canary::ParameterError>(
+          [&] { (void)scale_factor(canary::Dimension {.temperature = largest}, reference); }));
+        expect(throws<canary::ParameterError>(
+          [&] { (void)scale_factor(canary::Dimension {.temperature = smallest}, reference); }));
+        expect(throws<canary::ParameterError>([&] {
+            (void)scale_factor(canary::Dimension {.mass = largest, .count = largest}, reference);
+        }));
+    };
+
+    "conversion retains representable results when the dimension factor is out of range"_test = [] {
+        using D = canary::test::Dual<double>;
+        for (const int exponent : {-600, 600}) {
+            const double mass = std::ldexp(canary::constants::boltzmann<double>, -exponent);
+            const canary::UnitScales<double, scaled> reference {
+              {.mass = mass,
+               .density = mass,
+               .temperature = std::ldexp(1.0, exponent),
+               .length = 1.0}};
+            expect(throws<canary::ParameterError>(
+              [&] { (void)scale_factor<kind::specific_energy>(reference); }));
+            const double input = std::ldexp(1.0, exponent);
+            const double output = std::ldexp(1.0, -exponent);
+            const auto plain =
+              convert<scaled>(canary::SpecificEnergy<double, si> {input}, reference);
+            expect(plain.value() == output);
+            const auto dual =
+              convert<scaled>(canary::SpecificEnergy<D, si> {D(input, -input)}, reference);
+            expect(dual.value().real() == output && dual.value().dual() == -output);
+            const auto back = convert<si>(dual, reference);
+            expect(back.value().real() == input && back.value().dual() == -input);
+            const auto zero_value =
+              convert<scaled>(canary::SpecificEnergy<D, si> {D(0.0, input)}, reference);
+            expect(zero_value.value().real() == 0.0 && zero_value.value().dual() == output);
+            const auto zero_derivative =
+              convert<si>(canary::SpecificEnergy<D, scaled> {D(output, 0.0)}, reference);
+            expect(zero_derivative.value().real() == input &&
+                   zero_derivative.value().dual() == 0.0);
+        }
+    };
+
     "unit conversion retains each input scalar type across scale precisions"_test = [] {
         const auto check = []<typename V, typename P>() {
             const canary::UnitScales<P, scaled> reference {

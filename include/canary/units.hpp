@@ -182,38 +182,82 @@ std::common_type_t<double, P> count_scale(const UnitScales<P, scaled>& s)
 
 namespace detail
 {
-// Multiplies numerator by base^exponent when exponent > 0, or denominator
-// by base^-exponent when exponent < 0. The factor is numerator/denominator,
-// so it has a single division.
-template <std::floating_point P>
-constexpr void apply_power(P& numerator, P& denominator, P base, int exponent)
+template <std::floating_point W>
+BinaryScale<W> scale_power(BinaryScale<W> base, std::int64_t exponent)
 {
-    for (int i = 0; i < exponent; ++i) { numerator *= base; }
-    for (int i = 0; i > exponent; --i) { denominator *= base; }
+    const bool inverse = exponent < 0;
+    auto remaining = static_cast<std::uint64_t>(inverse ? -exponent : exponent);
+    BinaryScale<W> result(W(1));
+    while (remaining != 0) {
+        if ((remaining & 1) != 0) { result = result * base; }
+        remaining >>= 1;
+        if (remaining != 0) { base = base * base; }
+    }
+    return inverse ? BinaryScale<W>(W(1)) / result : result;
+}
+
+template <std::floating_point W, std::floating_point P>
+BinaryScale<W> dimension_scale(const Dimension& d, const UnitScales<P, scaled>& s)
+{
+    if (d.amount != 0) {
+        throw ParameterError("a dimension with an amount of substance has no scaled unit");
+    }
+    const BinaryScale<W> mass(W(s.mass()));
+    const BinaryScale<W> length(W(s.length()));
+    const BinaryScale<W> count = BinaryScale<W>(W(s.density())) / mass * length * length * length;
+    const W time = W(s.length()) / reference_velocity(W(s.mass()), W(s.temperature()));
+    // Bulk mass and charge both contain the reference particle count.
+    const std::int64_t count_exponent = std::int64_t(d.mass) + d.charge + d.count;
+    return scale_power(mass, d.mass) * scale_power(length, d.length) *
+           scale_power(BinaryScale<W>(time), d.time) *
+           scale_power(BinaryScale<W>(W(s.temperature())), d.temperature) *
+           scale_power(BinaryScale<W>(constants::elementary_charge<W>), d.charge) *
+           scale_power(count, count_exponent);
+}
+
+// Apply an unrepresentable factor through finite multipliers. Every scalar
+// component participates, including derivatives and zero-valued components.
+template <Scalar T, std::floating_point W>
+    requires ScalarWith<T, W>
+T apply_scale(T value, BinaryScale<W> factor)
+{
+    if (factor.exponent > 0) {
+        factor.fraction *= W(2);
+        --factor.exponent;
+    } else {
+        value = T(value * factor.fraction);
+        factor.fraction = W(1);
+    }
+    // Beyond this bound every nonzero finite component overflows or rounds
+    // to zero. Bounding the exponent also bounds the number of multipliers.
+    constexpr std::int64_t limit = std::int64_t(std::numeric_limits<W>::max_exponent) -
+                                   std::numeric_limits<W>::min_exponent +
+                                   std::numeric_limits<W>::digits + 1;
+    if (factor.exponent > limit) { factor.exponent = limit; }
+    if (factor.exponent < -limit) { factor.exponent = -limit; }
+    constexpr int chunk = std::numeric_limits<W>::max_exponent - 1;
+    while (factor.exponent != 0) {
+        const int step = factor.exponent > chunk    ? chunk
+                         : factor.exponent < -chunk ? -chunk
+                                                    : static_cast<int>(factor.exponent);
+        value = T(value * std::ldexp(W(1), step));
+        factor.exponent -= step;
+    }
+    return T(value * factor.fraction);
 }
 }  // namespace detail
 
-// SI value of one unit of dimension d in the system of the scales: the
-// product of the base scales raised to the exponents of d. Throws
-// ParameterError when d has an amount of substance, which has no scaled
-// unit.
+// Host-side SI value of one unit of dimension d. Throws ParameterError for
+// an amount-of-substance dimension or a factor that is not finite and positive
+// in common_type_t<double, P>. Products retain a separate binary exponent so
+// intermediate factors can exceed that type's range.
 template <std::floating_point P>
 std::common_type_t<double, P> scale_factor(const Dimension& d, const UnitScales<P, scaled>& s)
 {
     using W = std::common_type_t<double, P>;
-    if (d.amount != 0) {
-        throw ParameterError("a dimension with an amount of substance has no scaled unit");
-    }
-    const W count = count_scale(s);
-    W numerator = W(1);
-    W denominator = W(1);
-    detail::apply_power(numerator, denominator, s.mass() * count, d.mass);
-    detail::apply_power(numerator, denominator, W(s.length()), d.length);
-    detail::apply_power(numerator, denominator, time_scale(s), d.time);
-    detail::apply_power(numerator, denominator, W(s.temperature()), d.temperature);
-    detail::apply_power(numerator, denominator, constants::elementary_charge<W> * count, d.charge);
-    detail::apply_power(numerator, denominator, count, d.count);
-    return numerator / denominator;
+    const W factor = detail::dimension_scale<W>(d, s).value();
+    detail::check_scale("dimension", factor);
+    return factor;
 }
 
 template <std::floating_point P>
@@ -276,14 +320,6 @@ concept ConvertibleScalar = Scalar<T> && std::floating_point<P> && requires(cons
     } -> std::same_as<T>;
 };
 
-template <std::floating_point W, std::floating_point P>
-UnitScales<W, scaled> scales_cast(const UnitScales<P, scaled>& s)
-{
-    return UnitScales<W, scaled> {{.mass = static_cast<W>(s.mass()),
-                                   .density = static_cast<W>(s.density()),
-                                   .temperature = static_cast<W>(s.temperature()),
-                                   .length = static_cast<W>(s.length())}};
-}
 }  // namespace detail
 
 // The quantity q in unit system To. The kind does not change; a
@@ -302,13 +338,21 @@ auto convert(Quantity<K, T, From> q, const UnitScales<P, S>& scales)
     } else {
         using W = detail::conversion_precision_t<T, P>;
         using WideScalar = detail::conversion_scalar_t<T, P>;
-        const W factor = scale_factor<K>(detail::scales_cast<W>(scales));
+        const auto factor = detail::dimension_scale<W>(K::dimension, scales);
+        const W factor_value = factor.value();
         const WideScalar value = detail::scalar_cast<W>(q.value());
         const WideScalar converted = [&] {
+            if (std::isnormal(factor_value)) {
+                if constexpr (std::same_as<From, si>) {
+                    return WideScalar(value / factor_value);
+                } else {
+                    return WideScalar(value * factor_value);
+                }
+            }
             if constexpr (std::same_as<From, si>) {
-                return WideScalar(value / factor);
+                return detail::apply_scale(value, detail::BinaryScale<W>(W(1)) / factor);
             } else {
-                return WideScalar(value * factor);
+                return detail::apply_scale(value, factor);
             }
         }();
         return Quantity<K, T, To> {
