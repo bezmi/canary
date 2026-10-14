@@ -3,11 +3,12 @@
 #include "test_suites.hpp"
 
 #include <algorithm>
+#include <array>
 #include <boost/ut.hpp>
-#include <cmath>
-#include <concepts>
 #include <canary/detail/solve.hpp>
 #include <canary/status.hpp>
+#include <cmath>
+#include <concepts>
 #include <limits>
 
 namespace
@@ -99,10 +100,10 @@ void test_solve()
                   .derivative = (V(3) * coefficient * x * x) + V(1),
                 };
             };
-            // A loose step tolerance leaves a nonzero residual so that a
+            // A loose bracket tolerance leaves a nonzero residual so that a
             // separate final Newton step would change the returned value.
             const SolveSettings<V> limits {.relative_tolerance = V(0.1), .max_iterations = 50};
-            const Bracket<V> bracket {.lower = V(0), .upper = V(5)};
+            const Bracket<V> bracket {.lower = V(1.875), .upper = V(2.25)};
             const auto plain = solve<V>(f_value, f_value, bracket, V(2.125), limits);
             const auto dual = solve<Dual>(f_value, f_full, bracket, V(2.125), limits);
             const V x = plain.root;
@@ -536,6 +537,10 @@ void test_solve()
             check_invalid({.lower = V(2), .upper = V(0)}, V(1), limits);
             check_invalid(bracket, V(1), {.relative_tolerance = V(-1), .max_iterations = 50});
             check_invalid(bracket, V(1), {.relative_tolerance = V(0.01), .max_iterations = -1});
+            check_invalid(
+              bracket,
+              V(1),
+              {.relative_tolerance = V(0.01), .max_iterations = 50, .absolute_tolerance = V(-1)});
             for (const V invalid : {std::numeric_limits<V>::quiet_NaN(),
                                     -std::numeric_limits<V>::infinity(),
                                     std::numeric_limits<V>::infinity()}) {
@@ -543,6 +548,11 @@ void test_solve()
                 check_invalid({.lower = V(0), .upper = invalid}, V(1), limits);
                 check_invalid(bracket, invalid, limits);
                 check_invalid(bracket, V(1), {.relative_tolerance = invalid, .max_iterations = 50});
+                check_invalid(bracket,
+                              V(1),
+                              {.relative_tolerance = V(0.01),
+                               .max_iterations = 50,
+                               .absolute_tolerance = invalid});
             }
         };
         check.template operator()<float>();
@@ -596,6 +606,167 @@ void test_solve()
                 expect(dual.root.dual() == V(0));
                 expect(full_calls == 0_i);
             }
+        };
+        check.template operator()<float>();
+        check.template operator()<double>();
+    };
+
+    "bracket convergence uses additive tolerances and the minimum absolute endpoint"_test = [] {
+        const auto check = []<std::floating_point V>() {
+            using Dual = canary::test::Dual<V>;
+            for (const V sign : {V(-1), V(1)}) {
+                const Bracket<V> bracket = sign > V(0)
+                                             ? Bracket<V> {.lower = V(2), .upper = V(4)}
+                                             : Bracket<V> {.lower = V(-4), .upper = V(-2)};
+                const auto f_value = [=](V x) {
+                    return Residual<V> {.value = x - sign * V(3.25), .derivative = V(0)};
+                };
+                const auto f_full = [=](Dual x) {
+                    return Residual<Dual> {.value = x - Dual(sign * V(3.25), V(1)),
+                                           .derivative = Dual(V(1))};
+                };
+                const V guess = sign * V(4);
+                // Neither tolerance alone covers the width of two; their sum does.
+                const SolveSettings<V> limits {.relative_tolerance = V(0.5),
+                                               .max_iterations = 1,
+                                               .absolute_tolerance = V(1)};
+                const auto plain = solve<V>(f_value, f_value, bracket, guess, limits);
+                const auto dual = solve<Dual>(f_value, f_full, bracket, guess, limits);
+                expect(plain.status == Status::Valid);
+                expect(plain.root == guess);
+                expect(dual.status == Status::Valid);
+                expect(dual.root.real() == guess);
+                expect(dual.root.dual() == V(1));
+                // Using abs(guess) for the relative scale would accept this interval.
+                const auto relative_only =
+                  solve<V>(f_value,
+                           f_value,
+                           bracket,
+                           guess,
+                           SolveSettings<V> {.relative_tolerance = V(0.5), .max_iterations = 1});
+                expect(relative_only.status == Status::NotConverged);
+            }
+            const auto f = [](V x) { return Residual<V> {.value = x, .derivative = V(0)}; };
+            for (const V absolute : {V(0), V(1), V(2)}) {
+                const auto r = solve<V>(f,
+                                        f,
+                                        Bracket<V> {.lower = V(-1), .upper = V(1)},
+                                        V(-1),
+                                        SolveSettings<V> {.relative_tolerance = V(100),
+                                                          .max_iterations = 1,
+                                                          .absolute_tolerance = absolute});
+                expect(r.status == (absolute == V(2) ? Status::Valid : Status::NotConverged));
+            }
+        };
+        check.template operator()<float>();
+        check.template operator()<double>();
+    };
+
+    "bracket tolerances handle subnormal and overflowing widths"_test = [] {
+        const auto check = []<std::floating_point V>() {
+            const V tiny = std::numeric_limits<V>::denorm_min();
+            const auto near_zero = [=](V x) {
+                return Residual<V> {.value = x / tiny - V(3), .derivative = V(0)};
+            };
+            const auto exact =
+              solve<V>(near_zero,
+                       near_zero,
+                       Bracket<V> {.lower = V(0), .upper = V(8) * tiny},
+                       V(0),
+                       SolveSettings<V> {.relative_tolerance = V(0), .max_iterations = 8});
+            expect(exact.status == Status::Valid);
+            expect(exact.root == V(3) * tiny);
+            const auto narrow = solve<V>(near_zero,
+                                         near_zero,
+                                         Bracket<V> {.lower = V(2) * tiny, .upper = V(4) * tiny},
+                                         V(2) * tiny,
+                                         SolveSettings<V> {.relative_tolerance = V(0),
+                                                           .max_iterations = 1,
+                                                           .absolute_tolerance = V(2) * tiny});
+            expect(narrow.status == Status::Valid);
+            expect(narrow.root == V(2) * tiny);
+
+            const V largest = std::numeric_limits<V>::max();
+            const auto wide_residual = [=](V x) {
+                return Residual<V> {.value = x / largest - V(0.75), .derivative = V(0)};
+            };
+            const SolveSettings<V> limits {.relative_tolerance = largest,
+                                           .max_iterations = 1,
+                                           .absolute_tolerance = largest};
+            const auto wide = solve<V>(wide_residual,
+                                       wide_residual,
+                                       Bracket<V> {.lower = -largest, .upper = largest},
+                                       -largest,
+                                       limits);
+            expect(wide.status == Status::NotConverged);
+            expect(std::isfinite(wide.root));
+            const auto positive = solve<V>(wide_residual,
+                                           wide_residual,
+                                           Bracket<V> {.lower = largest / V(2), .upper = largest},
+                                           largest / V(2),
+                                           limits);
+            expect(positive.status == Status::Valid);
+            expect(positive.root == largest / V(2));
+        };
+        check.template operator()<float>();
+        check.template operator()<double>();
+    };
+
+    "Newton stagnation forces bisection even when the bracket width overflows"_test = [] {
+        const auto check = []<std::floating_point V>() {
+            const V largest = std::numeric_limits<V>::max();
+            for (const V extent : {V(6), largest}) {
+                std::array<V, 5> points {};
+                std::size_t calls = 0;
+                const auto f = [&](V x) {
+                    points.at(calls++) = x;
+                    return Residual<V> {.value = x / extent - V(0.75), .derivative = largest};
+                };
+                const auto r =
+                  solve<V>(f,
+                           f,
+                           Bracket<V> {.lower = -extent, .upper = extent},
+                           extent,
+                           SolveSettings<V> {.relative_tolerance = V(0), .max_iterations = 3});
+                expect(r.status == Status::NotConverged);
+                expect(calls == points.size());
+                expect(points[3] == std::nextafter(extent, V(0)));
+                expect(points[4] == std::midpoint(-extent, points[3]));
+                expect(std::isfinite(r.root));
+                expect(r.root >= -extent && r.root <= extent);
+            }
+        };
+        check.template operator()<float>();
+        check.template operator()<double>();
+    };
+
+    "nonzero tolerances do not accept unresolved steps or exhausted precision"_test = [] {
+        const auto check = []<std::floating_point V>() {
+            const V eps = std::numeric_limits<V>::epsilon();
+            const auto unresolved = [](V x) {
+                return Residual<V> {.value = x - V(1), .derivative = std::numeric_limits<V>::max()};
+            };
+            const auto r =
+              solve<V>(unresolved,
+                       unresolved,
+                       Bracket<V> {.lower = V(0), .upper = V(2)},
+                       V(0.5),
+                       SolveSettings<V> {.relative_tolerance = eps, .max_iterations = 1});
+            expect(r.status == Status::NotConverged);
+            expect(r.root >= V(0) && r.root <= V(2));
+            const V low = std::sqrt(V(2));
+            const V high = std::nextafter(low, V(2));
+            const auto between = [=](V x) {
+                return Residual<V> {.value = (x - low) / (high - low) - V(0.5), .derivative = V(0)};
+            };
+            const auto exhausted =
+              solve<V>(between,
+                       between,
+                       Bracket<V> {.lower = low, .upper = high},
+                       low,
+                       SolveSettings<V> {.relative_tolerance = eps / V(8), .max_iterations = 50});
+            expect(exhausted.status == Status::NotConverged);
+            expect(exhausted.root >= low && exhausted.root <= high);
         };
         check.template operator()<float>();
         check.template operator()<double>();

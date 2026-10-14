@@ -127,7 +127,39 @@ void test_thermally_perfect()
         expect(gas.temperature_max.value() == 100000.0);
         expect(gas.bracket_width.value() == 1000.0);
         expect(gas.relative_tolerance == solve_tolerance);
+        expect(gas.absolute_tolerance.value() == 0.0);
         expect(gas.max_iterations == 30_i);
+    };
+
+    "the temperature solver uses absolute tolerance in the model units"_test = [&] {
+        const auto check = []<typename Gas>(Gas model) {
+            using V = typename Gas::parameter_type;
+            using U = typename Gas::units;
+            using Temperature = canary::Temperature<V, U>;
+            static_assert(std::same_as<decltype(model.absolute_tolerance), Temperature>);
+            model.temperature_min = Temperature {V(2)};
+            model.temperature_max = Temperature {V(4)};
+            model.bracket_width = Temperature {V(2)};
+            model.relative_tolerance = V(0);
+            model.max_iterations = 1;
+            const auto f = [](V x) {
+                return canary::detail::Residual<V> {.value = x - V(3), .derivative = V(0)};
+            };
+            const auto exact_only = canary::detail::solve_temperature<V>(model, f, f, V(2));
+            expect(exact_only.status == Status::NotConverged);
+            model.absolute_tolerance = Temperature {V(2)};
+            const auto approximate = canary::detail::solve_temperature<V>(model, f, f, V(2));
+            expect(approximate.status == Status::Valid);
+            expect(approximate.root == V(2));
+            for (const V invalid :
+                 {V(-1), std::numeric_limits<V>::quiet_NaN(), std::numeric_limits<V>::infinity()}) {
+                model.absolute_tolerance = Temperature {invalid};
+                expect(canary::detail::solve_temperature<V>(model, f, f, V(2)).status ==
+                       Status::Invalid);
+            }
+        };
+        check(gas);
+        check(canary::make_air5<double>(reference_scales).model);
     };
 
     "the builder names the species of an invalid parameter"_test = [] {

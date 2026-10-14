@@ -57,7 +57,8 @@ struct NormalisedComposition {
 // - temperature_min and temperature_max: the full bracket of the
 //   temperature solve; bracket_width: the width of the first bracket
 //   around the guess;
-// - relative_tolerance and max_iterations: settings of the solve.
+// - relative_tolerance, absolute_tolerance and max_iterations: settings of
+//   the solve; absolute_tolerance is in the model temperature units.
 template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t S = 4>
     requires(N > 0 && S > 0)
 struct ThermallyPerfectMixture {
@@ -77,6 +78,7 @@ struct ThermallyPerfectMixture {
     Temperature<P, U> bracket_width;
     P relative_tolerance;
     int max_iterations;
+    Temperature<P, U> absolute_tolerance {P(0)};
 };
 
 namespace detail
@@ -120,7 +122,8 @@ void fill_thermally_perfect_species(ThermallyPerfectMixture<P, U, N, S>& model,
 // Mixture model of the given species in the unit system of the scales, with
 // its species data (particle mass M / N_A and charge q e, in U). The
 // temperature limits are 10 K and 100000 K, the first bracket is 1000 K
-// wide, the relative tolerance is 1e-10 and the iteration limit 30. Throws
+// wide, the relative tolerance is 1e-10, the absolute temperature tolerance
+// is zero and the iteration limit 30. Throws
 // ParameterError, with the species name in the message, when a molar mass
 // is not finite and positive, a charge is not finite, or a fit is rejected
 // by make_nasa9_curve.
@@ -307,6 +310,7 @@ CANARY_HOST_DEVICE SolveResult<T> solve_temperature(const ThermallyPerfectMixtur
     const SolveSettings<V> settings {
       .relative_tolerance = static_cast<V>(gas.relative_tolerance),
       .max_iterations = gas.max_iterations,
+      .absolute_tolerance = static_cast<V>(gas.absolute_tolerance.value()),
     };
     SolveResult<T> r =
       solve<T>(f_value, f_full, Bracket<V> {.lower = lower, .upper = upper}, start, settings);

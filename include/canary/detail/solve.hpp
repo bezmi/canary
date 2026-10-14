@@ -34,8 +34,9 @@ template <std::floating_point V> struct Bracket {
 };
 
 template <std::floating_point V> struct SolveSettings {
-    V relative_tolerance;  // finite and nonnegative; zero requires an exact root
+    V relative_tolerance;  // finite and nonnegative
     int max_iterations;
+    V absolute_tolerance = V(0);  // finite and nonnegative, in the units of x
 };
 
 template <Scalar T> struct SolveResult {
@@ -44,7 +45,7 @@ template <Scalar T> struct SolveResult {
 };
 
 // Root of f in the bracket, starting from guess (clamped into the bracket).
-// Bounds and guess must be finite, lower <= upper, relative_tolerance finite
+// Bounds and guess must be finite, lower <= upper, both tolerances finite
 // and nonnegative, and max_iterations nonnegative. Invalid inputs return the
 // guess as a constant with Invalid before either residual function is called.
 // Exact endpoint roots are accepted before iteration. If both endpoints are
@@ -52,18 +53,19 @@ template <Scalar T> struct SolveResult {
 // selected on a tie. Equal finite bounds are accepted only when the endpoint
 // residual is finite and exactly zero; Dual derivative checks still apply.
 //
-// With zero relative_tolerance, only an exact finite root converges; exhausted
-// iterations or representable bracket points give NotConverged.
-// The iteration runs on value parts with f_value. When the Newton step
-// f(x) / f'(x) is at most relative_tolerance * |x|, it takes that step and
-// stops; otherwise it takes the Newton step, replaced by bisection when the
-// step leaves the bracket or the derivative is zero or nonfinite, and also
-// stops when that step is at most
-// relative_tolerance * |x|. The bracket shrinks to the side where f changes sign. After
-// max_iterations it stops with status NotConverged and returns the last
-// bounded iterate as a constant with zero derivative; f_full is not called.
-// A nonfinite interior residual immediately returns Invalid with the current
-// bounded iterate as a constant; f_full is not called.
+// The iteration runs on value parts with f_value. Convergence requires an
+// exact finite root or a finite sign-changing bracket whose width is at most
+// absolute_tolerance + relative_tolerance * scale. The scale is the minimum
+// absolute endpoint when the interval excludes zero, and zero otherwise.
+// With both tolerances zero, only an exact finite root converges.
+// Newton proposals use the endpoint with smaller absolute residual (lower on
+// a tie). Candidates must lie strictly inside the bracket. A Newton step that
+// fails to halve the bracket is followed by bisection. On bracket convergence,
+// return the endpoint with smaller absolute residual.
+// Exhausted iterations or representable bracket points give NotConverged with
+// the last bounded iterate as a constant; f_full is not called. A nonfinite
+// interior residual immediately returns Invalid with the current bounded
+// iterate as a constant; f_full is not called.
 //
 // When T is not the value type (a dual number), f_full is evaluated at
 // the converged value as a constant. The returned value is unchanged and
@@ -87,11 +89,14 @@ CANARY_HOST_DEVICE SolveResult<T> solve(const FValue& f_value,
     const V upper = bracket.upper;
     if (!std::isfinite(lower) || !std::isfinite(upper) || lower > upper || !std::isfinite(guess) ||
         !std::isfinite(settings.relative_tolerance) || settings.relative_tolerance < V(0) ||
+        !std::isfinite(settings.absolute_tolerance) || settings.absolute_tolerance < V(0) ||
         settings.max_iterations < 0) {
         return {.root = T(guess), .status = Status::Invalid};
     }
-    const V f_lower = f_value(lower).value;
-    const V f_upper = f_value(upper).value;
+    const Residual<V> r_lower = f_value(lower);
+    const Residual<V> r_upper = f_value(upper);
+    const V f_lower = r_lower.value;
+    const V f_upper = r_upper.value;
     if (!std::isfinite(f_lower) || !std::isfinite(f_upper)) {
         return {.root = T(guess), .status = Status::Invalid};
     }
@@ -108,9 +113,12 @@ CANARY_HOST_DEVICE SolveResult<T> solve(const FValue& f_value,
         if ((f_lower > V(0)) == (f_upper > V(0))) {
             return {.root = T(guess), .status = Status::Invalid};
         }
-        // Orient the bracket so that f(negative_side) <= 0 <= f(positive_side).
-        V negative_side = f_lower > V(0) ? upper : lower;
-        V positive_side = f_lower > V(0) ? lower : upper;
+        V low = lower;
+        V high = upper;
+        Residual<V> left = r_lower;
+        Residual<V> right = r_upper;
+        V previous_half_width = high / V(2) - low / V(2);
+        bool previous_newton = false;
 
         for (int i = 0; i < settings.max_iterations; ++i) {
             const Residual<V> r = f_value(x);
@@ -119,36 +127,48 @@ CANARY_HOST_DEVICE SolveResult<T> solve(const FValue& f_value,
                 status = Status::Valid;
                 break;
             }
-            if (r.value < V(0)) {
-                negative_side = x;
+            if ((r.value > V(0)) == (left.value > V(0))) {
+                low = x;
+                left = r;
             } else {
-                positive_side = x;
+                high = x;
+                right = r;
             }
-            const V low = negative_side < positive_side ? negative_side : positive_side;
-            const V high = negative_side < positive_side ? positive_side : negative_side;
-            V next = std::midpoint(low, high);
-            if (std::isfinite(r.derivative) && r.derivative != V(0)) {
-                // A Newton step below the tolerance is taken without the bracket
-                // test and ends the iteration, also when it rounds to x itself,
-                // which the bracket test would reject.
-                const V newton = r.value / r.derivative;
-                if (settings.relative_tolerance > V(0) &&
-                    std::abs(newton) <= settings.relative_tolerance * std::abs(x)) {
-                    x -= newton;
-                    status = Status::Valid;
-                    break;
-                }
-                const V candidate = x - newton;
-                if (candidate > low && candidate < high) { next = candidate; }
-            }
-            if (settings.relative_tolerance == V(0) && !(next > low && next < high)) { break; }
-            const V step = next - x;
-            x = next;
-            if (settings.relative_tolerance > V(0) &&
-                std::abs(step) <= settings.relative_tolerance * std::abs(x)) {
+            const bool prefer_left = std::abs(left.value) <= std::abs(right.value);
+            const V best = prefer_left ? low : high;
+            const Residual<V>& best_residual = prefer_left ? left : right;
+            const V width = high - low;
+            const V scale =
+              low <= V(0) && high >= V(0) ? V(0) : std::min(std::abs(low), std::abs(high));
+            // Width overflow can occur only across zero, where scale is zero
+            // and the tolerance remains finite. An overflowing tolerance with
+            // a nonzero scale exceeds every possible same-sign bracket width.
+            if (width <= settings.absolute_tolerance + settings.relative_tolerance * scale) {
+                x = best;
                 status = Status::Valid;
                 break;
             }
+            V next = std::midpoint(low, high);
+            bool use_newton = false;
+            if ((!previous_newton || width <= previous_half_width) &&
+                std::isfinite(best_residual.derivative) && best_residual.derivative != V(0)) {
+                const V newton = best_residual.value / best_residual.derivative;
+                V candidate = best - newton;
+                // An adjacent-value probe still requires a finite residual
+                // and an exact root or a sufficiently narrow bracket.
+                if (candidate == best) {
+                    candidate = std::nextafter(best, std::signbit(newton) ? high : low);
+                }
+                if (candidate > low && candidate < high) {
+                    next = candidate;
+                    use_newton = true;
+                }
+            }
+            if (!(next > low && next < high)) { break; }
+            // Half the width stays representable even for opposite extreme bounds.
+            previous_half_width = high / V(2) - low / V(2);
+            previous_newton = use_newton;
+            x = next;
         }
     }
 
