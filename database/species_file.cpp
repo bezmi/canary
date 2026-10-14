@@ -3,10 +3,9 @@
 
 #include "json_io.hpp"
 
+#include <canary/database.hpp>
 #include <filesystem>
 #include <format>
-#include <canary/database.hpp>
-#include <glaze/glaze.hpp>
 #include <string>
 #include <string_view>
 
@@ -36,49 +35,16 @@ void check_header(const SpeciesFile& file)
 }  // namespace
 
 SpeciesFile parse_species(std::string_view json)
-{
-    SpeciesFile file {};
-    // glaze reads from a null-terminated buffer.
-    const std::string buffer(json);
-    if (const auto error = glz::read<detail::read_options>(file, buffer)) {
-        throw DatabaseError(
-          std::format("invalid species file: {}", glz::format_error(error, buffer)));
-    }
-    check_header(file);
-    return file;
-}
+{ return detail::parse_json<SpeciesFile>(json, "species", check_header); }
 
 SpeciesFile read_species_file(const std::filesystem::path& path)
-{
-    const std::string text = detail::read_text(path, "species");
-    try {
-        return parse_species(text);
-    } catch (const DatabaseError& error) {
-        throw DatabaseError(std::format("{}: {}", path.string(), error.what()));
-    }
-}
+{ return detail::read_json<SpeciesFile>(path, "species", check_header); }
 
-std::string write_species(const SpeciesFile& file)
-{
-    std::string out;
-    if (const auto error = glz::write<detail::write_options>(file, out)) {
-        throw DatabaseError(std::format("cannot write species file: {}", glz::format_error(error)));
-    }
-    out += '\n';
-    return out;
-}
+std::string write_species(const SpeciesFile& file) { return detail::write_json(file, "species"); }
 
 void write_species_file(const std::filesystem::path& path, const SpeciesFile& file)
 { detail::write_text(path, write_species(file)); }
 
-std::string species_schema()
-{
-    auto schema = glz::write_json_schema<SpeciesFile, detail::schema_options>();
-    if (!schema) {
-        throw DatabaseError(
-          std::format("cannot write the species schema: {}", glz::format_error(schema.error())));
-    }
-    return *schema + '\n';
-}
+std::string species_schema() { return detail::json_schema<SpeciesFile>("species"); }
 
 }  // namespace canary::database

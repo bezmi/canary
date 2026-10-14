@@ -3,10 +3,9 @@
 
 #include "json_io.hpp"
 
+#include <canary/database.hpp>
 #include <filesystem>
 #include <format>
-#include <canary/database.hpp>
-#include <glaze/glaze.hpp>
 #include <string>
 #include <string_view>
 
@@ -33,51 +32,19 @@ void check_header(const CollisionIntegralsFile& file)
 }  // namespace
 
 CollisionIntegralsFile parse_collision_integrals(std::string_view json)
-{
-    CollisionIntegralsFile file {};
-    // glaze reads from a null-terminated buffer.
-    const std::string buffer(json);
-    if (const auto error = glz::read<detail::read_options>(file, buffer)) {
-        throw DatabaseError(
-          std::format("invalid collision-integral file: {}", glz::format_error(error, buffer)));
-    }
-    check_header(file);
-    return file;
-}
+{ return detail::parse_json<CollisionIntegralsFile>(json, "collision-integral", check_header); }
 
 CollisionIntegralsFile read_collision_integrals_file(const std::filesystem::path& path)
-{
-    const std::string text = detail::read_text(path, "collision-integral");
-    try {
-        return parse_collision_integrals(text);
-    } catch (const DatabaseError& error) {
-        throw DatabaseError(std::format("{}: {}", path.string(), error.what()));
-    }
-}
+{ return detail::read_json<CollisionIntegralsFile>(path, "collision-integral", check_header); }
 
 std::string write_collision_integrals(const CollisionIntegralsFile& file)
-{
-    std::string out;
-    if (const auto error = glz::write<detail::write_options>(file, out)) {
-        throw DatabaseError(
-          std::format("cannot write collision-integral file: {}", glz::format_error(error)));
-    }
-    out += '\n';
-    return out;
-}
+{ return detail::write_json(file, "collision-integral"); }
 
 void write_collision_integrals_file(const std::filesystem::path& path,
                                     const CollisionIntegralsFile& file)
 { detail::write_text(path, write_collision_integrals(file)); }
 
 std::string collision_integrals_schema()
-{
-    auto schema = glz::write_json_schema<CollisionIntegralsFile, detail::schema_options>();
-    if (!schema) {
-        throw DatabaseError(std::format("cannot write the collision-integral schema: {}",
-                                        glz::format_error(schema.error())));
-    }
-    return *schema + '\n';
-}
+{ return detail::json_schema<CollisionIntegralsFile>("collision-integral"); }
 
 }  // namespace canary::database

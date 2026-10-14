@@ -294,6 +294,39 @@ int main()
               db::write_collision_integrals_file);
     };
 
+    "database parse diagnostics retain file kind and source path"_test = [] {
+        const TemporaryDirectory directory;
+        const auto path = directory.path() / "malformed.json";
+        {
+            std::ofstream out(path);
+            out << "{";
+            out.close();
+            expect(fatal(bool(out)));
+        }
+        const auto error_message = [](auto action) {
+            try {
+                action();
+            } catch (const db::DatabaseError& error) {
+                return std::string(error.what());
+            }
+            return std::string {};
+        };
+        const auto check = [&](std::string_view kind, auto parse, auto read) {
+            const auto diagnostic = error_message([&] { (void)parse("{"); });
+            expect(diagnostic.starts_with("invalid " + std::string(kind) + " file: "));
+            expect(error_message([&] { (void)read(path); }) == path.string() + ": " + diagnostic);
+            const auto missing = directory.path() / "missing.json";
+            expect(error_message([&] { (void)read(missing); }) ==
+                   "cannot open " + std::string(kind) + " file " + missing.string());
+        };
+        check("species", db::parse_species, db::read_species_file);
+        check("reactions", db::parse_reactions, db::read_reactions_file);
+        check("energy-exchange", db::parse_energy_exchange, db::read_energy_exchange_file);
+        check("collision-integral",
+              db::parse_collision_integrals,
+              db::read_collision_integrals_file);
+    };
+
     "the shipped five-species air file reads with its five species"_test = [] {
         const db::SpeciesFile file = db::read_species_file(air5_path());
         expect(file.format == db::species_format);
