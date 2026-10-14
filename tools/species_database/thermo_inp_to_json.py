@@ -1,5 +1,5 @@
 """Converts species from a NASA Glenn thermo.inp file (CEA format, McBride,
-Zehe and Gordon, NASA/TP-2002-211556, appendix A) to a canary species file.
+Zehe and Gordon, NASA/TP-2002-211556, appendix C) to a canary species file.
 
 The file gives no blending between temperature intervals, so the blend width
 of each interior boundary is required: --blend 1000=400 6000=1000 ...
@@ -8,20 +8,25 @@ Usage: thermo_inp_to_json.py thermo.inp --species N2 O2 NO --blend 1000=400 6000
 """
 
 import argparse
+from decimal import InvalidOperation
 
 import species_json
 
 
 def find_species(lines, name):
-    for i, line in enumerate(lines[:-1]):
+    for i, line in enumerate(lines):
         if line.startswith("!") or line[:18].split()[:1] != [name]:
             continue
-        nxt = lines[i + 1]
+        if i + 1 >= len(lines) or len(lines[i + 1]) < 65:
+            raise SystemExit(f"{name}: incomplete species metadata record")
         try:
-            intervals = int(nxt[0:2])
-            float(nxt[52:65])
+            intervals = int(lines[i + 1][0:2])
         except ValueError:
-            continue
+            raise SystemExit(f"{name}: invalid temperature interval count") from None
+        if intervals <= 0:
+            raise SystemExit(f"{name}: temperature interval count must be positive")
+        if len(lines) < i + 2 + 3 * intervals:
+            raise SystemExit(f"{name}: incomplete NASA9 records for {intervals} temperature intervals")
         return i, intervals
     raise SystemExit(f"{name}: not found in thermo.inp")
 
@@ -34,7 +39,7 @@ def charge(record):
         element = record[10 + 8 * k: 12 + 8 * k].strip()
         count = record[12 + 8 * k: 18 + 8 * k].strip()
         if element.upper() == "E" and count:
-            total -= float(count)
+            total -= species_json.number(count)
     return total
 
 
@@ -46,15 +51,24 @@ def convert(lines, name, widths):
         head = lines[i + 2 + 3 * k]
         first = lines[i + 3 + 3 * k]
         second = lines[i + 4 + 3 * k]
-        low, high = species_json.number(head[0:11]), species_json.number(head[11:22])
+        if len(head) < 58 or len(first) < 80 or len(second) < 80:
+            raise SystemExit(f"{name}: interval {k + 1}: incomplete NASA9 record")
+        try:
+            count = int(head[22:23])
+            powers = [species_json.number(head[23 + 5 * j:28 + 5 * j]) for j in range(7)]
+            low, high = species_json.number(head[0:11]), species_json.number(head[11:22])
+            a = [species_json.number(first[16 * j:16 * (j + 1)]) for j in range(5)]
+            a += [species_json.number(second[0:16]), species_json.number(second[16:32])]
+            a += [species_json.number(second[48:64]), species_json.number(second[64:80])]
+        except ValueError:
+            raise SystemExit(f"{name}: interval {k + 1}: invalid NASA9 numeric field") from None
+        if count != 7 or powers != [-2, -1, 0, 1, 2, 3, 4]:
+            raise SystemExit(f"{name}: interval {k + 1}: NASA9 requires seven powers -2, -1, 0, 1, 2, 3, 4")
         if not ranges:
             ranges.append(low)
         elif ranges[-1] != low:
             raise SystemExit(f"{name}: intervals are not contiguous at {low} K")
         ranges.append(high)
-        a = [species_json.number(first[16 * j: 16 * (j + 1)]) for j in range(5)]
-        a += [species_json.number(second[0:16]), species_json.number(second[16:32])]
-        a += [species_json.number(second[48:64]), species_json.number(second[64:80])]
         coefficients.append(a)
     return {
         "molar_mass": species_json.kg_per_mol(record[52:65].strip()),
@@ -76,7 +90,12 @@ def main():
     with open(args.thermo_inp, encoding="utf-8") as stream:
         lines = [line.rstrip("\n") for line in stream]
     widths = species_json.parse_blend_widths(args.blend)
-    species = {name: convert(lines, name, widths) for name in args.species}
+    species = {}
+    for name in args.species:
+        try:
+            species[name] = convert(lines, name, widths)
+        except (ValueError, InvalidOperation) as error:
+            raise SystemExit(f"{name}: invalid NASA9 record: {error}") from None
     species_json.dump(species_json.species_file(species, reference=args.source), args.output)
 
 

@@ -14,7 +14,7 @@ UNITS = {"molar_mass": "kg/mol", "energy": "J/mol", "temperature": "K", "length"
 
 
 def kg_per_mol(grams_per_mol: str) -> float:
-    return float(Decimal(grams_per_mol) / Decimal(1000))
+    return float(Decimal(grams_per_mol.replace("D", "E").replace("d", "e")) / Decimal(1000))
 
 
 def number(text: str) -> float:
@@ -22,6 +22,14 @@ def number(text: str) -> float:
 
 
 def nasa9_thermo(ranges, coefficients, blend_widths, reference=None, notes=None):
+    if len(ranges) < 2:
+        raise ValueError("NASA9 requires at least two temperature boundaries")
+    if len(coefficients) != len(ranges) - 1:
+        raise ValueError("NASA9 coefficient rows must match the temperature intervals")
+    if any(len(row) != 9 for row in coefficients):
+        raise ValueError("NASA9 requires nine coefficients per temperature interval")
+    if len(blend_widths) != len(ranges) - 2:
+        raise ValueError("NASA9 blend widths must match the interior temperature boundaries")
     thermo = {
         "model": "nasa9",
         "temperature_ranges": ranges,

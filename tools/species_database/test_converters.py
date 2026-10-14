@@ -8,6 +8,7 @@ collision-integral samples and checks the converted values.
 Usage: test_converters.py <canary source directory>
 """
 
+import copy
 import json
 import subprocess
 import sys
@@ -15,6 +16,8 @@ import tempfile
 from pathlib import Path
 
 import yaml
+
+import species_json
 
 root = Path(sys.argv[1])
 tools = root / "tools" / "species_database"
@@ -88,6 +91,111 @@ with tempfile.TemporaryDirectory() as tmp:
     assert result.returncode != 0 and "species N2 is given twice" in result.stderr
     assert str(duplicate) in result.stderr
     assert not out.exists()
+
+def reject_conversion(command, out, diagnostic):
+    result = subprocess.run([sys.executable, *map(str, command), "--source", "test", "-o", str(out)],
+                            capture_output=True, text=True)
+    assert result.returncode != 0 and diagnostic in result.stderr, result.stderr
+    assert "Traceback" not in result.stderr, result.stderr
+    assert not out.exists()
+
+
+# Reject invalid masses and dimensions before creating an output file.
+with tempfile.TemporaryDirectory() as tmp:
+    out = Path(tmp) / "invalid.json"
+    for weight in ("0", "-1", "NaN", "sNaN", "Infinity", "-Infinity", "invalid"):
+        command = ["N=" + weight if str(arg) == "N=14.0067" else arg for arg in runs["Cantera"]]
+        reject_conversion(command, out, "atomic weight for N: must be finite and positive")
+    records = yaml.load((data / "cantera_excerpt.yaml").read_text(), Loader=yaml.BaseLoader)
+    for count in ("0", "-1", "NaN", "sNaN", "Infinity", "1e400", "1e999999", "1e-400", "invalid"):
+        changed = copy.deepcopy(records)
+        changed["species"][0]["composition"] = {"N": count}
+        source = Path(tmp) / "invalid.yaml"
+        source.write_text(yaml.safe_dump(changed))
+        command = list(runs["Cantera"])
+        command[1] = source
+        reject_conversion(command, out, "N2: molar mass must be finite and positive")
+    for field, value, diagnostic in (
+        ("temperature-ranges", [], "requires at least two temperature boundaries"),
+        ("temperature-ranges", [200], "requires at least two temperature boundaries"),
+        ("data", [], "coefficient rows must match"),
+        ("data", [[0] * 9] * 2, "coefficient rows must match"),
+        ("data", [[0] * 9] * 4, "coefficient rows must match"),
+        ("data", [[0] * 8] * 3, "requires nine coefficients"),
+        ("data", [[0] * 10] * 3, "requires nine coefficients"),
+    ):
+        changed = copy.deepcopy(records)
+        changed["species"][0]["thermo"][field] = value
+        source = Path(tmp) / "invalid.yaml"
+        source.write_text(yaml.safe_dump(changed))
+        command = list(runs["Cantera"])
+        command[1] = source
+        reject_conversion(command, out, "N2: NASA9 " + diagnostic)
+    # Signed electron counts in ion compositions remain supported.
+    changed = copy.deepcopy(records)
+    changed["species"] = [changed["species"][0]]
+    changed["species"][0]["composition"] = {"N": "2", "E": "-1"}
+    source = Path(tmp) / "ion.yaml"
+    source.write_text(yaml.safe_dump(changed))
+    command = [tools / "cantera_to_json.py", source, "--species", "N2",
+               "--atomic-weights", "N=14.0067", "E=0.000548579909", *blend]
+    subprocess.run([sys.executable, *map(str, command), "--source", "test", "-o", str(out)], check=True)
+    record = json.loads(out.read_text())["species"]["N2"]
+    assert record["charge"] == 1.0
+    assert record["molar_mass"] == species_json.kg_per_mol("28.012851420091")
+print("Cantera mass and NASA9 dimensions: checked")
+
+for widths in ([], [1, 2]):
+    try:
+        species_json.nasa9_thermo([200, 1000, 6000], [[0] * 9] * 2, widths)
+    except ValueError as error:
+        assert "blend widths must match" in str(error)
+    else:
+        raise AssertionError("invalid blend-width count accepted")
+
+# Check every record truncation and each fixed-width polynomial exponent.
+with tempfile.TemporaryDirectory() as tmp:
+    out = Path(tmp) / "invalid.json"
+    original = (data / "thermo_inp_excerpt.inp").read_text().splitlines()
+    first = next(i for i, line in enumerate(original) if line[:18].split()[:1] == ["N2"])
+    lines = original[first:first + 11]
+    source = Path(tmp) / "invalid.inp"
+    command = [tools / "thermo_inp_to_json.py", source, "--species", "N2", *blend]
+    for length in range(1, len(lines)):
+        source.write_text("\n".join(lines[:length]) + "\n")
+        reject_conversion(command, out, "N2: incomplete")
+    for count in (" 0", "-1", "xx"):
+        changed = list(lines)
+        changed[1] = count + changed[1][2:]
+        source.write_text("\n".join(changed) + "\n")
+        reject_conversion(command, out, "temperature interval count")
+    for record, length in ((1, 64), (2, 57), (3, 79), (4, 79)):
+        changed = list(lines)
+        changed[record] = changed[record][:length]
+        source.write_text("\n".join(changed) + "\n")
+        reject_conversion(command, out, "incomplete")
+    for start, end, replacement in [(22, 23, "6"), *[(23 + 5*j, 28 + 5*j, "  5.0") for j in range(7)]]:
+        changed = list(lines)
+        changed[2] = changed[2][:start] + replacement + changed[2][end:]
+        source.write_text("\n".join(changed) + "\n")
+        reject_conversion(command, out, "N2: interval 1: NASA9 requires seven powers")
+    changed = list(lines)
+    changed[3] = "invalid".ljust(16) + changed[3][16:]
+    source.write_text("\n".join(changed) + "\n")
+    reject_conversion(command, out, "N2: interval 1: invalid NASA9 numeric field")
+    # D/d exponents are accepted without an intermediate binary rounding of mass.
+    for exponent in ("D", "d"):
+        changed = [line.replace("D", exponent) for line in lines]
+        changed[1] = changed[1][:52] + ("2.80134" + exponent + "+01").rjust(13) + changed[1][65:]
+        changed[2] = ("2.000" + exponent + "+02").rjust(11) + changed[2][11:]
+        source.write_text("\n".join(changed) + "\n")
+        subprocess.run([sys.executable, *map(str, command), "--source", "test", "-o", str(out)], check=True)
+        record = json.loads(out.read_text())["species"]["N2"]
+        assert record["molar_mass"] == shipped["N2"]["molar_mass"]
+        for key in ("temperature_ranges", "blend_widths", "coefficients"):
+            assert record["thermo"][key] == shipped["N2"]["thermo"][key]
+        out.unlink()
+print("NASA9 complete records, powers and Fortran numbers: checked")
 
 # GDTk layout with the bracket form of a species name (N+ in N_plus.lua),
 # with its electronic levels converted to temperatures: equal to the shipped
