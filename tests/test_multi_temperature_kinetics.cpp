@@ -773,18 +773,56 @@ void test_multi_temperature_kinetics()
               BackwardRateModel::equilibrium,
               none);
         };
-        // Without other_temperature: the first reactant with a vibration.
+        // Without other_temperature: the unique reactant vibration mode.
         expect(build(o2(rate(0.5, nullptr)), split.model).forward.other_mode ==
                canary::ModeIndex {1});
-        expect(
-          build(reaction("N2 + O2 <=> N + N + O2",
-                         coefficients({{.name = "N2", .value = 1.0}, {.name = "O2", .value = 1.0}}),
-                         coefficients({{.name = "N", .value = 2.0}, {.name = "O2", .value = 1.0}}),
-                         rate(0.5, nullptr),
-                         BackwardRateModel::equilibrium,
-                         none),
-                split.model)
-            .forward.other_mode == canary::ModeIndex {0});
+        const auto dissociation = reaction(
+          "N2 + O2 <=> N + N + O2",
+          coefficients({{.name = "N2", .value = 1.0}, {.name = "O2", .value = 1.0}}),
+          coefficients({{.name = "N", .value = 2.0}, {.name = "O2", .value = 1.0}}),
+          rate(0.5, nullptr),
+          BackwardRateModel::equilibrium,
+          none);
+        for (const bool reorder_modes : {false, true}) {
+            auto modes = split_modes;
+            if (reorder_modes) { std::swap(modes[0], modes[1]); }
+            const auto reordered = canary::make_multi_temperature_mixture(
+              canary::air11_species, canary::air11_rotational_degrees,
+              canary::air11_electronic_levels, modes, si_scales);
+            const canary::ModeIndex n2_mode {reorder_modes ? 1U : 0U};
+            const canary::ModeIndex o2_mode {reorder_modes ? 0U : 1U};
+            for (const bool reorder_reactants : {false, true}) {
+                auto input = dissociation;
+                if (reorder_reactants) {
+                    std::swap(input.reactants.entries[0], input.reactants.entries[1]);
+                }
+                const auto error = [&](std::string_view role) {
+                    const std::string message =
+                      error_message([&] { (void)build(input, reordered.model); });
+                    expect(message == "reaction 0 (N2 + O2 <=> N + N + O2): " +
+                                        std::string(role) + " rate: reactant vibrations occupy "
+                                        "different modes; specify other_temperature") << message;
+                };
+                error("forward");
+                // The standard three-temperature model shares one vibration mode.
+                expect(build(input, gas).forward.other_mode == canary::ModeIndex {0});
+                input.forward = rate(1.0, nullptr);
+                expect(build(input, reordered.model).forward.other_mode == canary::ModeIndex {0});
+                input.forward = rate(0.5, "N2");
+                expect(build(input, reordered.model).forward.other_mode == n2_mode);
+                input.forward = rate(0.5, "O2");
+                expect(build(input, reordered.model).forward.other_mode == o2_mode);
+                input.forward = rate(1.0, "O2");
+                expect(build(input, reordered.model).forward.other_mode == o2_mode);
+                input.backward_model = BackwardRateModel::arrhenius;
+                input.backward = rate(0.5, nullptr);
+                error("backward");
+                input.backward = rate(0.5, "N2");
+                expect(build(input, reordered.model).backward.other_mode == n2_mode);
+                input.backward = rate(1.0, nullptr);
+                expect(build(input, reordered.model).backward.other_mode == canary::ModeIndex {0});
+            }
+        }
         // A species name: the mode of its vibration; electron: the electron
         // mode.
         expect(build(o2(rate(0.5, "N2")), split.model).forward.other_mode == canary::ModeIndex {0});
@@ -872,6 +910,21 @@ void test_multi_temperature_kinetics()
                "reaction 0 (N + O <=> NO): forward rate: other temperature \"electron\": the model "
                "has no free electrons")
           << got;
+    };
+
+    "multi-temperature kinetics: translational rates ignore other mode logarithms"_test = [] {
+        const canary::ArrheniusRate<double, si> rate {
+          .A = 1.0, .n = 2.0, .activation_temperature = Temp {3.0},
+          .translational_exponent = 1.0, .other_mode = canary::ModeIndex {0}};
+        const double nan = std::numeric_limits<double>::quiet_NaN();
+        const std::array<double, 2> logarithms {nan, nan};
+        const double value = canary::detail::rate_exponent<2>(rate, 4.0, 0.5, logarithms);
+        expect(value == 6.5_d);
+        const std::array<D, 2> dual_logarithms {D {nan, nan}, D {nan, nan}};
+        const D dual = canary::detail::rate_exponent<2>(
+          rate, D {4.0, 1.0}, D {0.5, -0.25}, dual_logarithms);
+        expect(dual.real() == 6.5_d);
+        expect(dual.dual() == 2.75_d);
     };
 
     "multi-temperature kinetics: equilibrium backward rates at T_e depend on T_e only"_test = [&] {

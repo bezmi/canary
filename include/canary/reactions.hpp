@@ -591,19 +591,26 @@ template <HasEnergyModes G, std::size_t N> struct ModelOtherTemperature {
     {
         const char* name = rate.other_temperature;
         if (name == nullptr) {
-            if (G::mode_count == 1) { return ModeIndex {0}; }
+            if (G::mode_count == 1 || rate.translational_exponent == 1.0) {
+                return ModeIndex {0};
+            }
+            OptionalModeIndex selected {};
             for (std::size_t e = 0; e < static_cast<std::size_t>(reactants.count); ++e) {
                 const auto index = species_index(*names, reactants.entries[e].name);
                 if (!index) { throw ParameterError("unknown reactant species for mode selection"); }
                 const OptionalModeIndex mode = species_vibration_mode(*gas, *index);
-                if (mode.has_value()) { return *mode; }
+                if (!mode) { continue; }
+                if (selected && *selected != *mode) {
+                    throw ParameterError(std::format(
+                      "{} rate: reactant vibrations occupy different modes; specify other_temperature",
+                      role));
+                }
+                selected = mode;
             }
-            if (rate.translational_exponent != 1.0) {
-                throw ParameterError(std::format(
-                  "{} rate: no reactant has a vibration component to give the other temperature",
-                  role));
-            }
-            return ModeIndex {0};
+            if (selected) { return *selected; }
+            throw ParameterError(std::format(
+              "{} rate: no reactant has a vibration component to give the other temperature",
+              role));
         }
         if (std::string_view {name} == "electron") {
             const OptionalModeIndex mode = electron_energy_mode(*gas);
@@ -640,9 +647,9 @@ template <HasEnergyModes G, std::size_t N> struct ModelOtherTemperature {
 // is:
 // - for other_temperature "electron": electron_energy_mode(gas);
 // - for a species name: species_vibration_mode(gas) of that species;
-// - without other_temperature: 0 when gas has one mode; otherwise the
-//   vibration mode of the first species in the reactant list (in input
-//   order) that has one, or 0 when none has one and s = 1.
+// - without other_temperature: 0 when gas has one mode or s = 1 (unused);
+//   otherwise the unique mode holding the reactants' unfrozen vibrations.
+//   Multiple reactants sharing one vibration mode give a unique choice.
 // The backward rate of BackwardRateModel::arrhenius resolves the same way,
 // with the reactant list; the backward input of an equilibrium rate is
 // resolved only when it names an other_temperature. In addition to the
@@ -650,7 +657,7 @@ template <HasEnergyModes G, std::size_t N> struct ModelOtherTemperature {
 // equation, when other_temperature is "electron" and gas has no electron
 // mode, names neither "electron" nor a species, or names a species without
 // a vibration mode, or when it is null, gas has more than one mode, s is not
-// 1 and no reactant has a vibration mode.
+// 1 and the reactants have no vibration mode or occupy different vibration modes.
 template <std::floating_point P,
           UnitSystem U,
           std::size_t N,
