@@ -114,15 +114,15 @@ CANARY_HOST_DEVICE constexpr Status state_status(const PerfectCoefficients<C, U>
                                                  const ThermoState<T, U>& state,
                                                  EnergyDensity<T, U> rho_e)
 {
-    const auto positive = []<Scalar S>(S x) {
-        using V = ScalarTraits<S>::value_type;
-        const V v = ScalarTraits<S>::value(x);
-        return std::isfinite(v) && v > V(0);
-    };
-    return positive(state.rho.value()) && positive(state.e.value()) && positive(state.p.value()) &&
-               positive(state.temp.value()) && positive(rho_e.value()) &&
-               positive(k.gas_constant.value()) && positive(k.cv.value()) &&
-               positive(k.cp.value()) && positive(k.gamma.value() - C(1))
+    return all_finite_positive(state.rho.value(),
+                               state.e.value(),
+                               state.p.value(),
+                               state.temp.value(),
+                               rho_e.value(),
+                               k.gas_constant.value(),
+                               k.cv.value(),
+                               k.cp.value(),
+                               k.gamma.value() - C(1))
              ? Status::Valid
              : Status::Invalid;
 }

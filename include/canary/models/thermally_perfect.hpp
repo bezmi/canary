@@ -349,14 +349,10 @@ CANARY_HOST_DEVICE Status thermally_perfect_status(Density<T, U> rho,
                                                    SpecificEnergy<T, U> e,
                                                    Temperature<T, U> temp)
 {
-    using V = ScalarTraits<T>::value_type;
-    const auto positive = [](T x) {
-        const V v = ScalarTraits<T>::value(x);
-        return std::isfinite(v) && v > V(0);
-    };
-    return positive(rho.value()) && positive(temp.value()) && math::isfinite(e.value())
-             ? Status::Valid
-             : Status::Invalid;
+    const bool positive = all_finite_positive(rho.value(), temp.value());
+    const bool finite = math::isfinite(e.value());
+    const bool valid = positive & finite;
+    return valid ? Status::Valid : Status::Invalid;
 }
 
 // State validation includes the actual returned pressure. The three-field
@@ -367,11 +363,10 @@ CANARY_HOST_DEVICE Status thermally_perfect_status(Density<T, U> rho,
                                                    Temperature<T, U> temp,
                                                    Pressure<T, U> p)
 {
-    using V = ScalarTraits<T>::value_type;
-    const V value = ScalarTraits<T>::value(p.value());
-    const Status pressure_status =
-      std::isfinite(value) && value > V(0) ? Status::Valid : Status::Invalid;
-    return combine(thermally_perfect_status(rho, e, temp), pressure_status);
+    const bool positive = all_finite_positive(rho.value(), temp.value(), p.value());
+    const bool finite = math::isfinite(e.value());
+    const bool valid = positive & finite;
+    return valid ? Status::Valid : Status::Invalid;
 }
 
 template <Scalar T, UnitSystem U, std::size_t N>

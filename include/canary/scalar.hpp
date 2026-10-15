@@ -1,8 +1,11 @@
 #ifndef CANARY_SCALAR_HPP
 #define CANARY_SCALAR_HPP
 
+#include <bit>
 #include <cmath>
 #include <concepts>
+#include <cstdint>
+#include <limits>
 #include <canary/config.hpp>
 
 namespace canary
@@ -229,6 +232,33 @@ template <Scalar T> CANARY_HOST_DEVICE bool isfinite(const T& x)
 { return std::isfinite(ScalarTraits<T>::value(x)); }
 
 }  // namespace math
+
+namespace detail
+{
+
+// True when v is finite and greater than zero. For IEEE binary32 and
+// binary64 the test is one unsigned comparison of the bit pattern: the
+// patterns of the positive finite values are exactly 1 up to the pattern of
+// the largest finite value, so zero, values with the sign bit set, infinity
+// and NaN all fail. Other floating-point types use isfinite and v > 0.
+template <std::floating_point V> CANARY_HOST_DEVICE constexpr bool finite_positive(V v)
+{
+    if constexpr (std::numeric_limits<V>::is_iec559 && (sizeof(V) == 4 || sizeof(V) == 8)) {
+        using Bits = std::conditional_t<sizeof(V) == 4, std::uint32_t, std::uint64_t>;
+        constexpr Bits largest = std::bit_cast<Bits>(std::numeric_limits<V>::max());
+        return std::bit_cast<Bits>(v) - Bits(1) < largest;
+    } else {
+        return std::isfinite(v) && v > V(0);
+    }
+}
+
+// True when the value part of every argument is finite and greater than
+// zero. Every argument is tested, without early exit, so that the tests
+// need no branches.
+template <Scalar... S> CANARY_HOST_DEVICE constexpr bool all_finite_positive(const S&... x)
+{ return (finite_positive(ScalarTraits<S>::value(x)) & ...); }
+
+}  // namespace detail
 
 }  // namespace canary
 
