@@ -145,10 +145,14 @@ constexpr std::array<double, 11> air11_molecules {
 
 // A state of an independent implementation of the same model, evaluated
 // from (rho, T, T_m, y): pressure, electron pressure (nan without
-// electrons), translational-rotational energy u, mode energies and the
-// frozen sound speed. Its universal gas constant is 8.31451 J/(mol K), its
+// electrons), translational-rotational energy u and mode energies.
+// Its universal gas constant is 8.31451 J/(mol K), its
 // level temperatures differ from ours by about 6e-6 relative, and its
 // electron energy is (3/2) R_e (T_e - T_ref).
+// Sound speeds are calculated independently from pressure work:
+// a^2 = R_h T (1 + R_h/cv_h) + R_e T_e (1 + R_e/cv_em), using the same
+// universal gas constant, molar masses, rotational degrees and direct
+// electronic partition sums for the entire shared electron-mode capacity.
 template <std::size_t N, std::size_t M> struct ReferenceState {
     std::array<double, N> y;
     double rho;
@@ -174,7 +178,7 @@ const std::array<ReferenceState<5, 3>, 5> air5_reference {
       .p_e = no_value,
       .u = 5463095.6189463,
       .u_m = {385699.54313113756, 227726.69742106923, 0.0},
-      .a = 1717.8634734273871,
+      .a = 1796.5926601062263,
     },
     {
       .y = air5_air,
@@ -185,7 +189,7 @@ const std::array<ReferenceState<5, 3>, 5> air5_reference {
       .p_e = no_value,
       .u = -84591.42008858034,
       .u_m = {1.2147275219753502, 3.800540813899158, 0.0},
-      .a = 347.7192295347249,
+      .a = 347.90867262549483,
     },
     {
       .y = air5_dissociated,
@@ -196,7 +200,7 @@ const std::array<ReferenceState<5, 3>, 5> air5_reference {
       .p_e = no_value,
       .u = 23222656.736808177,
       .u_m = {648226.8993315813, 451864.38030879194, 969652.0993560122},
-      .a = 2667.007484403189,
+      .a = 2857.1387986881555,
     },
     {
       .y = air5_dissociated,
@@ -207,7 +211,7 @@ const std::array<ReferenceState<5, 3>, 5> air5_reference {
       .p_e = no_value,
       .u = 17733237.43797749,
       .u_m = {331308.82330622786, 156327.0742693314, 108170.45346900629},
-      .a = 1768.7443930886536,
+      .a = 1844.2751641870486,
     },
     {
       .y = air5_dissociated,
@@ -218,7 +222,7 @@ const std::array<ReferenceState<5, 3>, 5> air5_reference {
       .p_e = no_value,
       .u = 15380629.167050052,
       .u_m = {428222.94909218256, 103202.51370182398, 28577.760635586914},
-      .a = 1129.62576871778,
+      .a = 1166.4220301824148,
     },
   },
 };
@@ -234,7 +238,7 @@ const std::array<ReferenceState<11, 2>, 4> air11_reference {
       .p_e = 111.58864072219835,
       .u = 20074720.14843051,
       .u_m = {645065.0908679113, 557256.2425120978},
-      .a = 2368.767243712144,
+      .a = 2501.3035210474081,
     },
     {
       .y = air11_weakly_ionised,
@@ -245,7 +249,7 @@ const std::array<ReferenceState<11, 2>, 4> air11_reference {
       .p_e = 697.4290045137396,
       .u = 16199401.867069706,
       .u_m = {645065.0908679113, 159683.98677926004},
-      .a = 1702.844502280075,
+      .a = 1774.9418082388092,
     },
     {
       .y = air11_ionised,
@@ -256,7 +260,7 @@ const std::array<ReferenceState<11, 2>, 4> air11_reference {
       .p_e = 131.962983359068,
       .u = 52522140.579992406,
       .u_m = {479619.8345225857, 5176765.931842619},
-      .a = 4001.2212620364826,
+      .a = 4304.5144558809588,
     },
     {
       .y = air11_ionised,
@@ -267,7 +271,7 @@ const std::array<ReferenceState<11, 2>, 4> air11_reference {
       .p_e = 87.97532223937867,
       .u = 37672909.28114045,
       .u_m = {77339.45935493513, 94162.99523824808},
-      .a = 1310.406297394422,
+      .a = 1358.3227287024549,
     },
   },
 };
@@ -607,6 +611,186 @@ void test_multi_temperature()
     const Air11& air11 = built11.model;
     const auto single5 = canary::make_air5<double>(si_scales).model;
     const auto single11 = canary::make_air11<double>(si_scales).model;
+
+    "multi-temperature acoustics follow heavy and shared electron pressure work"_test = [] {
+        const auto run = []<std::floating_point V, canary::UnitSystem U>(
+                           const canary::UnitScales<V, U>& scales) {
+            using Dual = canary::test::Dual<V>;
+            const auto gas = canary::make_air11_three_temperature<V>(scales).model;
+            auto assignments = canary::air11_three_temperature_modes;
+            std::swap(assignments[0], assignments[1]);
+            const auto reordered =
+              canary::make_multi_temperature_mixture(canary::air11_species,
+                                                     canary::air11_rotational_degrees,
+                                                     canary::air11_electronic_levels,
+                                                     assignments,
+                                                     scales)
+                .model;
+            const V tolerance = V(512) * std::numeric_limits<V>::epsilon();
+            for (const bool electron_dominated : {false, true}) {
+                std::array<Dual, 11> y {};
+                for (const canary::SpeciesIndex i : canary::species_indices(0, y.size())) {
+                    y[i.value()] = Dual(V(air11_weakly_ionised[i.value()]));
+                }
+                if (electron_dominated) {
+                    y.fill(Dual(V(0)));
+                    y[0] = Dual(V(0.999));
+                    y[10] = Dual(V(0.001));
+                }
+                const auto mix = mixture(gas, fractions(y));
+                const V rho = canary::convert<U>(canary::Density<V, si> {V(0.01)}, scales).value();
+                const V temp =
+                  canary::convert<U>(canary::Temperature<V, si> {V(4000)}, scales).value();
+                for (const V te_si : {V(5000), V(12000)}) {
+                    const V tv =
+                      canary::convert<U>(canary::ModeTemperature<V, si> {V(3000)}, scales).value();
+                    const V te =
+                      canary::convert<U>(canary::ModeTemperature<V, si> {te_si}, scales).value();
+                    std::array<Dual, 2> modes {Dual(tv), Dual(te, V(1))};
+                    const auto seed = thermo_state(gas,
+                                                   mix,
+                                                   canary::Density<Dual, U> {Dual(rho)},
+                                                   canary::Temperature<Dual, U> {Dual(temp)},
+                                                   mode_temperatures<U>(modes));
+                    expect(fatal(seed.status == Status::Valid));
+                    // Differentiate the entire shared mode energy to obtain its capacity.
+                    const V capacity = seed.state.mode_e[1].value().dual();
+                    const V pe = canary::electron_pressure(gas, mix, seed.state).value().real();
+                    modes[1] = Dual(te);
+                    const auto base = thermo_state(gas,
+                                                   mix,
+                                                   canary::Density<Dual, U> {Dual(rho)},
+                                                   canary::Temperature<Dual, U> {Dual(temp)},
+                                                   mode_temperatures<U>(modes));
+                    const auto props = canary::properties(gas, mix, base.state);
+                    const V a = props.acoustics.sound_speed.value().real();
+                    const std::array<Dual, 2> reordered_modes {Dual(te), Dual(tv)};
+                    const auto reordered_state =
+                      thermo_state(reordered,
+                                   mix,
+                                   canary::Density<Dual, U> {Dual(rho)},
+                                   canary::Temperature<Dual, U> {Dual(temp)},
+                                   mode_temperatures<U>(reordered_modes));
+                    const auto reordered_props =
+                      canary::properties(reordered, mix, reordered_state.state);
+                    expect(reordered_props.acoustics.sound_speed.value().real() == a);
+                    // Total energy receives p drho/rho^2; the shared electron mode
+                    // receives pe drho/rho^2. Other specific mode energies are fixed.
+                    modes[1] = Dual(te, pe / (rho * rho * capacity));
+                    const Dual energy(base.state.e.value().real(),
+                                      base.state.p.value().real() / (rho * rho));
+                    const auto compressed = thermo_state(gas,
+                                                         mix,
+                                                         canary::Density<Dual, U> {Dual(rho, V(1))},
+                                                         canary::SpecificEnergy<Dual, U> {energy},
+                                                         mode_temperatures<U>(modes));
+                    expect(fatal(compressed.status == Status::Valid));
+                    expect(relative(compressed.state.p.value().dual(), a * a, tolerance));
+                    expect(relative(props.acoustics.acoustic_exponent.value().real(),
+                                    rho * a * a / base.state.p.value().real(),
+                                    tolerance));
+                    auto changed = base.state;
+                    changed.p = canary::Pressure<Dual, U> {changed.p.value() * V(2)};
+                    const auto changed_props = canary::properties(gas, mix, changed);
+                    expect(changed_props.acoustics.sound_speed.value().real() == a);
+                    expect(relative(changed_props.acoustics.acoustic_exponent.value().real(),
+                                    props.acoustics.acoustic_exponent.value().real() / V(2),
+                                    tolerance));
+                }
+            }
+        };
+        run(canary::UnitScales<float, si> {});
+        run(canary::UnitScales<double, si> {});
+        run(canary::UnitScales<float, scaled> {
+          {.mass = 4.65e-26F, .density = 1.0e-3F, .temperature = 1000.0F, .length = 1.0F}});
+        run(reference_scales);
+    };
+
+    "multi-temperature acoustics retain absent population limits and derivatives"_test = [] {
+        const auto run = []<std::floating_point V, canary::UnitSystem U>(
+                           const canary::UnitScales<V, U>& scales) {
+            using Dual = canary::test::Dual<V>;
+            const std::array species {canary::air11_species[0], canary::air11_species[10]};
+            const std::array degrees {2, 0};
+            const std::array<canary::ElectronicLevelsInput<8>, 0> levels {};
+            const std::array<canary::EnergyModeInput<1>, 1> assignments {
+              {{.count = 1,
+                .components = {
+                  {{.species = "e-", .component = canary::ModeComponent::electron}}}}}};
+            const auto gas =
+              canary::make_multi_temperature_mixture(species, degrees, levels, assignments, scales)
+                .model;
+            const V th = canary::convert<U>(canary::Temperature<V, si> {V(4000)}, scales).value();
+            const V te =
+              canary::convert<U>(canary::ModeTemperature<V, si> {V(5000)}, scales).value();
+            const V rh = gas.thermally_perfect.gas_constant[0].value();
+            const V re = gas.thermally_perfect.gas_constant[1].value();
+            const V tolerance = V(128) * std::numeric_limits<V>::epsilon();
+            const std::array<Dual, 1> modes {Dual(te)};
+            for (const V ye : {V(0), V(0.25), V(1)}) {
+                const std::array<Dual, 2> y {Dual(V(1) - ye, V(-1)), Dual(ye, V(1))};
+                const auto mix = mixture(gas, fractions(y));
+                const auto c = thermo_state(gas,
+                                            mix,
+                                            canary::Density<Dual, U> {Dual(V(1))},
+                                            canary::Temperature<Dual, U> {Dual(th)},
+                                            mode_temperatures<U>(modes));
+                expect(fatal(c.status == Status::Valid));
+                const auto props = canary::properties(gas, mix, c.state);
+                const Dual a = props.acoustics.sound_speed.value();
+                const V expected = (V(1) - ye) * V(1.4) * rh * th + ye * (V(5) / V(3)) * re * te;
+                const V derivative = -V(1.4) * rh * th + (V(5) / V(3)) * re * te;
+                expect(relative(a.real() * a.real(), expected, tolerance));
+                expect(relative(V(2) * a.real() * a.dual(), derivative, tolerance));
+            }
+
+            const auto shared = canary::make_air11_three_temperature<V>(scales).model;
+            std::array<Dual, 11> y {};
+            y[0] = Dual(V(1), V(-1));
+            y[10] = Dual(V(0), V(1));
+            const V shared_te =
+              canary::convert<U>(canary::ModeTemperature<V, si> {V(10000)}, scales).value();
+            const std::array<Dual, 2> shared_modes {Dual(te), Dual(shared_te)};
+            const auto mix = mixture(shared, fractions(y));
+            const auto c = thermo_state(shared,
+                                        mix,
+                                        canary::Density<Dual, U> {Dual(V(1))},
+                                        canary::Temperature<Dual, U> {Dual(th)},
+                                        mode_temperatures<U>(shared_modes));
+            expect(fatal(c.status == Status::Valid));
+            const auto props = canary::properties(shared, mix, c.state);
+            expect(props.mode_cv[1].value().real() > V(0));
+            const Dual a = props.acoustics.sound_speed.value();
+            // At Re = 0 with positive shared capacity, the derivative of Re^2/cv is zero.
+            expect(
+              relative(V(2) * a.real() * a.dual(), -V(1.4) * rh * th + re * shared_te, tolerance));
+
+            const V cold =
+              canary::convert<U>(canary::ModeTemperature<V, si> {V(10)}, scales).value();
+            const std::array<V, 2> cold_modes {te, cold};
+            for (const auto index : {canary::SpeciesIndex {0}, *shared.electron}) {
+                std::array<V, 11> pure {};
+                pure[index.value()] = V(1);
+                const auto pure_mix = mixture(shared, fractions(pure));
+                const auto state = thermo_state(shared,
+                                                pure_mix,
+                                                canary::Density<V, U> {V(1)},
+                                                canary::Temperature<V, U> {th},
+                                                mode_temperatures<U>(cold_modes));
+                expect(fatal(state.status == Status::Valid));
+                const V speed =
+                  canary::properties(shared, pure_mix, state.state).acoustics.sound_speed.value();
+                const V expected =
+                  index == canary::SpeciesIndex {0} ? V(1.4) * rh * th : (V(5) / V(3)) * re * cold;
+                expect(relative(speed * speed, expected, tolerance));
+            }
+        };
+        run(canary::UnitScales<float, si> {});
+        run(canary::UnitScales<double, si> {});
+        run(canary::UnitScales<float, scaled> {
+          {.mass = 4.65e-26F, .density = 1.0e-3F, .temperature = 1000.0F, .length = 1.0F}});
+        run(reference_scales);
+    };
 
     "multi-temperature properties expose separate energy derivatives"_test = [&] {
         const auto check = [&](const auto& model, const auto& y, const auto& temperatures) {

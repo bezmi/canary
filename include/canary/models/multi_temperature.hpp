@@ -1580,7 +1580,19 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
 }
 
 // Heat capacities and heavy/electron gas constants per mixture mass.
-// The acoustic estimate uses 1 + R_h / (cv_heavy + sum_m mode_cv[m]).
+// Sound speed assumes common velocity, frozen composition and no finite-rate
+// exchange. Heavy energy receives heavy pressure work; the whole electron mode
+// receives electron pressure work. Other specific mode energies are fixed:
+// D e_h / Dt = -(p_h/rho) div(u), D e_em / Dt = -(p_e/rho) div(u).
+// With D rho / Dt = -rho div(u),
+// a^2 = R_h T (1 + R_h/cv_heavy) + R_e T_e (1 + R_e/cv_em).
+// cv_em includes every component sharing the electron temperature. Bound
+// excitation has no separate pressure. The acoustic exponent is rho a^2 / p.
+// At absence, cancel common concentration factors to retain defined derivatives.
+// Composition derivatives have no guarantee at an entirely absent population
+// whose pressure response depends on the proportions in which species enter
+// (heavy species with differing capacities/R, or a shared electron mode).
+// These are common-velocity acoustics, not independent-fluid wave speeds.
 template <Scalar T,
           std::floating_point P,
           UnitSystem U,
@@ -1597,22 +1609,53 @@ CANARY_HOST_DEVICE MultiTemperatureProperties<T, U, M>
     const auto sums = detail::heavy_species_sums(gas, mix.fractions);
     const SpecificHeat<T, U> cv_heavy {T(sums.cp - sums.gas_constant)};
     std::array<SpecificHeat<T, U>, M> mode_cv {};
-    T cv_value = cv_heavy.value();
     for (const ModeIndex m : mode_indices(0, M)) {
         mode_cv[m.value()] = SpecificHeat<T, U> {
           detail::mode_energy(gas, mix.fractions, m, state.mode_temp[m.value()].value()).cv};
-        cv_value = cv_value + mode_cv[m.value()].value();
     }
-    const SpecificHeat<T, U> cv {cv_value};
-    const SpecificHeat<T, U> cp {T(cv_value + sums.gas_constant)};
-    const AcousticExponent<T> exponent {heat_capacity_ratio(cp, cv).value()};
+    using V = ScalarTraits<T>::value_type;
+    const T r_h = sums.gas_constant;
+    T a2 = T(V(0));
+    if (ScalarTraits<T>::value(r_h) == V(0) && ScalarTraits<T>::value(cv_heavy.value()) == V(0)) {
+        // At zero aggregate capacity, cancel each weight before dividing.
+        for (const SpeciesIndex i : species_indices(0, N)) {
+            if (gas.electron == OptionalSpeciesIndex {i}) { continue; }
+            const P r_i = gas.thermally_perfect.gas_constant[i.value()].value();
+            const P cv_i = gas.translational_rotational_cp[i.value()].value() - r_i;
+            a2 = a2 + T(mix.fractions[i.value()].value() * r_i * state.temp.value() *
+                        (P(1) + r_i / cv_i));
+        }
+    } else {
+        a2 = T(r_h * state.temp.value() * (T(V(1)) + r_h / cv_heavy.value()));
+    }
+    if (gas.electron) {
+        const SpeciesIndex e = *gas.electron;
+        const ModeIndex m = *gas.electron_mode;
+        const T t_e = state.mode_temp[m.value()].value();
+        const T r_e = sums.electron_gas_constant;
+        const T cv_em = mode_cv[m.value()].value();
+        if (ScalarTraits<T>::value(r_e) == V(0) && ScalarTraits<T>::value(cv_em) == V(0)) {
+            // The electron weight cancels in an otherwise zero-capacity mode.
+            const P r_i = gas.thermally_perfect.gas_constant[e.value()].value();
+            const T cv_i = detail::component_energy(gas,
+                                                    e,
+                                                    gas.mode_components[m.value()][e.value()],
+                                                    t_e,
+                                                    math::log(t_e))
+                             .cv;
+            a2 = a2 + T(mix.fractions[e.value()].value() * r_i * t_e * (T(V(1)) + r_i / cv_i));
+        } else {
+            a2 = a2 + T(r_e * t_e * (T(V(1)) + r_e / cv_em));
+        }
+    }
+    const T a = math::sqrt(a2);
+    const AcousticExponent<T> exponent {T(state.rho.value() * a * a / state.p.value())};
     return {
       .cv_heavy = cv_heavy,
       .mode_cv = mode_cv,
       .gas_constant_heavy = SpecificGasConstant<T, U> {sums.gas_constant},
       .gas_constant_electron = SpecificGasConstant<T, U> {sums.electron_gas_constant},
-      .acoustics = {.sound_speed = SoundSpeed<T, U> {sound_speed(exponent, state.p, state.rho)},
-                    .acoustic_exponent = exponent},
+      .acoustics = {.sound_speed = SoundSpeed<T, U> {a}, .acoustic_exponent = exponent},
     };
 }
 
