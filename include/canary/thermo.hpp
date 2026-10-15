@@ -57,11 +57,6 @@ template <SpeciesRange V>
 CANARY_HOST_DEVICE constexpr decltype(auto) mode_at(const V& modes, ModeIndex index)
 { return modes[index.value()]; }
 
-template <RankOneMdspan M>
-CANARY_HOST_DEVICE constexpr decltype(auto) mode_at(const IndexedView<ModeIndex, M>& modes,
-                                                    ModeIndex index)
-{ return modes[index]; }
-
 template <typename V>
 concept ModeRange = requires(const V& modes, ModeIndex index) {
     requires std::remove_cvref_t<V>::rank() == 1;

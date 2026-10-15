@@ -36,6 +36,13 @@ foreach(operation closure rates production)
   endforeach()
 endforeach()
 
+foreach(operation state_vt state_cv state_et state_ve state_sources)
+  foreach(field energy temperature)
+    add_test(NAME canary.mode_extent.${operation}.${field}
+             COMMAND canary_mode_extent_tests ${operation} ${field})
+  endforeach()
+endforeach()
+
 # Code that must not compile. compile_fail/<name>.cpp is compiled twice: as
 # written, as part of the normal build, where it must compile; and with
 # CANARY_COMPILE_FAIL defined, by the test, which passes only if the build

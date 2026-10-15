@@ -3,6 +3,7 @@
 
 #include <array>
 #include <canary/config.hpp>
+#include <canary/indexed_view.hpp>
 #include <canary/quantity.hpp>
 #include <canary/scalar.hpp>
 #include <canary/status.hpp>
@@ -168,6 +169,97 @@ struct MultiTemperatureState {
     std::array<SpecificEnergy<T, U>, M> mode_e;
     std::array<ModeTemperature<T, U>, M> mode_temp;
 };
+
+namespace detail
+{
+template <QuantityKind Q, std::size_t M>
+CANARY_HOST_DEVICE constexpr const Q& mode_at(const std::array<Q, M>& modes,
+                                              ModeIndex index) noexcept
+{ return modes[index.value()]; }
+
+template <RankOneMdspan M>
+CANARY_HOST_DEVICE constexpr decltype(auto)
+  mode_at(const IndexedView<ModeIndex, M>& modes, ModeIndex index) noexcept(noexcept(modes[index]))
+{ return modes[index]; }
+
+template <QuantityKind Q, std::size_t M>
+CANARY_HOST_DEVICE constexpr std::size_t mode_extent(const std::array<Q, M>&) noexcept
+{ return M; }
+
+template <RankOneMdspan M>
+CANARY_HOST_DEVICE constexpr auto
+  mode_extent(const IndexedView<ModeIndex, M>& modes) noexcept(noexcept(modes.extent(0)))
+{ return modes.extent(0); }
+
+template <typename V> struct state_mode_extent;
+template <QuantityKind Q, std::size_t M>
+struct state_mode_extent<std::array<Q, M>> : std::integral_constant<std::size_t, M> {};
+template <RankOneMdspan M>
+struct state_mode_extent<IndexedView<ModeIndex, M>> :
+    std::integral_constant<std::size_t, M::extents_type::static_extent(0)> {};
+
+template <typename V, typename Q, std::size_t M>
+concept StateModesOf = requires(const V& modes) {
+    { mode_extent(modes) } -> std::convertible_to<std::size_t>;
+    requires std::same_as<std::remove_cvref_t<decltype(mode_at(modes, ModeIndex {}))>, Q>;
+    requires state_mode_extent<V>::value == M ||
+                 state_mode_extent<V>::value == Kokkos::dynamic_extent;
+};
+
+template <typename V, typename Q>
+concept TypedStateModeViewOf = requires(const V& modes) {
+    typename V::extents_type;
+    requires std::same_as<typename V::index_type, ModeIndex>;
+    { mode_extent(modes) } -> std::convertible_to<std::size_t>;
+    requires std::same_as<std::remove_cvref_t<decltype(mode_at(modes, ModeIndex {}))>, Q>;
+};
+}  // namespace detail
+
+// A cell-local snapshot of the four scalar quantities with borrowed mode storage.
+// Mode views use ModeIndex and retain their mdspan layout, accessor and element
+// constness. Storage and accessor resources must outlive evaluation and remain
+// stable during it. Both extents must equal the consuming model's mode count;
+// source entry points assert dynamic extents before reading mode entries.
+// Copying this record copies scalar quantities and descriptors, not mode elements.
+template <Scalar T, UnitSystem U, typename EnergyView, typename TemperatureView>
+    requires detail::TypedStateModeViewOf<EnergyView, SpecificEnergy<T, U>> &&
+             detail::TypedStateModeViewOf<TemperatureView, ModeTemperature<T, U>>
+struct MultiTemperatureStateView {
+    using value_type = T;
+    using units = U;
+
+    Density<T, U> rho;
+    SpecificEnergy<T, U> e;
+    Pressure<T, U> p;
+    Temperature<T, U> temp;
+    EnergyView mode_e;
+    TemperatureView mode_temp;
+};
+
+// Structural contract shared by owning states, borrowed views and caller-defined
+// records. Mode storage is a quantity array or a ModeIndex-indexed view; fixed
+// extents must match M. Dynamic extents are checked at the operation boundary.
+template <typename S, typename T, typename U, std::size_t M>
+concept MultiTemperatureStateOf = ThermoStateOf<S, T, U> && (M > 0) && requires(const S& s) {
+    requires std::same_as<std::remove_cvref_t<decltype(s.rho)>, Density<T, U>>;
+    requires std::same_as<std::remove_cvref_t<decltype(s.e)>, SpecificEnergy<T, U>>;
+    requires std::same_as<std::remove_cvref_t<decltype(s.p)>, Pressure<T, U>>;
+    requires std::same_as<std::remove_cvref_t<decltype(s.temp)>, Temperature<T, U>>;
+    requires detail::StateModesOf<std::remove_cvref_t<decltype(s.mode_e)>, SpecificEnergy<T, U>, M>;
+    requires detail::
+      StateModesOf<std::remove_cvref_t<decltype(s.mode_temp)>, ModeTemperature<T, U>, M>;
+};
+
+namespace detail
+{
+template <std::size_t M, typename S>
+    requires MultiTemperatureStateOf<S, typename S::value_type, typename S::units, M>
+CANARY_HOST_DEVICE constexpr void assert_state_extents([[maybe_unused]] const S& state)
+{
+    CANARY_ASSERT(static_cast<std::size_t>(mode_extent(state.mode_e)) == M);
+    CANARY_ASSERT(static_cast<std::size_t>(mode_extent(state.mode_temp)) == M);
+}
+}  // namespace detail
 
 // Acoustic response under the model's documented pressure-work and energy
 // constraints. sound_speed is authoritative; acoustic_exponent = rho*a*a/p.

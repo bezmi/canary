@@ -10,6 +10,7 @@ bool expect_extent_failure = false;
 #define CANARY_ASSERT(condition) ((condition) ? void() : fail_mode_extent())
 #include <canary/data/air11.hpp>
 #include <canary/data/air11_kim_jo.hpp>
+#include <canary/data/air11_kim_jo_exchange.hpp>
 #include <canary/reactions.hpp>
 #include <canary/thermo.hpp>
 
@@ -21,7 +22,8 @@ int main(int argc, char** argv)
     const std::string_view operation(argv[1]);
     const bool typed = std::string_view(argv[2]) == "typed";
     const canary::UnitScales<double, canary::si> scales {};
-    const auto gas = canary::make_air11_three_temperature<double>(scales).model;
+    const auto built = canary::make_air11_three_temperature<double>(scales);
+    const auto& gas = built.model;
     const auto mechanism =
       canary::make_air11_kim_jo(scales, canary::Pressure<double, canary::si> {101325}, gas);
     const std::array<double, 11> y {0.767, 0.233, 0, 0, 0, 0, 0, 0, 0, 0, 0};
@@ -43,6 +45,50 @@ int main(int argc, char** argv)
             std::_Exit(3);
         }
     };
+    if (operation.starts_with("state_")) {
+        const auto exchange =
+          canary::make_air11_kim_jo_exchange(built.species, mechanism, gas, scales);
+        const bool bad_energy = std::string_view(argv[2]) == "energy";
+        const auto run_state = [&](std::size_t count) {
+            const auto mode_temp = canary::as_indexed<canary::ModeIndex>(
+              canary::as_kind<canary::kind::mode_temperature, canary::si>(
+                Kokkos::mdspan<const double, Extents>(modes.data(),
+                                                      bad_energy ? gas.mode_count : count)));
+            const auto mode_e = canary::as_indexed<canary::ModeIndex>(
+              canary::as_kind<canary::kind::specific_energy, canary::si>(
+                Kokkos::mdspan<const double, Extents>(modes.data(),
+                                                      bad_energy ? count : gas.mode_count)));
+            const canary::
+              MultiTemperatureStateView<double, canary::si, decltype(mode_e), decltype(mode_temp)>
+                state {canary::Density<double, canary::si> {0.001},
+                       canary::SpecificEnergy<double, canary::si> {1e6},
+                       canary::Pressure<double, canary::si> {1000},
+                       canary::Temperature<double, canary::si> {10000},
+                       mode_e,
+                       mode_temp};
+            if (operation == "state_vt") {
+                (void)canary::vibration_translation_source(exchange, gas, mix, state);
+            } else if (operation == "state_cv") {
+                const canary::RatesOfProgress<double,
+                                              canary::si,
+                                              std::tuple_size_v<decltype(mechanism.reactions)>>
+                  rates {};
+                (void)canary::chemistry_vibration_source(exchange, mechanism, rates, state);
+            } else if (operation == "state_et") {
+                (void)canary::electron_translation_source(exchange, mix, state);
+            } else if (operation == "state_ve") {
+                (void)canary::vibration_electron_source(exchange, gas, mix, state);
+            } else if (operation == "state_sources") {
+                (void)canary::multi_temperature_sources(mechanism, exchange, gas, mix, state);
+            } else {
+                std::_Exit(3);
+            }
+        };
+        run_state(gas.mode_count);
+        expect_extent_failure = true;
+        run_state(gas.mode_count + 1);
+        return 1;
+    }
     const auto run = [&](std::size_t count) {
         const auto raw = canary::as_kind<canary::kind::mode_temperature, canary::si>(
           Kokkos::mdspan<const double, Extents>(modes.data(), count));

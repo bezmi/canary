@@ -1415,7 +1415,7 @@ template <Scalar T, std::size_t N> struct RelaxationEnergies {
 
 template <bool Translation,
           bool Electron,
-          Scalar T,
+          typename S,
           std::floating_point P,
           UnitSystem U,
           std::size_t N,
@@ -1426,12 +1426,14 @@ template <bool Translation,
           std::size_t VE,
           std::size_t I,
           typename G>
-    requires ModeRelaxingModel<G, T, P, N>
-CANARY_HOST_DEVICE RelaxationEnergies<T, N>
+    requires MultiTemperatureStateOf<S, typename S::value_type, U, M> &&
+             ModeRelaxingModel<G, typename S::value_type, P, N>
+CANARY_HOST_DEVICE RelaxationEnergies<typename S::value_type, N>
   relaxation_energies(const MultiTemperatureExchange<P, U, N, M, V, C, E, VE, I>& exchange,
                       const G& gas,
-                      const MultiTemperatureState<T, U, M>& state)
+                      const S& state)
 {
+    using T = typename S::value_type;
     using Real = ScalarTraits<T>::value_type;
     std::array<bool, M> translation_mode {};
     std::array<bool, M> electron_mode {};
@@ -1451,7 +1453,9 @@ CANARY_HOST_DEVICE RelaxationEnergies<T, N>
     for (const ModeIndex m : mode_indices(0, M)) {
         if (!translation_mode[m.value()] && !electron_mode[m.value()]) { continue; }
         const std::array<SpecificEnergy<T, U>, N> at_mode =
-          species_mode_energy(gas, m, Temperature<T, U> {state.mode_temp[m.value()].value()});
+          species_mode_energy(gas,
+                              m,
+                              Temperature<T, U> {detail::mode_at(state.mode_temp, m).value()});
         if (translation_mode[m.value()]) {
             const std::array<SpecificEnergy<T, U>, N> at_t =
               species_mode_energy(gas, m, state.temp);
@@ -1465,9 +1469,11 @@ CANARY_HOST_DEVICE RelaxationEnergies<T, N>
         if (electron_mode[m.value()]) {
             // NOLINTNEXTLINE(misc-static-assert): run-time electron mode
             CANARY_ASSERT(exchange.electron_mode.has_value());
-            const auto e = (*exchange.electron_mode).value();
+            const ModeIndex e = *exchange.electron_mode;
             const std::array<SpecificEnergy<T, U>, N> at_e =
-              species_mode_energy(gas, m, Temperature<T, U> {state.mode_temp[e].value()});
+              species_mode_energy(gas,
+                                  m,
+                                  Temperature<T, U> {detail::mode_at(state.mode_temp, e).value()});
             for (const SpeciesIndex i : species_indices(0, N)) {
                 if (exchange.vibration_mode[i.value()] == OptionalModeIndex {m}) {
                     out.electron[i.value()] =
@@ -1497,13 +1503,15 @@ template <Scalar T,
           std::size_t C,
           std::size_t E,
           std::size_t VE,
-          std::size_t I>
-    requires ScalarWith<T, P> && HasExp<T> && HasLog<T> && HasSqrt<T>
+          std::size_t I,
+          typename S>
+    requires MultiTemperatureStateOf<S, T, U, M> && ScalarWith<T, P> && HasExp<T> && HasLog<T> &&
+             HasSqrt<T>
 CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M>
   vibration_translation_terms(const MultiTemperatureExchange<P, U, N, M, V, C, E, VE, I>& exchange,
                               const PartialDensities<T, N>& d,
                               const std::array<T, N>& energy_difference,
-                              const MultiTemperatureState<T, U, M>& state)
+                              const S& state)
 {
     using Real = ScalarTraits<T>::value_type;
     // t_bath = (T sum over heavy j of n_j + T_e n_e) / sum_j n_j.
@@ -1511,7 +1519,7 @@ CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M>
     T t_bath = t;
     if (exchange.electron.has_value()) {
         const auto e = (*exchange.electron).value();
-        const T t_e = state.mode_temp[(*exchange.electron_mode).value()].value();
+        const T t_e = detail::mode_at(state.mode_temp, *exchange.electron_mode).value();
         T heavy = T(Real(0));
         for (const SpeciesIndex i : species_indices(0, N)) {
             if (i.value() != e) { heavy = heavy + d.number[i.value()]; }
@@ -1575,20 +1583,21 @@ template <Scalar T,
           std::size_t C,
           std::size_t E,
           std::size_t VE,
-          std::size_t I>
-    requires ScalarWith<T, P> && HasExp<T> && HasLog<T>
+          std::size_t I,
+          typename S>
+    requires MultiTemperatureStateOf<S, T, U, M> && ScalarWith<T, P> && HasExp<T> && HasLog<T>
 CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M>
   vibration_electron_terms(const MultiTemperatureExchange<P, U, N, M, V, C, E, VE, I>& exchange,
                            const PartialDensities<T, N>& d,
                            const std::array<T, N>& energy_difference,
-                           const MultiTemperatureState<T, U, M>& state)
+                           const S& state)
 {
     using Real = ScalarTraits<T>::value_type;
     // NOLINTNEXTLINE(misc-static-assert): run-time electron index
     CANARY_ASSERT(exchange.electron.has_value() && exchange.electron_mode.has_value());
     const auto e = (*exchange.electron).value();
     const ModeIndex e_mode = *exchange.electron_mode;
-    const T t_e = state.mode_temp[e_mode.value()].value();
+    const T t_e = detail::mode_at(state.mode_temp, e_mode).value();
     const T p_e = T(T(d.number[e] * exchange.boltzmann.value()) * t_e);
     const Real ln10 = std::numbers::ln10_v<Real>;
     const T x = T(math::log(t_e) / T(ln10));
@@ -1627,15 +1636,17 @@ template <Scalar T,
           std::size_t E,
           std::size_t VE,
           std::size_t I,
-          typename G>
-    requires ModeRelaxingModel<G, T, P, N> && std::same_as<typename G::units, U> &&
-             (G::mode_count == M)
+          typename G,
+          typename S>
+    requires MultiTemperatureStateOf<S, T, U, M> && ModeRelaxingModel<G, T, P, N> &&
+             std::same_as<typename G::units, U> && (G::mode_count == M)
 CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M>
   vibration_translation_source(const MultiTemperatureExchange<P, U, N, M, V, C, E, VE, I>& exchange,
                                const G& gas,
                                const NormalisedComposition<T, U, N>& mix,
-                               const MultiTemperatureState<T, U, M>& state)
+                               const S& state)
 {
+    detail::assert_state_extents<M>(state);
     return detail::vibration_translation_terms(
       exchange,
       detail::partial_densities(exchange.mass, mix, state.rho),
@@ -1657,14 +1668,16 @@ template <Scalar T,
           std::size_t C,
           std::size_t E,
           std::size_t VE,
-          std::size_t I>
-    requires ScalarWith<T, P>
+          std::size_t I,
+          typename S>
+    requires MultiTemperatureStateOf<S, T, U, M> && ScalarWith<T, P>
 CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M>
   chemistry_vibration_source(const MultiTemperatureExchange<P, U, N, M, V, C, E, VE, I>& exchange,
                              const ReactionMechanism<P, U, N, R>& mechanism,
                              const RatesOfProgress<T, U, R>& rates,
-                             const MultiTemperatureState<T, U, M>& state)
+                             const S& state)
 {
+    detail::assert_state_extents<M>(state);
     using Real = ScalarTraits<T>::value_type;
     std::array<T, M> q {};
     q.fill(T(Real(0)));
@@ -1675,7 +1688,7 @@ CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M>
                                                       mechanism,
                                                       rates,
                                                       state.temp.value(),
-                                                      state.mode_temp[m.value()].value());
+                                                      detail::mode_at(state.mode_temp, m).value());
     }
     std::array<PowerDensity<T, U>, M> out {};
     for (const ModeIndex m : mode_indices(0, M)) {
@@ -1698,13 +1711,15 @@ template <Scalar T,
           std::size_t C,
           std::size_t E,
           std::size_t VE,
-          std::size_t I>
-    requires ScalarWith<T, P> && HasLog<T> && HasSqrt<T>
+          std::size_t I,
+          typename S>
+    requires MultiTemperatureStateOf<S, T, U, M> && ScalarWith<T, P> && HasLog<T> && HasSqrt<T>
 CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M>
   electron_translation_source(const MultiTemperatureExchange<P, U, N, M, V, C, E, VE, I>& exchange,
                               const NormalisedComposition<T, U, N>& mix,
-                              const MultiTemperatureState<T, U, M>& state)
+                              const S& state)
 {
+    detail::assert_state_extents<M>(state);
     using Real = ScalarTraits<T>::value_type;
     std::array<PowerDensity<T, U>, M> out = detail::zero_mode_sources<T, U, M>();
     if (E == 0 || !exchange.electron) { return out; }
@@ -1712,7 +1727,7 @@ CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M>
     const ModeIndex e_mode = *exchange.electron_mode;
     const P m_e = exchange.mass[e].value();
     const P k = exchange.boltzmann.value();
-    const T t_e = state.mode_temp[e_mode.value()].value();
+    const T t_e = detail::mode_at(state.mode_temp, e_mode).value();
     const Real t_e_value = ScalarTraits<T>::value(t_e);
     const detail::PartialDensities<T, N> d =
       detail::partial_densities(exchange.mass, mix, state.rho);
@@ -1761,15 +1776,17 @@ template <Scalar T,
           std::size_t E,
           std::size_t VE,
           std::size_t I,
-          typename G>
-    requires ModeRelaxingModel<G, T, P, N> && std::same_as<typename G::units, U> &&
-             (G::mode_count == M)
+          typename G,
+          typename S>
+    requires MultiTemperatureStateOf<S, T, U, M> && ModeRelaxingModel<G, T, P, N> &&
+             std::same_as<typename G::units, U> && (G::mode_count == M)
 CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M>
   vibration_electron_source(const MultiTemperatureExchange<P, U, N, M, V, C, E, VE, I>& exchange,
                             const G& gas,
                             const NormalisedComposition<T, U, N>& mix,
-                            const MultiTemperatureState<T, U, M>& state)
+                            const S& state)
 {
+    detail::assert_state_extents<M>(state);
     std::array<PowerDensity<T, U>, M> out = detail::zero_mode_sources<T, U, M>();
     if (VE == 0 || !exchange.electron) { return out; }
     const detail::RelaxationEnergies<T, N> energies =
@@ -1842,16 +1859,19 @@ template <Scalar T,
           std::size_t E,
           std::size_t VE,
           std::size_t I,
-          typename G>
-    requires ReactingModel<G, T, P, N> && ModeRelaxingModel<G, T, P, N> &&
-             std::same_as<typename G::units, U> && (G::mode_count == M)
+          typename G,
+          typename S>
+    requires MultiTemperatureStateOf<S, T, U, M> && ReactingModel<G, T, P, N> &&
+             ModeRelaxingModel<G, T, P, N> && std::same_as<typename G::units, U> &&
+             (G::mode_count == M)
 CANARY_HOST_DEVICE MultiTemperatureSources<T, U, N, M>
   multi_temperature_sources(const ReactionMechanism<P, U, N, R>& mechanism,
                             const MultiTemperatureExchange<P, U, N, M, V, C, E, VE, I>& exchange,
                             const G& gas,
                             const NormalisedComposition<T, U, N>& mix,
-                            const MultiTemperatureState<T, U, M>& state)
+                            const S& state)
 {
+    detail::assert_state_extents<M>(state);
     const RatesOfProgress<T, U, R> rates =
       rates_of_progress(mechanism, gas, mix, state.rho, state.temp, state.mode_temp);
     const detail::PartialDensities<T, N> d =

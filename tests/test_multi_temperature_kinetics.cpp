@@ -463,6 +463,57 @@ static_assert(!AcceptsReactionModes<canary::ModeTemperatureView<double, scaled>>
 static_assert(!AcceptsReactionModes<canary::ModeEnergyDensityView<double, si>>);
 }  // namespace
 
+namespace
+{
+template <typename T, typename E, typename V> struct CustomModeState {
+    using value_type = T;
+    using units = si;
+    canary::Density<T, si> rho;
+    canary::SpecificEnergy<T, si> e;
+    canary::Pressure<T, si> p;
+    canary::Temperature<T, si> temp;
+    E mode_e;
+    V mode_temp;
+};
+using StateEnergyView =
+  canary::IndexedView<canary::ModeIndex,
+                      Kokkos::mdspan<const canary::SpecificEnergy<double, si>, Extents>>;
+using StateTemperatureView = canary::IndexedView<canary::ModeIndex, RawModes>;
+using BorrowedState =
+  canary::MultiTemperatureStateView<double, si, StateEnergyView, StateTemperatureView>;
+static_assert(canary::MultiTemperatureStateOf<BorrowedState, double, si, 2>);
+static_assert(
+  canary::MultiTemperatureStateOf<canary::MultiTemperatureState<double, si, 2>, double, si, 2>);
+static_assert(
+  !canary::MultiTemperatureStateOf<canary::MultiTemperatureState<double, si, 1>, double, si, 2>);
+static_assert(!canary::MultiTemperatureStateOf<BorrowedState, float, si, 2>);
+static_assert(!canary::MultiTemperatureStateOf<BorrowedState, double, scaled, 2>);
+static_assert(!canary::MultiTemperatureStateOf<canary::ThermoState<double, si>, double, si, 2>);
+using WrongDomain = canary::IndexedView<canary::SpeciesIndex, RawModes>;
+static_assert(
+  !canary::
+    MultiTemperatureStateOf<CustomModeState<double, StateEnergyView, WrongDomain>, double, si, 2>);
+static_assert(!canary::MultiTemperatureStateOf<
+              CustomModeState<double, StateTemperatureView, StateTemperatureView>,
+              double,
+              si,
+              2>);
+using FixedTemperatures = canary::IndexedView<
+  canary::ModeIndex,
+  Kokkos::mdspan<const canary::ModeTemperature<double, si>, Kokkos::extents<std::size_t, 2>>>;
+static_assert(
+  canary::MultiTemperatureStateOf<CustomModeState<double, StateEnergyView, FixedTemperatures>,
+                                  double,
+                                  si,
+                                  2>);
+static_assert(
+  !canary::MultiTemperatureStateOf<CustomModeState<double, StateEnergyView, FixedTemperatures>,
+                                   double,
+                                   si,
+                                   3>);
+static_assert(std::is_trivially_copyable_v<BorrowedState>);
+}  // namespace
+
 void test_multi_temperature_kinetics()
 {
     using namespace boost::ut;
@@ -475,6 +526,121 @@ void test_multi_temperature_kinetics()
       canary::make_air11_kim_jo_exchange(built.species, mech, gas, si_scales);
     const std::array<std::string_view, species_count> names =
       canary::detail::air11_kim_jo_species_names;
+
+    "borrowed states preserve all multi-temperature sources"_test = [&] {
+        const auto run = []<typename T, typename Layout, bool Const>() {
+            using P = canary::ScalarTraits<T>::value_type;
+            using Element = std::conditional_t<Const, const T, T>;
+            const canary::UnitScales<P, si> scales {};
+            const auto built_gas = canary::make_air11_three_temperature<P>(scales);
+            const auto& model = built_gas.model;
+            const auto mechanism =
+              canary::make_air11_kim_jo(scales, canary::Pressure<P, si> {P(atmosphere)}, model);
+            const auto exchanges =
+              canary::make_air11_kim_jo_exchange(built_gas.species, mechanism, model, scales);
+            const auto seed = [](P value) {
+                if constexpr (requires { T(value, P(1)); }) {
+                    return T(value, P(1));
+                } else {
+                    return T(value);
+                }
+            };
+            const auto equal = [](const auto& a, const auto& b) {
+                expect(canary::ScalarTraits<T>::value(a) == canary::ScalarTraits<T>::value(b));
+                if constexpr (requires { a.dual(); }) { expect(a.dual() == b.dual()); }
+            };
+            // Select the middle cell of each multidimensional field. Scalar
+            // quantities are loaded once; mode descriptors borrow the selected cell.
+            std::array<T, 35> composition {};
+            using Grid = Kokkos::mdspan<T, Kokkos::dextents<std::size_t, 2>, Layout>;
+            const Grid species_grid(composition.data() + 1, 3, species_count);
+            for (const auto i : canary::species_indices(0, species_count)) {
+                composition[1 + species_grid.mapping()(1, i.value())] =
+                  T(P(reference_states[0].y[i.value()]));
+            }
+            using Raw = Kokkos::mdspan<Element, Extents, Kokkos::layout_stride>;
+            const auto slice = [](auto& storage, const auto& grid) {
+                return Raw(storage.data() + 1 + grid.mapping()(1, 0),
+                           typename Raw::mapping_type(Extents(grid.extent(1)),
+                                                      std::array<std::size_t, 1> {grid.stride(1)}));
+            };
+            const auto mix = canary::mixture(
+              model,
+              canary::as_kind<canary::kind::mass_fraction>(slice(composition, species_grid)));
+            std::array<T, 8> temperatures {};
+            std::array<T, 8> energies {};
+            const Grid temp_grid(temperatures.data() + 1, 3, 2);
+            using OtherLayout = std::conditional_t<std::same_as<Layout, Kokkos::layout_left>,
+                                                   Kokkos::layout_right,
+                                                   Kokkos::layout_left>;
+            const Kokkos::mdspan<T, Kokkos::dextents<std::size_t, 2>, OtherLayout> energy_grid(
+              energies.data() + 1,
+              3,
+              2);
+            temperatures[1 + temp_grid.mapping()(1, 0)] = seed(P(5000));
+            temperatures[1 + temp_grid.mapping()(1, 1)] = T(P(8000));
+            const auto mode_temp = canary::as_indexed<canary::ModeIndex>(
+              canary::as_kind<canary::kind::mode_temperature, si>(slice(temperatures, temp_grid)));
+            const auto closed = canary::thermo_state(model,
+                                                     mix,
+                                                     canary::Density<T, si> {T(P(0.001))},
+                                                     canary::Temperature<T, si> {T(P(10000))},
+                                                     mode_temp);
+            expect(closed.status == canary::Status::Valid);
+            const auto& owned = closed.state;
+            for (const auto m : canary::mode_indices(0, 2)) {
+                energies[1 + energy_grid.mapping()(1, m.value())] = owned.mode_e[m.value()].value();
+            }
+            const auto mode_e = canary::as_indexed<canary::ModeIndex>(
+              canary::as_kind<canary::kind::specific_energy, si>(slice(energies, energy_grid)));
+            const canary::MultiTemperatureStateView<T, si, decltype(mode_e), decltype(mode_temp)>
+              view {owned.rho, owned.e, owned.p, owned.temp, mode_e, mode_temp};
+            const auto rates =
+              canary::rates_of_progress(mechanism, model, mix, view.rho, view.temp, view.mode_temp);
+            const auto compare_modes = [&](const auto& a, const auto& b) {
+                for (const auto m : canary::mode_indices(0, 2)) {
+                    equal(a[m.value()].value(), b[m.value()].value());
+                }
+            };
+            compare_modes(canary::vibration_translation_source(exchanges, model, mix, view),
+                          canary::vibration_translation_source(exchanges, model, mix, owned));
+            compare_modes(canary::chemistry_vibration_source(exchanges, mechanism, rates, view),
+                          canary::chemistry_vibration_source(exchanges, mechanism, rates, owned));
+            compare_modes(canary::electron_translation_source(exchanges, mix, view),
+                          canary::electron_translation_source(exchanges, mix, owned));
+            compare_modes(canary::vibration_electron_source(exchanges, model, mix, view),
+                          canary::vibration_electron_source(exchanges, model, mix, owned));
+            const auto expected =
+              canary::multi_temperature_sources(mechanism, exchanges, model, mix, owned);
+            const auto actual =
+              canary::multi_temperature_sources(mechanism, exchanges, model, mix, view);
+            compare_modes(actual.modes, expected.modes);
+            for (const auto i : canary::species_indices(0, species_count)) {
+                equal(actual.species[i.value()].value(), expected.species[i.value()].value());
+            }
+            const CustomModeState<T, decltype(mode_e), decltype(mode_temp)> custom {view.rho,
+                                                                                    view.e,
+                                                                                    view.p,
+                                                                                    view.temp,
+                                                                                    view.mode_e,
+                                                                                    view.mode_temp};
+            const auto custom_sources =
+              canary::multi_temperature_sources(mechanism, exchanges, model, mix, custom);
+            compare_modes(custom_sources.modes, expected.modes);
+            const auto copy = view;
+            temperatures[1 + temp_grid.mapping()(1, 0)] = T(P(6000));
+            equal(copy.mode_temp[canary::ModeIndex {0}].value(), T(P(6000)));
+            equal(copy.temp.value(), owned.temp.value());
+        };
+        run.template operator()<double, Kokkos::layout_left, true>();
+        run.template operator()<double, Kokkos::layout_right, false>();
+        run.template operator()<float, Kokkos::layout_left, false>();
+        run.template operator()<float, Kokkos::layout_right, true>();
+        run.template operator()<D, Kokkos::layout_left, false>();
+        run.template operator()<D, Kokkos::layout_right, true>();
+        run.template operator()<canary::test::Dual<float>, Kokkos::layout_left, true>();
+        run.template operator()<canary::test::Dual<float>, Kokkos::layout_right, false>();
+    };
 
     "mode views preserve closure and reaction results across cell layouts"_test = [&] {
         const auto run = [&]<typename T, typename Layout>() {
