@@ -14,6 +14,7 @@ int main()
     test_quantity();
     test_units();
     test_status();
+    test_indexed_view();
     test_species();
     test_state();
     test_thermo();

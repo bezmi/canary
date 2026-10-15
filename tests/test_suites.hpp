@@ -10,6 +10,7 @@ void test_scalar();
 void test_quantity();
 void test_units();
 void test_status();
+void test_indexed_view();
 void test_species();
 void test_state();
 void test_thermo();

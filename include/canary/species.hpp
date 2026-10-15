@@ -5,6 +5,7 @@
 #include <array>
 #include <canary/build.hpp>
 #include <canary/config.hpp>
+#include <canary/indexed_view.hpp>
 #include <canary/quantity.hpp>
 #include <canary/scalar.hpp>
 #include <canary/status.hpp>
@@ -280,9 +281,6 @@ Charge<P, U> species_charge_parameter(Charge<long double, si> charge,
     return stored;
 }
 
-template <typename M> struct is_mdspan : std::false_type {};
-template <typename E, typename X, typename L, typename A>
-struct is_mdspan<Kokkos::mdspan<E, X, L, A>> : std::true_type {};
 }  // namespace detail
 
 // An mdspan accessor policy: the member types and functions that
