@@ -39,9 +39,31 @@ template <std::floating_point V> struct SolveSettings {
     V absolute_tolerance = V(0);  // finite and nonnegative, in the units of x
 };
 
+// Causes are retained for the enclosing closure to report without repeating the solve.
+// Invalid input checks use the order shown here; residual and convergence reasons
+// identify the stage at which the solve stopped.
+enum class SolveReason : unsigned char {
+    None,
+    NonfiniteBounds,
+    ReversedBounds,
+    NonfiniteGuess,
+    InvalidRelativeTolerance,
+    InvalidAbsoluteTolerance,
+    NegativeIterationLimit,
+    NonfiniteEndpointResidual,
+    NoBracket,
+    NonfiniteInteriorResidual,
+    IterationLimit,
+    PrecisionLimit,
+    NonfiniteFullResidual,
+    NonfiniteFullDerivative,
+    ZeroFullDerivative,
+};
+
 template <Scalar T> struct SolveResult {
     T root;
     Status status;  // Valid, NotConverged, or Invalid for bracket or full-residual failures
+    SolveReason reason;  // None exactly when status is Valid
 };
 
 // Root of f in the bracket, starting from guess (clamped into the bracket).
@@ -87,21 +109,42 @@ CANARY_HOST_DEVICE SolveResult<T> solve(const FValue& f_value,
 {
     const V lower = bracket.lower;
     const V upper = bracket.upper;
-    if (!std::isfinite(lower) || !std::isfinite(upper) || lower > upper || !std::isfinite(guess) ||
-        !std::isfinite(settings.relative_tolerance) || settings.relative_tolerance < V(0) ||
-        !std::isfinite(settings.absolute_tolerance) || settings.absolute_tolerance < V(0) ||
-        settings.max_iterations < 0) {
-        return {.root = T(guess), .status = Status::Invalid};
+    if (!std::isfinite(lower) || !std::isfinite(upper)) {
+        return {.root = T(guess), .status = Status::Invalid, .reason = SolveReason::NonfiniteBounds};
+    }
+    if (lower > upper) {
+        return {.root = T(guess), .status = Status::Invalid, .reason = SolveReason::ReversedBounds};
+    }
+    if (!std::isfinite(guess)) {
+        return {.root = T(guess), .status = Status::Invalid, .reason = SolveReason::NonfiniteGuess};
+    }
+    if (!std::isfinite(settings.relative_tolerance) || settings.relative_tolerance < V(0)) {
+        return {.root = T(guess),
+                .status = Status::Invalid,
+                .reason = SolveReason::InvalidRelativeTolerance};
+    }
+    if (!std::isfinite(settings.absolute_tolerance) || settings.absolute_tolerance < V(0)) {
+        return {.root = T(guess),
+                .status = Status::Invalid,
+                .reason = SolveReason::InvalidAbsoluteTolerance};
+    }
+    if (settings.max_iterations < 0) {
+        return {.root = T(guess),
+                .status = Status::Invalid,
+                .reason = SolveReason::NegativeIterationLimit};
     }
     const Residual<V> r_lower = f_value(lower);
     const Residual<V> r_upper = f_value(upper);
     const V f_lower = r_lower.value;
     const V f_upper = r_upper.value;
     if (!std::isfinite(f_lower) || !std::isfinite(f_upper)) {
-        return {.root = T(guess), .status = Status::Invalid};
+        return {.root = T(guess),
+                .status = Status::Invalid,
+                .reason = SolveReason::NonfiniteEndpointResidual};
     }
     V x = std::clamp(guess, lower, upper);
     Status status = Status::NotConverged;
+    SolveReason reason = SolveReason::IterationLimit;
     if (f_lower == V(0) || f_upper == V(0)) {
         if (f_lower == V(0) && f_upper == V(0)) {
             x = x <= std::midpoint(lower, upper) ? lower : upper;
@@ -109,9 +152,10 @@ CANARY_HOST_DEVICE SolveResult<T> solve(const FValue& f_value,
             x = f_lower == V(0) ? lower : upper;
         }
         status = Status::Valid;
+        reason = SolveReason::None;
     } else {
         if ((f_lower > V(0)) == (f_upper > V(0))) {
-            return {.root = T(guess), .status = Status::Invalid};
+            return {.root = T(guess), .status = Status::Invalid, .reason = SolveReason::NoBracket};
         }
         V low = lower;
         V high = upper;
@@ -122,9 +166,14 @@ CANARY_HOST_DEVICE SolveResult<T> solve(const FValue& f_value,
 
         for (int i = 0; i < settings.max_iterations; ++i) {
             const Residual<V> r = f_value(x);
-            if (!std::isfinite(r.value)) { return {.root = T(x), .status = Status::Invalid}; }
+            if (!std::isfinite(r.value)) {
+                return {.root = T(x),
+                        .status = Status::Invalid,
+                        .reason = SolveReason::NonfiniteInteriorResidual};
+            }
             if (r.value == V(0)) {
                 status = Status::Valid;
+                reason = SolveReason::None;
                 break;
             }
             if ((r.value > V(0)) == (left.value > V(0))) {
@@ -146,6 +195,7 @@ CANARY_HOST_DEVICE SolveResult<T> solve(const FValue& f_value,
             if (width <= settings.absolute_tolerance + settings.relative_tolerance * scale) {
                 x = best;
                 status = Status::Valid;
+                reason = SolveReason::None;
                 break;
             }
             V next = std::midpoint(low, high);
@@ -164,7 +214,10 @@ CANARY_HOST_DEVICE SolveResult<T> solve(const FValue& f_value,
                     use_newton = true;
                 }
             }
-            if (!(next > low && next < high)) { break; }
+            if (!(next > low && next < high)) {
+                reason = SolveReason::PrecisionLimit;
+                break;
+            }
             // Half the width stays representable even for opposite extreme bounds.
             previous_half_width = high / V(2) - low / V(2);
             previous_newton = use_newton;
@@ -173,17 +226,29 @@ CANARY_HOST_DEVICE SolveResult<T> solve(const FValue& f_value,
     }
 
     if constexpr (std::same_as<T, V>) {
-        return {.root = x, .status = status};
+        return {.root = x, .status = status, .reason = reason};
     } else {
-        if (status == Status::NotConverged) { return {.root = T(x), .status = status}; }
+        if (status == Status::NotConverged) {
+            return {.root = T(x), .status = status, .reason = reason};
+        }
         const Residual<T> r = f_full(T(x));
         const V value = ScalarTraits<T>::value(r.value);
         const V derivative = ScalarTraits<T>::value(r.derivative);
-        if (!std::isfinite(value) || !std::isfinite(derivative) || derivative == V(0)) {
-            return {.root = T(x), .status = Status::Invalid};
+        if (!std::isfinite(value)) {
+            return {.root = T(x),
+                    .status = Status::Invalid,
+                    .reason = SolveReason::NonfiniteFullResidual};
+        }
+        if (!std::isfinite(derivative)) {
+            return {.root = T(x),
+                    .status = Status::Invalid,
+                    .reason = SolveReason::NonfiniteFullDerivative};
+        }
+        if (derivative == V(0)) {
+            return {.root = T(x), .status = Status::Invalid, .reason = SolveReason::ZeroFullDerivative};
         }
         const T input_residual = r.value - T(value);
-        return {.root = T(x) - T(input_residual / derivative), .status = status};
+        return {.root = T(x) - T(input_residual / derivative), .status = status, .reason = reason};
     }
 }
 
