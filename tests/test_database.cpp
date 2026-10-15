@@ -176,7 +176,7 @@ bool same_correction(const canary::RelaxationCorrectionInput& a,
 bool same_rate(const canary::ArrheniusInput& a, const canary::ArrheniusInput& b)
 {
     return a.A == b.A && a.n == b.n && a.activation_temperature == b.activation_temperature &&
-           a.translational_exponent == b.translational_exponent;
+           a.translational_exponent == b.translational_exponent && same_other(a, b);
 }
 
 // air5_collision_integrals.json with one textual replacement.
@@ -1113,6 +1113,7 @@ int main()
                   expect(same_coefficients(a.products, b.products)) << k;
                   expect(same_rate(a.forward, b.forward)) << k;
                   expect(a.backward_model == b.backward_model) << k;
+                  expect(same_rate(a.backward, b.backward)) << k;
                   expect(a.third_body == b.third_body) << k;
                   expect(same_coefficients(a.efficiencies, b.efficiencies)) << k;
               }
@@ -1122,6 +1123,37 @@ int main()
               expect(db::parse_reactions(db::write_reactions(file)) == file);
           });
       };
+
+    "explicit backward Arrhenius inputs preserve every rate field"_test = [] {
+        auto file = db::read_reactions_file(air11_kim_jo_path());
+        file.reactions[38].backward = {
+          .model = "arrhenius",
+          .A = 2.5e8,
+          .n = -0.75,
+          .activation_temperature = 12500.0,
+          .translational_exponent = 0.25,
+          .other_temperature = "electron",
+        };
+        const auto owner = db::mechanism_input<40, 11>(
+          db::parse_reactions(db::write_reactions(file)));
+        canary::detail::with_input(owner, [&](const auto& input) {
+            const canary::ArrheniusInput expected {
+              .A = 2.5e8,
+              .n = -0.75,
+              .activation_temperature = 12500.0,
+              .translational_exponent = 0.25,
+              .other_temperature = "electron",
+            };
+            expect(input.reactions[38].backward_model == canary::BackwardRateModel::arrhenius);
+            expect(same_rate(input.reactions[38].backward, expected));
+        });
+    };
+
+    "a forward rate requires an explicit model"_test = [] {
+        expect(throws_database_error([] {
+            (void)db::parse_reactions(kim_jo_with(R"("model": "arrhenius",)", ""));
+        }));
+    };
 
     "an equilibrium backward rate with a translational exponent is an error"_test = [] {
         db::ReactionsFile file = db::read_reactions_file(park_path());
@@ -1189,6 +1221,47 @@ int main()
           file.vibration_translation[2].relaxation_time.high_temperature_correction.reset();
           expect(db::parse_energy_exchange(db::write_energy_exchange(file)) == file);
       };
+
+    "every exchange model field is required"_test = [] {
+        for (const auto& path : {exchange_path(), air11_exchange_path()}) {
+            const auto text = read_text(path);
+            expect(db::parse_energy_exchange(text) == db::read_energy_exchange_file(path));
+            std::size_t position = text.find("\"model\"");
+            expect(fatal(position != std::string::npos));
+            while (position != std::string::npos) {
+                const auto value = text.find('"', text.find(':', position) + 1);
+                const auto end = text.find('"', value + 1) + 1;
+                const auto next = text.find_first_not_of(" \t\r\n", end);
+                expect(fatal(next != std::string::npos));
+                expect(fatal(text[next] == ',' || text[next] == '}'));
+                auto changed = text;
+                changed.erase(position, (text[next] == ',' ? next + 1 : end) - position);
+                expect(throws_database_error([&] { (void)db::parse_energy_exchange(changed); }))
+                  << path << " model at byte " << position;
+                position = text.find("\"model\"", end);
+            }
+        }
+    };
+
+    "exchange units require every field in the declared units"_test = [] {
+        for (const std::string_view field : {"energy", "temperature", "area"}) {
+            auto file = db::read_energy_exchange_file(air11_exchange_path());
+            if (field == "energy") { file.units.energy = "J/kmol"; }
+            if (field == "temperature") { file.units.temperature = "degC"; }
+            if (field == "area") { file.units.area = "cm^2"; }
+            expect(throws_database_error([&] {
+                (void)db::parse_energy_exchange(db::write_energy_exchange(file));
+            })) << field;
+        }
+        for (const std::string_view token : {R"("energy": "J/mol",)",
+                                             R"("temperature": "K",)",
+                                             R"(,
+      "area": "m^2")"}) {
+            expect(throws_database_error([&] {
+                (void)db::parse_energy_exchange(exchange_with(token, ""));
+            })) << token;
+        }
+    };
 
     "the shipped energy-exchange schema is the schema of the current file structs"_test = [] {
         expect(db::energy_exchange_schema() ==
@@ -1525,12 +1598,18 @@ int main()
         expect(!file.reactions[0].forward.other_temperature.has_value());
         const auto input_owner = db::mechanism_input<40, 11>(file);
         canary::detail::with_input(input_owner, [&](const auto& input) {
+            expect(input.temperature_lower == canary::air11_kim_jo.temperature_lower);
+            expect(input.temperature_upper == canary::air11_kim_jo.temperature_upper);
             for (std::size_t k = 0; k < 40; ++k) {
                 const auto& a = input.reactions[k];
                 const auto& b = canary::air11_kim_jo.reactions[k];
                 expect(std::string_view(a.equation) == b.equation) << k;
                 expect(same_rate(a.forward, b.forward)) << k;
-                expect(same_other(a.forward, b.forward) && same_other(a.backward, b.backward)) << k;
+                expect(same_coefficients(a.reactants, b.reactants)) << k;
+                expect(same_coefficients(a.products, b.products)) << k;
+                expect(a.backward_model == b.backward_model) << k;
+                expect(same_rate(a.backward, b.backward)) << k;
+                expect(a.third_body == b.third_body) << k;
                 expect(same_coefficients(a.efficiencies, b.efficiencies)) << k;
             }
             expect(std::string_view(input.reactions[38].backward.other_temperature) == "electron");
@@ -1630,6 +1709,42 @@ int main()
         check(file, gas.species, changed, "no other net species changes");
     };
 
+    "electron exchange conversion rejects incomplete parameters and unsupported models"_test = [] {
+        const auto file = db::read_energy_exchange_file(air11_exchange_path());
+        const auto species = db::read_species_file(air11_path());
+        for (const auto member : {&db::ElectronCrossSectionRecord::a,
+                                  &db::ElectronCrossSectionRecord::b,
+                                  &db::ElectronCrossSectionRecord::c,
+                                  &db::ElectronCrossSectionRecord::maximum_temperature}) {
+            auto changed = file;
+            (changed.electron_translation[0].cross_section.*member).reset();
+            expect(throws_parameter_error([&] {
+                (void)db::electron_exchange_input<10, 1, 2>(changed, species);
+            }));
+        }
+        auto changed = file;
+        changed.electron_translation[0].model = "inelastic";
+        expect(throws_parameter_error([&] {
+            (void)db::electron_exchange_input<10, 1, 2>(changed, species);
+        }));
+        changed = file;
+        changed.vibration_electron[0].model = "ssh";
+        expect(throws_parameter_error([&] {
+            (void)db::electron_exchange_input<10, 1, 2>(changed, species);
+        }));
+        expect(throws_parameter_error([&] {
+            (void)db::electron_exchange_input<10, 0, 2>(file, species);
+        }));
+        expect(throws_parameter_error([&] {
+            (void)db::electron_exchange_input<10, 1, 1>(file, species);
+        }));
+        auto absent = species;
+        absent.species.erase("O");
+        expect(throws_database_error([&] {
+            (void)db::electron_exchange_input<10, 1, 2>(file, absent);
+        }));
+    };
+
     "the eleven-species exchange file reads and maps to the compiled electron exchanges"_test = [] {
         const db::EnergyExchangeFile file = db::read_energy_exchange_file(air11_exchange_path());
         expect(file.vibration_translation.size() == 30_u &&
@@ -1650,9 +1765,20 @@ int main()
                        a.c == b.c && a.maximum_temperature == b.maximum_temperature)
                   << k;
             }
-            const auto& ve = electrons.vibration_electron[0];
-            expect(std::string_view(ve.species) == "N2" && ve.relaxation_time.a_low == 7.5_d &&
-                   ve.relaxation_time.blend_upper == 7050.0_d);
+            for (std::size_t k = 0; k < electrons.vibration_electron.size(); ++k) {
+                const auto& a = electrons.vibration_electron[k];
+                const auto& b = compiled.vibration_electron[k];
+                expect(std::string_view(a.species) == b.species) << k;
+                expect(a.relaxation_time.a_low == b.relaxation_time.a_low &&
+                       a.relaxation_time.b_low == b.relaxation_time.b_low &&
+                       a.relaxation_time.c_low == b.relaxation_time.c_low &&
+                       a.relaxation_time.a_high == b.relaxation_time.a_high &&
+                       a.relaxation_time.b_high == b.relaxation_time.b_high &&
+                       a.relaxation_time.c_high == b.relaxation_time.c_high &&
+                       a.relaxation_time.blend_lower == b.relaxation_time.blend_lower &&
+                       a.relaxation_time.blend_upper == b.relaxation_time.blend_upper)
+                  << k;
+            }
             for (std::size_t k = 0; k < 2; ++k) {
                 const auto& a = electrons.electron_impact_ionisation[k];
                 const auto& b = compiled.electron_impact_ionisation[k];
@@ -1665,8 +1791,20 @@ int main()
                 for (std::size_t k = 0; k < 30; ++k) {
                     const auto& a = input.vibration_translation[k];
                     const auto& b = canary::air11_kim_jo_exchange.vibration_translation[k];
+                    expect(std::string_view(a.species) == b.species &&
+                           std::string_view(a.partner) == b.partner)
+                      << k;
                     expect(same_correction(a.correction, b.correction) &&
-                           a.millikan_white.a == b.millikan_white.a)
+                           a.millikan_white.a == b.millikan_white.a &&
+                           a.millikan_white.b == b.millikan_white.b)
+                      << k;
+                }
+                for (std::size_t k = 0; k < input.chemistry_vibration.size(); ++k) {
+                    const auto& a = input.chemistry_vibration[k];
+                    const auto& b = canary::air11_kim_jo_exchange.chemistry_vibration[k];
+                    expect(a.reaction == b.reaction && std::string_view(a.species) == b.species &&
+                           a.dissociation_energy == b.dissociation_energy &&
+                           a.vibrational_temperature == b.vibrational_temperature)
                       << k;
                 }
                 // Errors: counts, an unknown cross-section, a missing ionisation energy.
