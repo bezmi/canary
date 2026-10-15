@@ -95,6 +95,29 @@ void test_thermally_perfect()
     const auto built = canary::make_air5<double>(canary::UnitScales<double, si> {});
     const Air& gas = built.model;
 
+    "thermal closure diagnostics retain composition and temperature solve causes"_test = [&] {
+        using Reason = canary::ClosureReason;
+        const auto mix = mixture(gas, fractions(nitrogen));
+        auto limited = gas;
+        limited.max_iterations = 0;
+        const auto root = thermo_state(limited, mix, Rho {1}, E {1e6});
+        expect(root.status == Status::NotConverged &&
+               root.diagnostic.reason == Reason::IterationLimit);
+        expect(!root.diagnostic.mode.has_value());
+        const auto outside = thermo_state(gas, mix, Rho {1}, E {1e100});
+        expect(outside.status == Status::Invalid &&
+               outside.diagnostic.reason == Reason::NoTemperatureBracket);
+        const std::array<double, 5> short_sum {0.5, 0, 0, 0, 0};
+        const auto corrected =
+          thermo_state(gas, mixture(gas, fractions(short_sum)), Rho {1}, Temp {300});
+        expect(corrected.status == Status::CompositionViolation);
+        expect(corrected.diagnostic.reason == Reason::CompositionSumMismatch);
+        const auto zero_density =
+          thermo_state(gas, mixture(gas, fractions(short_sum)), Rho {0}, Temp {300});
+        expect(zero_density.status == Status::Invalid);
+        expect(zero_density.diagnostic.reason == Reason::NonpositiveDensity);
+    };
+
     "thermally perfect construction validates stored species and reference parameters"_test = [] {
         const auto check = []<typename V> {
             const std::array<canary::Nasa9Species<1>, 1> good {{{

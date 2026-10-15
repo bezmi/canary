@@ -191,9 +191,12 @@ void test_state()
               .temp = canary::Temperature<double, si> {290.0},
             },
           .status = canary::Status::Valid,
+          .diagnostic = {},
         };
         expect(c.state.rho.value() == 1.2_d);
         expect(c.state.temp.value() == 290.0_d);
         expect(c.status == canary::Status::Valid);
+        expect(c.diagnostic.reason == canary::ClosureReason::None);
+        expect(!c.diagnostic.mode.has_value());
     };
 }

@@ -1329,6 +1329,136 @@ void test_multi_temperature()
           expect(d.state.mode_temp[2].value() == d.state.temp.value());
       };
 
+    "absent mode energies reject nonzero values and retain their diagnostic data"_test = [] {
+        const auto run = []<typename V, canary::UnitSystem U, typename T>() {
+            const auto scales = [] {
+                if constexpr (std::same_as<U, si>) {
+                    return canary::UnitScales<V, U> {};
+                } else {
+                    return canary::UnitScales<V, U> {{.mass = V(4.65e-26),
+                                                      .density = V(1e-3),
+                                                      .temperature = V(1000),
+                                                      .length = V(1)}};
+                }
+            }();
+            const auto gas = canary::make_air5_four_temperature<V>(scales).model;
+            const std::array<T, 5> y {T(V(0.767)), T(V(0.233)), T(V(0)), T(V(0)), T(V(0))};
+            const auto mix = mixture(gas, fractions(y));
+            const canary::Density<T, U> rho {T(V(1))};
+            const canary::Temperature<T, U> temp {
+              T(canary::convert<U>(canary::Temperature<V, si> {V(4000)}, scales).value())};
+            const std::array<T, 3> temperatures {temp.value(), temp.value(), temp.value()};
+            const auto forward =
+              thermo_state(gas, mix, rho, temp, mode_temperatures<U>(temperatures));
+            expect(fatal(forward.status == Status::Valid));
+            for (const V target : {V(0), V(-0.0), V(25), V(-25), std::numeric_limits<V>::min()}) {
+                std::array<T, 3> energies {forward.state.mode_e[0].value(),
+                                           forward.state.mode_e[1].value(),
+                                           T(target)};
+                const auto modes = mode_energy_densities<U>(energies);
+                const std::array results {
+                  thermo_state(gas, mix, rho, temp, modes),
+                  thermo_state(gas, mix, rho, forward.state.p, modes),
+                  thermo_state(gas, mix, rho, forward.state.e, modes),
+                  thermo_state(gas, mix, forward.state.p, temp, modes),
+                };
+                for (const auto& result : results) {
+                    const bool zero = target == V(0);
+                    expect(result.status == (zero ? Status::Valid : Status::Invalid));
+                    expect(result.diagnostic.reason ==
+                           (zero ? canary::ClosureReason::None
+                                 : canary::ClosureReason::AbsentModeEnergy));
+                    if (zero) {
+                        expect(!result.diagnostic.mode.has_value());
+                    } else {
+                        expect(result.diagnostic.mode ==
+                               canary::OptionalModeIndex {canary::ModeIndex {2}});
+                    }
+                    expect(canary::ScalarTraits<T>::value(result.state.mode_e[2].value()) ==
+                           target);
+                    expect(canary::ScalarTraits<T>::value(result.state.mode_temp[2].value()) ==
+                           canary::ScalarTraits<T>::value(result.state.temp.value()));
+                    const auto reevaluated = thermo_state(
+                      gas,
+                      mix,
+                      result.state.rho,
+                      result.state.temp,
+                      mode_temperatures<U>(std::array<T, 3> {result.state.mode_temp[0].value(),
+                                                             result.state.mode_temp[1].value(),
+                                                             result.state.mode_temp[2].value()}));
+                    expect(canary::ScalarTraits<T>::value(reevaluated.state.mode_e[2].value()) ==
+                           V(0));
+                }
+            }
+        };
+        run.template operator()<float, si, float>();
+        run.template operator()<double, si, double>();
+        run.template operator()<float, scaled, float>();
+        run.template operator()<double, scaled, double>();
+        run.template operator()<double, si, D>();
+    };
+
+    "absent mode inversion retains a defined composition energy derivative"_test = [&] {
+        const std::array<D, 5> y {D(0.767, -1), D(0.233), D(0), D(0), D(0, 1)};
+        auto mix = mixture(air4, fractions(y));
+        // The normalized input seeds a transfer from N2 into absent NO.
+        mix.gas_constant = canary::SpecificGasConstant<D, si> {D(0)};
+        for (const canary::SpeciesIndex i : canary::species_indices(0, y.size())) {
+            mix.fractions[i.value()] = canary::MassFraction<D> {y[i.value()]};
+            mix.gas_constant = canary::SpecificGasConstant<D, si> {
+              mix.gas_constant.value() +
+              y[i.value()] * air4.thermally_perfect.gas_constant[i.value()].value()};
+        }
+        const canary::Density<D, si> rho {D(1)};
+        const canary::Temperature<D, si> temp {D(4000)};
+        const std::array<D, 3> temperatures {D(4000), D(4000), D(4000)};
+        const auto forward =
+          thermo_state(air4, mix, rho, temp, mode_temperatures<si>(temperatures));
+        expect(fatal(forward.status == Status::Valid));
+        expect(forward.state.mode_e[2].value().real() == 0.0);
+        expect(std::abs(forward.state.mode_e[2].value().dual()) > 0.0);
+        const std::array<D, 3> energies {forward.state.mode_e[0].value(),
+                                         forward.state.mode_e[1].value(),
+                                         forward.state.mode_e[2].value()};
+        const auto inverse =
+          thermo_state(air4, mix, rho, temp, mode_energy_densities<si>(energies));
+        expect(inverse.status == Status::Valid &&
+               inverse.diagnostic.reason == canary::ClosureReason::None);
+        expect(inverse.state.mode_e[2].value().dual() == forward.state.mode_e[2].value().dual());
+        const std::array<D, 3> recovered {inverse.state.mode_temp[0].value(),
+                                          inverse.state.mode_temp[1].value(),
+                                          inverse.state.mode_temp[2].value()};
+        const auto evaluated = thermo_state(air4, mix, rho, temp, mode_temperatures<si>(recovered));
+        expect(evaluated.state.mode_e[2].value().dual() == inverse.state.mode_e[2].value().dual());
+    };
+
+    "closure diagnostics retain mode solve causes and select the highest severity"_test = [&] {
+        using Reason = canary::ClosureReason;
+        const auto mix = mixture(air4, fractions(air5_air));
+        const std::array<double, 3> outside {1e100, 50.0, 0.0};
+        const auto bad_bracket =
+          thermo_state(air4, mix, Rho {1}, Temp {4000}, mode_energy_densities<si>(outside));
+        expect(bad_bracket.status == Status::Invalid);
+        expect(bad_bracket.diagnostic.reason == Reason::NoTemperatureBracket);
+        expect(bad_bracket.diagnostic.mode == canary::OptionalModeIndex {canary::ModeIndex {0}});
+        auto limited = air4;
+        limited.thermally_perfect.max_iterations = 0;
+        const std::array<double, 3> inconsistent {100.0, 50.0, 25.0};
+        const auto result =
+          thermo_state(limited, mix, Rho {1}, Temp {4000}, mode_energy_densities<si>(inconsistent));
+        expect(result.status == Status::Invalid);
+        expect(result.diagnostic.reason == Reason::AbsentModeEnergy);
+        expect(result.diagnostic.mode == canary::OptionalModeIndex {canary::ModeIndex {2}});
+        const std::array<double, 5> pure {1.0, 0.0, 0.0, 0.0, 0.0};
+        const auto tie = thermo_state(air4,
+                                      mixture(air4, fractions(pure)),
+                                      Rho {1},
+                                      Temp {4000},
+                                      mode_energy_densities<si>(inconsistent));
+        expect(tie.status == Status::Invalid && tie.diagnostic.reason == Reason::AbsentModeEnergy);
+        expect(tie.diagnostic.mode == canary::OptionalModeIndex {canary::ModeIndex {1}});
+    };
+
     "multi-temperature: the electronic energy matches a direct evaluation from 10 K to 1e5 K"_test =
       [&] {
           for (std::size_t i = 0; i < 11; ++i) {

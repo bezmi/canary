@@ -5,6 +5,7 @@
 #include <array>
 #include <canary/build.hpp>
 #include <canary/config.hpp>
+#include <canary/detail/closure.hpp>
 #include <canary/detail/solve.hpp>
 #include <canary/nasa9.hpp>
 #include <canary/quantity.hpp>
@@ -293,28 +294,32 @@ CANARY_HOST_DEVICE EnergyAndCv<W> mixture_energy(const ThermallyPerfectMixture<P
 // Valid when density and temperature have finite, positive value parts and
 // the energy a finite value part (it may be negative); Invalid otherwise.
 template <Scalar T, UnitSystem U>
-CANARY_HOST_DEVICE Status thermally_perfect_status(Density<T, U> rho,
-                                                   SpecificEnergy<T, U> e,
-                                                   Temperature<T, U> temp)
+CANARY_HOST_DEVICE ClosureCheck thermally_perfect_check(Density<T, U> rho,
+                                                        SpecificEnergy<T, U> e,
+                                                        Temperature<T, U> temp)
 {
-    const bool positive = all_finite_positive(rho.value(), temp.value());
-    const bool finite = math::isfinite(e.value());
-    const bool valid = positive & finite;
-    return valid ? Status::Valid : Status::Invalid;
+    auto check = positive_check(rho.value(),
+                                ClosureReason::NonfiniteDensity,
+                                ClosureReason::NonpositiveDensity);
+    check = combine(check, finite_check(e.value(), ClosureReason::NonfiniteEnergy));
+    return combine(check,
+                   positive_check(temp.value(),
+                                  ClosureReason::NonfiniteTemperature,
+                                  ClosureReason::NonpositiveTemperature));
 }
 
 // State validation includes the actual returned pressure. The three-field
 // overload also serves the independently evaluated energy modes.
 template <Scalar T, UnitSystem U>
-CANARY_HOST_DEVICE Status thermally_perfect_status(Density<T, U> rho,
-                                                   SpecificEnergy<T, U> e,
-                                                   Temperature<T, U> temp,
-                                                   Pressure<T, U> p)
+CANARY_HOST_DEVICE ClosureCheck thermally_perfect_check(Density<T, U> rho,
+                                                        SpecificEnergy<T, U> e,
+                                                        Temperature<T, U> temp,
+                                                        Pressure<T, U> p)
 {
-    const bool positive = all_finite_positive(rho.value(), temp.value(), p.value());
-    const bool finite = math::isfinite(e.value());
-    const bool valid = positive & finite;
-    return valid ? Status::Valid : Status::Invalid;
+    return combine(thermally_perfect_check(rho, e, temp),
+                   positive_check(p.value(),
+                                  ClosureReason::NonfinitePressure,
+                                  ClosureReason::NonpositivePressure));
 }
 
 template <Scalar T, UnitSystem U, std::size_t N>
@@ -413,6 +418,8 @@ CANARY_HOST_DEVICE Closure<T, U>
     const SolveResult<T> r = solve_temperature<T>(gas, f_value, f_full, guess);
     const Temperature<T, U> temp {r.root};
     const Pressure<T, U> p {pressure(rho, mix.gas_constant, temp)};
+    const auto check = combine(combine(composition_check(mix), solve_check(r)),
+                               thermally_perfect_check(rho, e, temp, p));
     return {
       .state =
         {
@@ -421,7 +428,8 @@ CANARY_HOST_DEVICE Closure<T, U>
           .p = p,
           .temp = temp,
         },
-      .status = combine(combine(thermally_perfect_status(rho, e, temp, p), r.status), mix.status),
+      .status = check.status,
+      .diagnostic = check.diagnostic,
     };
 }
 
@@ -436,6 +444,7 @@ CANARY_HOST_DEVICE Closure<T, U>
                                   Pressure<T, U> p)
 {
     const SpecificEnergy<T, U> e {mixture_energy(gas, mix.fractions, temp.value()).e};
+    const auto check = combine(composition_check(mix), thermally_perfect_check(rho, e, temp, p));
     return {
       .state =
         {
@@ -444,7 +453,8 @@ CANARY_HOST_DEVICE Closure<T, U>
           .p = p,
           .temp = temp,
         },
-      .status = combine(thermally_perfect_status(rho, e, temp, p), mix.status),
+      .status = check.status,
+      .diagnostic = check.diagnostic,
     };
 }
 

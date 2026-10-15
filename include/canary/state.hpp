@@ -238,11 +238,68 @@ template <Scalar T, UnitSystem U> struct TemperatureGuess {
     Temperature<T, U> temp;
 };
 
+// Specific cause selected by a closure. None denotes a successful calculation.
+// Field reasons apply to the heavy state unless diagnostic.mode identifies a mode.
+enum class ClosureReason : unsigned char {
+    None,
+    CompositionSpeciesCountOverflow,
+    CompositionNonfiniteTotal,
+    CompositionNonpositiveTotal,
+    CompositionNonfiniteWeight,
+    CompositionNoPositiveWeight,
+    CompositionWeightOutOfRange,
+    CompositionSumMismatch,
+    NonfiniteTemperatureBounds,
+    ReversedTemperatureBounds,
+    NonfiniteTemperatureGuess,
+    InvalidRelativeTolerance,
+    InvalidAbsoluteTolerance,
+    NegativeIterationLimit,
+    NonfiniteEndpointResidual,
+    NoTemperatureBracket,
+    NonfiniteInteriorResidual,
+    IterationLimit,
+    PrecisionLimit,
+    NonfiniteFullResidual,
+    NonfiniteFullDerivative,
+    ZeroFullDerivative,
+    NonfiniteDensity,
+    NonpositiveDensity,
+    NonfiniteEnergy,
+    NonpositiveEnergy,
+    NonfinitePressure,
+    NonpositivePressure,
+    NonfiniteTemperature,
+    NonpositiveTemperature,
+    NonfiniteEnergyDensity,
+    NonpositiveEnergyDensity,
+    NonfiniteGasConstant,
+    NonpositiveGasConstant,
+    NonfiniteIsochoricHeat,
+    NonpositiveIsochoricHeat,
+    NonfiniteIsobaricHeat,
+    NonpositiveIsobaricHeat,
+    NonfiniteCapacityRatio,
+    CapacityRatioNotAboveOne,
+    AbsentModeEnergy,
+};
+
+struct ClosureDiagnostic {
+    ClosureReason reason {ClosureReason::None};
+    OptionalModeIndex mode {};
+};
+
 // Result of a closure: the state of the model and the status of the
 // calculation. The state must not be used when the status is Invalid.
+// Diagnostics select the highest severity, retaining the first cause on a tie:
+// composition, temperature solves in evaluation order, then returned fields.
+// Field checks visit density, energy, temperature and pressure, followed by
+// modes in index order. Calorically perfect models then check energy density
+// and coefficients. Diagnostic values are retained on failure.
 template <ThermoStateType S> struct ClosureOf {
     S state;
     Status status;
+    ClosureDiagnostic diagnostic;
 };
 
 // Result of a closure of a single-temperature model.

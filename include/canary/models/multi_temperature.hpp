@@ -469,7 +469,7 @@ CANARY_HOST_DEVICE T energy_sum(const std::array<SpecificEnergy<T, U>, M>& mode_
 
 // Closure of the state with the given members. The status combines the
 // status of (rho, e, T, p), of (rho, e_m, T_m) for every mode (see
-// thermally_perfect_status) and status.
+// thermally_perfect_check) and status.
 template <Scalar T, UnitSystem U, std::size_t M>
 CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
   multi_temperature_closure(Density<T, U> rho,
@@ -478,14 +478,16 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
                             Temperature<T, U> temp,
                             const std::array<SpecificEnergy<T, U>, M>& mode_e,
                             const std::array<ModeTemperature<T, U>, M>& mode_temp,
-                            Status status)
+                            ClosureCheck check)
 {
-    Status s = combine(thermally_perfect_status(rho, e, temp, p), status);
+    check = combine(check, thermally_perfect_check(rho, e, temp, p));
     for (const ModeIndex m : mode_indices(0, M)) {
-        s = combine(s,
-                    thermally_perfect_status(rho,
-                                             mode_e[m.value()],
-                                             Temperature<T, U> {mode_temp[m.value()].value()}));
+        check = combine(
+          check,
+          for_mode(thermally_perfect_check(rho,
+                                           mode_e[m.value()],
+                                           Temperature<T, U> {mode_temp[m.value()].value()}),
+                   m));
     }
     return {
       .state =
@@ -497,7 +499,8 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
           .mode_e = mode_e,
           .mode_temp = mode_temp,
         },
-      .status = s,
+      .status = check.status,
+      .diagnostic = check.diagnostic,
     };
 }
 
@@ -541,7 +544,7 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
                                       Density<T, U> rho,
                                       Temperature<T, U> temp,
                                       const std::array<ModeTemperature<T, U>, M>& mode_temp,
-                                      Status status,
+                                      ClosureCheck check,
                                       Pressure<T, U> p)
 {
     std::array<SpecificEnergy<T, U>, M> mode_e {};
@@ -558,7 +561,7 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
                                      temp,
                                      mode_e,
                                      mode_temp,
-                                     combine(status, mix.status));
+                                     combine(composition_check(mix), check));
 }
 
 template <Scalar T,
@@ -576,7 +579,7 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
                                       Density<T, U> rho,
                                       Temperature<T, U> temp,
                                       const std::array<ModeTemperature<T, U>, M>& mode_temp,
-                                      Status status)
+                                      ClosureCheck check)
 {
     return multi_temperature_from_temperatures(
       gas,
@@ -585,7 +588,7 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
       rho,
       temp,
       mode_temp,
-      status,
+      check,
       multi_temperature_pressure(gas, sums, rho, temp, mode_temp));
 }
 
@@ -638,7 +641,7 @@ CANARY_HOST_DEVICE SolveResult<T> mode_temperature_from_energy(
 template <Scalar T, UnitSystem U, std::size_t M> struct ModeSolve {
     std::array<ModeTemperature<T, U>, M> temp;
     std::array<bool, M> present;
-    Status status;
+    ClosureCheck check;
 };
 
 // Solves every mode except skip (pass absence to solve all) with
@@ -667,12 +670,20 @@ CANARY_HOST_DEVICE void solve_mode_temperatures(
         out.present[m.value()] = mode_present(gas, y, m);
         if (!out.present[m.value()]) {
             out.temp[m.value()] = ModeTemperature<T, U> {T(guess)};
+            const auto energy = ScalarTraits<T>::value(mode_e[m.value()].value());
+            if (!std::isfinite(energy)) {
+                out.check =
+                  combine(out.check, for_mode(invalid_closure(ClosureReason::NonfiniteEnergy), m));
+            } else if (energy != 0) {
+                out.check =
+                  combine(out.check, for_mode(invalid_closure(ClosureReason::AbsentModeEnergy), m));
+            }
             continue;
         }
         const SolveResult<T> r =
           mode_temperature_from_energy(gas, mix, y, m, mode_e[m.value()], guess);
         out.temp[m.value()] = ModeTemperature<T, U> {r.root};
-        out.status = combine(out.status, r.status);
+        out.check = combine(out.check, for_mode(solve_check(r), m));
     }
 }
 
@@ -693,7 +704,7 @@ CANARY_HOST_DEVICE ModeSolve<T, U, M> empty_mode_solve()
 {
     ModeSolve<T, U, M> out {};
     out.present.fill(true);
-    out.status = Status::Valid;
+    out.check = {};
     return out;
 }
 
@@ -1126,7 +1137,7 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
                                                   rho,
                                                   temp,
                                                   detail::equal_mode_temperatures<T, U, M>(temp),
-                                                  r.status);
+                                                  detail::solve_check(r));
     c.state.e = e;
     return c;
 }
@@ -1154,7 +1165,7 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
                                                   rho,
                                                   temp,
                                                   detail::equal_mode_temperatures<T, U, M>(temp),
-                                                  Status::Valid,
+                                                  detail::ClosureCheck {},
                                                   p);
     return c;
 }
@@ -1180,7 +1191,7 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
       rho,
       temp,
       detail::equal_mode_temperatures<T, U, M>(temp),
-      Status::Valid);
+      detail::ClosureCheck {});
 }
 
 // rho = p / (R T), with R = sum(y_i R_i) over all species; p is kept.
@@ -1206,7 +1217,7 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
                                                   rho,
                                                   temp,
                                                   detail::equal_mode_temperatures<T, U, M>(temp),
-                                                  Status::Valid,
+                                                  detail::ClosureCheck {},
                                                   p);
     return c;
 }
@@ -1251,7 +1262,7 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
       temp,
       mode_e,
       mode_temp,
-      mix.status);
+      detail::composition_check(mix));
 }
 
 // T = (p / rho - y_e R_e T_e) / R_h; p is kept.
@@ -1284,7 +1295,7 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
                                                          rho,
                                                          temp,
                                                          mode_temp,
-                                                         Status::Valid,
+                                                         detail::ClosureCheck {},
                                                          p);
     return c;
 }
@@ -1313,7 +1324,7 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
       rho,
       temp,
       detail::mode_values<M>(mode_temperatures),
-      Status::Valid);
+      detail::ClosureCheck {});
 }
 
 // rho = p / (R_h T + y_e R_e T_e); p is kept.
@@ -1346,7 +1357,7 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
                                                          rho,
                                                          temp,
                                                          mode_temp,
-                                                         Status::Valid,
+                                                         detail::ClosureCheck {},
                                                          p);
     return c;
 }
@@ -1355,9 +1366,13 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
 // elements, rho e_m; e_m = (rho e_m) / rho. Each T_m is found by
 // detail::mode_temperature_from_energy, starting from T. A mode whose
 // species are all absent (sum of their mass fractions 0) is not solved; its
-// temperature is T. The status combines detail::multi_temperature_closure,
-// the solve statuses (NotConverged, or Invalid when no bracket has a sign
-// change) and the composition status.
+// temperature is T. Its supplied energy value must be exactly zero; otherwise
+// the result is Invalid with AbsentModeEnergy, retaining the supplied energy.
+// Dual derivatives of an absent mode temperature are not determined by its
+// energy equation; the fallback follows T. Supplied energy derivatives are
+// retained, and validity checks use value parts only. The status combines
+// detail::multi_temperature_closure, the solve statuses (NotConverged, or Invalid when no bracket
+// has a sign change) and the composition status.
 
 // T in closed form from e_tr = e - sum(e_m)
 // (detail::translational_temperature); e is kept.
@@ -1401,7 +1416,7 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
       temp,
       mode_e,
       solved.temp,
-      combine(solved.status, mix.status));
+      combine(detail::composition_check(mix), solved.check));
 }
 
 // The mode temperatures are solved from p / (rho R), with R = sum(y_i R_i)
@@ -1451,7 +1466,7 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
                                              temp,
                                              mode_e,
                                              solved.temp,
-                                             combine(solved.status, mix.status));
+                                             combine(detail::composition_check(mix), solved.check));
 }
 
 // e = e_tr(T) + sum(e_m), p = rho (R_h T + y_e R_e T_e).
@@ -1495,7 +1510,7 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
       temp,
       mode_e,
       solved.temp,
-      combine(solved.status, mix.status));
+      combine(detail::composition_check(mix), solved.check));
 }
 
 // rho = p / (R_h T + y_e R_e T_e), then e_m = (rho e_m) / rho. With e-
@@ -1538,7 +1553,7 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
                                                    rho_e_m[(*skip).value()]);
         t_e = r.root;
         solved.temp[(*skip).value()] = ModeTemperature<T, U> {r.root};
-        solved.status = r.status;
+        solved.check = detail::for_mode(detail::solve_check(r), *skip);
     }
     const Density<T, U> rho {
       T(p.value() / T((sums.gas_constant * temp.value()) + (sums.electron_gas_constant * t_e))),
@@ -1561,7 +1576,7 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, M>>
                                              temp,
                                              mode_e,
                                              solved.temp,
-                                             combine(solved.status, mix.status));
+                                             combine(detail::composition_check(mix), solved.check));
 }
 
 // Heat capacities and heavy/electron gas constants per mixture mass.

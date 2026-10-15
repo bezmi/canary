@@ -2,17 +2,18 @@
 #define CANARY_MODELS_CALORICALLY_PERFECT_HPP
 
 #include <array>
-#include <cmath>
-#include <concepts>
-#include <cstddef>
-#include <format>
 #include <canary/build.hpp>
 #include <canary/config.hpp>
+#include <canary/detail/closure.hpp>
 #include <canary/quantity.hpp>
 #include <canary/scalar.hpp>
 #include <canary/species.hpp>
 #include <canary/state.hpp>
 #include <canary/status.hpp>
+#include <cmath>
+#include <concepts>
+#include <cstddef>
+#include <format>
 #include <ranges>
 
 namespace canary
@@ -110,21 +111,48 @@ template <Scalar C, UnitSystem U> struct PerfectCoefficients {
 // Every state value, energy density and coefficient must have a finite,
 // positive value part; gamma must exceed one. Derivatives do not set validity.
 template <Scalar T, Scalar C, UnitSystem U>
-CANARY_HOST_DEVICE constexpr Status state_status(const PerfectCoefficients<C, U>& k,
-                                                 const ThermoState<T, U>& state,
-                                                 EnergyDensity<T, U> rho_e)
+CANARY_HOST_DEVICE constexpr Closure<T, U> perfect_closure(const PerfectCoefficients<C, U>& k,
+                                                           const ThermoState<T, U>& state,
+                                                           EnergyDensity<T, U> rho_e)
 {
-    return all_finite_positive(state.rho.value(),
-                               state.e.value(),
-                               state.p.value(),
-                               state.temp.value(),
-                               rho_e.value(),
-                               k.gas_constant.value(),
-                               k.cv.value(),
-                               k.cp.value(),
-                               k.gamma.value() - C(1))
-             ? Status::Valid
-             : Status::Invalid;
+    ClosureCheck check {};
+    check = combine(check,
+                    positive_check(state.rho.value(),
+                                   ClosureReason::NonfiniteDensity,
+                                   ClosureReason::NonpositiveDensity));
+    check = combine(check,
+                    positive_check(state.e.value(),
+                                   ClosureReason::NonfiniteEnergy,
+                                   ClosureReason::NonpositiveEnergy));
+    check = combine(check,
+                    positive_check(state.temp.value(),
+                                   ClosureReason::NonfiniteTemperature,
+                                   ClosureReason::NonpositiveTemperature));
+    check = combine(check,
+                    positive_check(state.p.value(),
+                                   ClosureReason::NonfinitePressure,
+                                   ClosureReason::NonpositivePressure));
+    check = combine(check,
+                    positive_check(rho_e.value(),
+                                   ClosureReason::NonfiniteEnergyDensity,
+                                   ClosureReason::NonpositiveEnergyDensity));
+    check = combine(check,
+                    positive_check(k.gas_constant.value(),
+                                   ClosureReason::NonfiniteGasConstant,
+                                   ClosureReason::NonpositiveGasConstant));
+    check = combine(check,
+                    positive_check(k.cv.value(),
+                                   ClosureReason::NonfiniteIsochoricHeat,
+                                   ClosureReason::NonpositiveIsochoricHeat));
+    check = combine(check,
+                    positive_check(k.cp.value(),
+                                   ClosureReason::NonfiniteIsobaricHeat,
+                                   ClosureReason::NonpositiveIsobaricHeat));
+    check = combine(check,
+                    positive_check(C(k.gamma.value() - C(1)),
+                                   ClosureReason::NonfiniteCapacityRatio,
+                                   ClosureReason::CapacityRatioNotAboveOne));
+    return {.state = state, .status = check.status, .diagnostic = check.diagnostic};
 }
 
 // p = (gamma - 1) rho_e, T = p / (rho R), e = rho_e / rho.
@@ -140,7 +168,7 @@ CANARY_HOST_DEVICE Closure<T, U> perfect_from_rho_rho_e(const PerfectCoefficient
                                    .e = specific_energy(rho_e, rho),
                                    .p = p,
                                    .temp = temp};
-    return {.state = state, .status = state_status(k, state, rho_e)};
+    return perfect_closure(k, state, rho_e);
 }
 
 // rho_e = rho e, then as above; the given e is kept.
@@ -153,7 +181,7 @@ CANARY_HOST_DEVICE Closure<T, U>
     const Pressure<T, U> p {pressure(k.gamma, rho_e)};
     const Temperature<T, U> temp {temperature(p, rho, k.gas_constant)};
     const ThermoState<T, U> state {.rho = rho, .e = e, .p = p, .temp = temp};
-    return {.state = state, .status = state_status(k, state, rho_e)};
+    return perfect_closure(k, state, rho_e);
 }
 
 // T = p / (rho R), e = cv T.
@@ -165,7 +193,7 @@ CANARY_HOST_DEVICE Closure<T, U>
     const Temperature<T, U> temp {temperature(p, rho, k.gas_constant)};
     const SpecificEnergy<T, U> e {specific_energy(k.cv, temp)};
     const ThermoState<T, U> state {.rho = rho, .e = e, .p = p, .temp = temp};
-    return {.state = state, .status = state_status(k, state, energy_density(rho, e))};
+    return perfect_closure(k, state, EnergyDensity<T, U> {energy_density(rho, e)});
 }
 
 // p = rho R T, e = cv T.
@@ -182,7 +210,7 @@ CANARY_HOST_DEVICE Closure<T, U> perfect_from_rho_temp(const PerfectCoefficients
       .p = Pressure<T, U> {pressure(rho, k.gas_constant, temp)},
       .temp = temp,
     };
-    return {.state = state, .status = state_status(k, state, energy_density(rho, e))};
+    return perfect_closure(k, state, EnergyDensity<T, U> {energy_density(rho, e)});
 }
 
 // rho = p / (R T), e = cv T.
@@ -194,7 +222,7 @@ CANARY_HOST_DEVICE Closure<T, U>
     const Density<T, U> rho {density(p, k.gas_constant, temp)};
     const SpecificEnergy<T, U> e {specific_energy(k.cv, temp)};
     const ThermoState<T, U> state {.rho = rho, .e = e, .p = p, .temp = temp};
-    return {.state = state, .status = state_status(k, state, energy_density(rho, e))};
+    return perfect_closure(k, state, EnergyDensity<T, U> {energy_density(rho, e)});
 }
 
 // cv, cp, gamma and R; the sound speed a = sqrt(gamma R T) from the state
@@ -403,7 +431,9 @@ template <Scalar T, UnitSystem U>
 CANARY_HOST_DEVICE constexpr Closure<T, U> with_composition_status(Closure<T, U> c,
                                                                    const Mixture<T, U>& mix)
 {
-    c.status = combine(c.status, mix.status);
+    const auto check = combine(composition_check(mix), ClosureCheck {c.status, c.diagnostic});
+    c.status = check.status;
+    c.diagnostic = check.diagnostic;
     return c;
 }
 

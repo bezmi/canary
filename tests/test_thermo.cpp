@@ -35,7 +35,8 @@ constexpr canary::test::IdealParameters air {
 bool identical(const canary::Closure<double, si>& a, const canary::Closure<double, si>& b)
 {
     return a.state.rho == b.state.rho && a.state.e == b.state.e && a.state.p == b.state.p &&
-           a.state.temp == b.state.temp && a.status == b.status;
+           a.state.temp == b.state.temp && a.status == b.status &&
+           a.diagnostic.reason == b.diagnostic.reason && a.diagnostic.mode == b.diagnostic.mode;
 }
 
 using ModeView = canary::ModeEnergyDensityView<double, si>;

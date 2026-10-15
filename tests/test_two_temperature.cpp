@@ -193,6 +193,21 @@ void test_two_temperature()
     const AirSingle single = canary::make_air5<double>(canary::UnitScales<double, si> {}).model;
     const double r = gas_constant_ratio;
 
+    "two-temperature diagnostics distinguish mode and equilibrium solves"_test = [&] {
+        const std::array<double, 5> y {1, 0, 0, 0, 0};
+        const auto mix = mixture(gas, fractions(y));
+        const std::array<double, 1> energies {1e100};
+        const auto mode =
+          thermo_state(gas, mix, Rho {1}, Temp {4000}, mode_energy_densities<si>(energies));
+        expect(mode.status == Status::Invalid);
+        expect(mode.diagnostic.reason == canary::ClosureReason::NoTemperatureBracket);
+        expect(mode.diagnostic.mode == canary::OptionalModeIndex {canary::ModeIndex {0}});
+        const auto equilibrium = thermo_state(gas, mix, Rho {1}, E {1e100});
+        expect(equilibrium.status == Status::Invalid);
+        expect(equilibrium.diagnostic.reason == canary::ClosureReason::NoTemperatureBracket);
+        expect(!equilibrium.diagnostic.mode.has_value());
+    };
+
     "two-temperature properties expose separate energy derivatives"_test = [&] {
         const std::array<D, 5> y {D(0.7), D(0.2), D(0.05), D(0.03), D(0.02)};
         const auto mix = mixture(gas, fractions(y));

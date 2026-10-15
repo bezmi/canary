@@ -60,6 +60,25 @@ void test_calorically_perfect()
       canary::make_calorically_perfect(canary::SpecificGasConstant<double, si> {287.0},
                                        canary::HeatCapacityRatio {1.4});
 
+    "perfect closure diagnostics distinguish nonfinite and nonpositive fields"_test = [&] {
+        using Reason = canary::ClosureReason;
+        const auto bad_density = thermo_state(air, Rho {0}, Temp {300});
+        expect(bad_density.status == Status::Invalid);
+        expect(bad_density.diagnostic.reason == Reason::NonpositiveDensity);
+        const auto nonfinite =
+          thermo_state(air, Rho {std::numeric_limits<double>::infinity()}, Temp {300});
+        expect(nonfinite.diagnostic.reason == Reason::NonfiniteDensity);
+        const auto bad_energy = thermo_state(air, Rho {1}, E {-1});
+        expect(bad_energy.diagnostic.reason == Reason::NonpositiveEnergy);
+        expect(!bad_energy.diagnostic.mode.has_value());
+        auto invalid_coefficients = air;
+        invalid_coefficients.cp = canary::SpecificHeat<double, si> {-1};
+        const auto coefficients = thermo_state(invalid_coefficients, Rho {1}, Temp {300});
+        expect(coefficients.diagnostic.reason == Reason::NonpositiveIsobaricHeat);
+        const auto valid = thermo_state(air, Rho {1}, Temp {300});
+        expect(valid.status == Status::Valid && valid.diagnostic.reason == Reason::None);
+    };
+
     "(rho, e) -> (p, T) -> (rho, e) round trips through every closure"_test = [&] {
         for (const double rho_v : densities) {
             for (const double e_v : energies) {

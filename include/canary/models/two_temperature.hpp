@@ -224,19 +224,20 @@ CANARY_HOST_DEVICE Temperature<T, U>
 // value parts and both energies finite value parts (they may be negative);
 // Invalid otherwise.
 template <Scalar T, UnitSystem U>
-CANARY_HOST_DEVICE Status two_temperature_status(Density<T, U> rho,
-                                                 SpecificEnergy<T, U> e,
-                                                 Temperature<T, U> temp,
-                                                 SpecificEnergy<T, U> e_ve,
-                                                 ModeTemperature<T, U> t_ve,
-                                                 Pressure<T, U> p)
+CANARY_HOST_DEVICE ClosureCheck two_temperature_check(Density<T, U> rho,
+                                                      SpecificEnergy<T, U> e,
+                                                      Temperature<T, U> temp,
+                                                      SpecificEnergy<T, U> e_ve,
+                                                      ModeTemperature<T, U> t_ve,
+                                                      Pressure<T, U> p)
 {
-    return combine(thermally_perfect_status(rho, e, temp, p),
-                   thermally_perfect_status(rho, e_ve, Temperature<T, U> {t_ve.value()}));
+    return combine(thermally_perfect_check(rho, e, temp, p),
+                   for_mode(thermally_perfect_check(rho, e_ve, Temperature<T, U> {t_ve.value()}),
+                            ModeIndex {0}));
 }
 
 // Closure of the state with the given members. The status combines
-// two_temperature_status with status.
+// two_temperature_check with the supplied diagnostic.
 template <Scalar T, UnitSystem U>
 CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, 1>>
   two_temperature_closure(Density<T, U> rho,
@@ -245,8 +246,9 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, 1>>
                           Temperature<T, U> temp,
                           SpecificEnergy<T, U> e_ve,
                           ModeTemperature<T, U> t_ve,
-                          Status status)
+                          ClosureCheck check)
 {
+    check = combine(check, two_temperature_check(rho, e, temp, e_ve, t_ve, p));
     return {
       .state =
         {
@@ -257,7 +259,8 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, 1>>
           .mode_e = {e_ve},
           .mode_temp = {t_ve},
         },
-      .status = combine(two_temperature_status(rho, e, temp, e_ve, t_ve, p), status),
+      .status = check.status,
+      .diagnostic = check.diagnostic,
     };
 }
 
@@ -315,7 +318,7 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, 1>>
                                    temp,
                                    e_ve,
                                    t_ve,
-                                   mix.status);
+                                   composition_check(mix));
 }
 
 template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
@@ -351,13 +354,14 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, 1>>
     const SolveResult<T> r =
       solve_mode_temperature(gas, mix, e_ve, ScalarTraits<T>::value(temp.value()));
     const TranslationalRotationalSums<T> sums = translational_rotational_sums(gas, mix.fractions);
-    return two_temperature_closure(rho,
-                                   two_temperature_energy(gas, mix, sums, temp, e_ve),
-                                   p,
-                                   temp,
-                                   e_ve,
-                                   ModeTemperature<T, U> {r.root},
-                                   combine(r.status, mix.status));
+    return two_temperature_closure(
+      rho,
+      two_temperature_energy(gas, mix, sums, temp, e_ve),
+      p,
+      temp,
+      e_ve,
+      ModeTemperature<T, U> {r.root},
+      combine(composition_check(mix), for_mode(solve_check(r), ModeIndex {0})));
 }
 
 template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
@@ -405,6 +409,7 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, 1>>
           .mode_temp = {ModeTemperature<T, U> {c.state.temp.value()}},
         },
       .status = c.status,
+      .diagnostic = c.diagnostic,
     };
 }
 
@@ -469,7 +474,7 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, 1>>
 
 // Closures with the vibrational-electronic temperature T_ve given as a mode
 // temperature range of one element. e_ve = e_ve(T_ve). The status combines
-// detail::two_temperature_status and the composition status.
+// detail::two_temperature_check and the composition status.
 
 // T in closed form from e and e_ve (detail::two_temperature_temperature),
 // p = rho R T; e is kept.
@@ -493,7 +498,7 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, 1>>
                                            temp,
                                            e_ve,
                                            t_ve,
-                                           mix.status);
+                                           detail::composition_check(mix));
 }
 
 // T = p / (rho R); p is kept.
@@ -556,7 +561,7 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, 1>>
 // Closures with the vibrational-electronic energy given as a mode energy
 // density range of one element, rho e_ve; e_ve = (rho e_ve) / rho. T_ve is
 // found by detail::solve_mode_temperature, starting from T. The status
-// combines detail::two_temperature_status, the solve status (NotConverged,
+// combines detail::two_temperature_check, the solve status (NotConverged,
 // or Invalid when no bracket has a sign change) and the composition status.
 
 // T in closed form from e and e_ve (detail::two_temperature_temperature),
@@ -576,13 +581,15 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, 1>>
     const Temperature<T, U> temp = detail::two_temperature_temperature(gas, mix, sums, e, e_ve);
     const detail::SolveResult<T> r =
       detail::solve_mode_temperature(gas, mix, e_ve, ScalarTraits<T>::value(temp.value()));
-    return detail::two_temperature_closure(rho,
-                                           e,
-                                           Pressure<T, U> {pressure(rho, mix.gas_constant, temp)},
-                                           temp,
-                                           e_ve,
-                                           ModeTemperature<T, U> {r.root},
-                                           combine(r.status, mix.status));
+    return detail::two_temperature_closure(
+      rho,
+      e,
+      Pressure<T, U> {pressure(rho, mix.gas_constant, temp)},
+      temp,
+      e_ve,
+      ModeTemperature<T, U> {r.root},
+      combine(detail::composition_check(mix),
+              detail::for_mode(detail::solve_check(r), ModeIndex {0})));
 }
 
 // T = p / (rho R); p is kept.

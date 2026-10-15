@@ -63,6 +63,10 @@ template <canary::ThermoStateType S> S checked_state(const canary::ClosureOf<S>&
         throw std::runtime_error("benchmark closure returned status " +
                                  std::to_string(static_cast<int>(closure.status)));
     }
+    if (closure.diagnostic.reason != canary::ClosureReason::None ||
+        closure.diagnostic.mode.has_value()) {
+        throw std::runtime_error("valid benchmark closure returned a failure diagnostic");
+    }
     return closure.state;
 }
 

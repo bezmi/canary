@@ -35,6 +35,7 @@ Closure<T, si>
           .temp = temp,
         },
       .status = Status::Valid,
+      .diagnostic = {},
     };
 }
 
@@ -51,6 +52,7 @@ Closure<T, si>
           .temp = temp,
         },
       .status = Status::Valid,
+      .diagnostic = {},
     };
 }
 
@@ -142,6 +144,7 @@ Closure<T, si> close(const GuessGas& g,
 {
     auto c = ideal_from_rho_e(g.parameters, rho, e);
     c.status = Status::NotConverged;
+    c.diagnostic = {ClosureReason::IterationLimit, {}};
     return c;
 }
 
@@ -187,6 +190,7 @@ Closure<T, si> close(const OwnEnergyDensityGas& g, Density<T, si> rho, EnergyDen
 {
     auto c = ideal_from_rho_e(g.parameters, rho, specific_energy(rho_e, rho));
     c.status = Status::CompositionViolation;
+    c.diagnostic = {ClosureReason::CompositionSumMismatch, {}};
     return c;
 }
 
