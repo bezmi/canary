@@ -451,4 +451,26 @@ for valid in ({}, {"N": 2}, {"N": 4294967295}, None):
     assert not list(validator.iter_errors(file)), valid
 print("Element schema and import validation boundaries: checked")
 
+# Every JSON converter shares the regular-file output contract.
+output_runs = [*runs.values(),
+               [tools / "gdtk_reactions_to_json.py", data / "gdtk_mechanism_sample.inp"],
+               [tools / "gdtk_exchange_to_json.py", data / "gdtk_exchange_sample.lua"],
+               [tools / "gdtk_collision_integrals_to_json.py", data / "gdtk_collision_integrals_sample.lua",
+                "--species", "N2", "O2"]]
+with tempfile.TemporaryDirectory() as tmp:
+    directory = Path(tmp)
+    original = directory / "original.json"
+    original.write_text('{"original": true}\n', encoding="utf-8")
+    out = directory / "output.json"
+    out.symlink_to(original)
+    for command in output_runs:
+        result = subprocess.run([sys.executable, *map(str, command), "--source", "test", "-o", str(out)],
+                                capture_output=True, text=True)
+        assert result.returncode and "symlinks are not supported" in result.stderr, result.stderr
+        assert str(out) in result.stderr
+        assert out.is_symlink()
+        assert original.read_text() == '{"original": true}\n'
+        assert not list(directory.glob(".canary-*.tmp"))
+print("JSON converter destination checks: checked")
+
 sys.exit(1 if failures else 0)

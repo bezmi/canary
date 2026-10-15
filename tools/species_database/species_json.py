@@ -7,7 +7,11 @@ rounding, so that "28.0134" g/mol and "28.0134e-3" kg/mol give the same double.
 """
 
 import json
+import os
+import secrets
+import stat
 from decimal import Decimal
+from pathlib import Path
 
 FORMAT = "canary-species-2"
 UNITS = {"molar_mass": "kg/mol", "energy": "J/mol", "temperature": "K", "length": "m"}
@@ -140,7 +144,75 @@ def species_file(species, reference=None, notes=None):
     return out
 
 
+def _destination_permissions(path):
+    try:
+        mode = path.lstat().st_mode
+    except FileNotFoundError:
+        return None
+    if not stat.S_ISREG(mode):
+        raise OSError("destination must be a regular file; symlinks are not supported")
+    return stat.S_IMODE(mode)
+
+
+def _open_temporary(path):
+    for _ in range(128):
+        temporary = path.parent / f".canary-{secrets.token_hex(16)}.tmp"
+        try:
+            return temporary, open(temporary, "x", encoding="utf-8")
+        except FileExistsError:
+            continue
+    raise OSError("cannot create a unique temporary file")
+
+
 def dump(data, path):
-    with open(path, "w", encoding="utf-8") as stream:
-        json.dump(data, stream, indent=3)
-        stream.write("\n")
+    """Serialize finite JSON, then atomically replace a regular-file destination.
+
+    Preserve existing permission bits and reject symlinks. Failures before
+    replacement leave the destination unchanged and attempt temporary cleanup.
+    Serialization raises TypeError or ValueError; filesystem failures raise
+    OSError with the destination and operation. Parent directories must exist.
+    Callers coordinate concurrent path changes; no power-loss durability is
+    provided.
+    """
+    text = json.dumps(data, indent=3, allow_nan=False) + "\n"
+    path = Path(path)
+    temporary = None
+    stream = None
+    operation = "inspect destination"
+    try:
+        permissions = _destination_permissions(path)
+        operation = "create temporary file"
+        temporary, stream = _open_temporary(path)
+        # Restrict access before writing contents; writes can clear special bits.
+        operation = "set temporary file permissions"
+        if permissions is not None:
+            os.chmod(temporary, permissions)
+        operation = "write output"
+        if stream.write(text) != len(text):
+            raise OSError("incomplete write")
+        operation = "flush output"
+        stream.flush()
+        operation = "close output"
+        stream.close()
+        operation = "inspect destination"
+        permissions = _destination_permissions(path)
+        operation = "set replacement permissions"
+        if permissions is not None:
+            os.chmod(temporary, permissions)
+        operation = "replace destination"
+        os.replace(temporary, path)
+        temporary = None
+    except OSError as error:
+        raise OSError(f"{path}: cannot {operation}: {error}") from error
+    finally:
+        # Cleanup must not obscure the failed operation.
+        if stream is not None and not stream.closed:
+            try:
+                stream.close()
+            except OSError:
+                pass
+        if temporary is not None:
+            try:
+                temporary.unlink()
+            except OSError:
+                pass

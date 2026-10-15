@@ -22,9 +22,10 @@ Usage: gdtk_reactions_to_json.py mechanism.inp --source TEXT -o out.json
 """
 
 import argparse
-import json
 import re
 from decimal import Decimal
+
+import species_json
 
 FORMAT = "canary-reactions-1"
 UNITS = {"quantity": "mol", "length": "m", "time": "s", "temperature": "K"}
@@ -169,9 +170,7 @@ def main():
         "reactions": [convert_reaction(body) for body in entries(text, "Reaction")],
         "reference": args.source,
     }
-    with open(args.output, "w", encoding="utf-8") as stream:
-        json.dump(out, stream, indent=3)
-        stream.write("\n")
+    species_json.dump(out, args.output)
 
 
 if __name__ == "__main__":

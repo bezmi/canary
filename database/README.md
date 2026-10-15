@@ -63,18 +63,21 @@ set of physical rules by hand in the generated JSON files.
 
 ## File replacement
 
-The C++ file writers serialize before creating a temporary file beside the
-requested destination. They check writing, flushing and closing before renaming
-that file over the destination. An existing destination must be a regular file;
+The C++ file writers and Python JSON converters serialize before creating a
+temporary file beside the requested destination. They check writing, flushing
+and closing before renaming that file over the destination. An existing destination must be a regular file;
 symlinks, including dangling symlinks, are rejected. Existing permission bits
 are copied to the replacement. New files use the process's normal file-creation
 permissions. Parent directories must already exist.
 
 A failure before replacement leaves the destination untouched and attempts to
-remove the temporary file. Errors report `DatabaseError` with the destination
-path and failed operation. Reads report I/O failures instead of returning partial
-contents. Hard links to an old destination retain its previous contents because
-replacement changes the destination's directory entry.
+remove the temporary file. C++ errors report `DatabaseError`; Python filesystem
+errors report `OSError`. Both include the destination path and failed operation.
+Python JSON serialization rejects non-finite numbers with `ValueError` and
+unsupported objects with `TypeError`, before touching any output file. C++ reads
+report I/O failures instead of returning partial contents. Hard links to an old
+destination retain its previous contents because replacement changes the
+destination's directory entry.
 
 Atomic replacement prevents readers from seeing a partially written document.
 It does not provide power-loss durability: the writers do not synchronize files

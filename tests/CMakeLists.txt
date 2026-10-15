@@ -110,6 +110,8 @@ if(TARGET canary_database)
     find_package(Python3 COMPONENTS Interpreter)
   endif()
   if(Python3_FOUND)
+    add_test(NAME canary.database.output
+             COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/species_database/test_json_output.py)
     execute_process(COMMAND ${Python3_EXECUTABLE} -c "import yaml, jsonschema" RESULT_VARIABLE python_modules_missing
                     OUTPUT_QUIET ERROR_QUIET)
     if(NOT python_modules_missing)

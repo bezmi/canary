@@ -12,9 +12,10 @@ Usage: gdtk_collision_integrals_to_json.py data.lua [--species N2 O2 ...]
 """
 
 import argparse
-import json
 import math
 import re
+
+import species_json
 
 FORMAT = "canary-collision-integrals-1"
 UNITS = {"temperature": "K", "area": "m^2"}
@@ -61,9 +62,7 @@ def main():
                 if frozenset((a, b)) not in have:
                     raise SystemExit(f"no collision integrals for {a}:{b}")
     out = {"format": FORMAT, "units": UNITS, "pairs": found, "reference": args.source}
-    with open(args.output, "w", encoding="utf-8") as stream:
-        json.dump(out, stream, indent=3)
-        stream.write("\n")
+    species_json.dump(out, args.output)
 
 
 if __name__ == "__main__":

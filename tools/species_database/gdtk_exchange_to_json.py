@@ -38,6 +38,8 @@ import argparse
 import json
 import re
 
+import species_json
+
 FORMAT = "canary-energy-exchange-1"
 UNITS = {"energy": "J/mol", "temperature": "K", "area": "m^2"}
 # Reference temperature of the cross-section of GDTk's ParkHTC2 correction.
@@ -194,9 +196,7 @@ def main():
         out["chemistry_vibration"] = [e for e in out["chemistry_vibration"] if changes(e)]
         out["electron_impact_ionisation"] = ionisations(args.reactions, args.ionisation_label)
     out["reference"] = args.source
-    with open(args.output, "w", encoding="utf-8") as stream:
-        json.dump(out, stream, indent=3)
-        stream.write("\n")
+    species_json.dump(out, args.output)
 
 
 if __name__ == "__main__":
