@@ -299,31 +299,6 @@ class ExchangeJsonTests(unittest.TestCase):
                     else:
                         self.assertFalse(self.output.exists())
 
-    def test_invalid_correction_preserves_json_output(self):
-        source = self.directory / "exchange.lua"
-        source.write_text("""mechanism[1] = {
-    type = 'V-T', p = 'N2', q = 'N', rate = 'Landau-Teller',
-    relaxation_time = {model = 'ParkHTC', sigma = 0.0,
-        submodel = {model = 'Millikan-White', a = 180.0, b = 0.0262}}
-}
-""")
-        output = self.directory / "converted.json"
-        for existing in (False, True):
-            with self.subTest(existing=existing):
-                if existing:
-                    output.write_bytes(b"original\n")
-                result = subprocess.run([sys.executable, str(TOOLS / "gdtk_exchange_to_json.py"), str(source),
-                                         "--source", "test", "-o", str(output)],
-                                        capture_output=True, text=True, timeout=30)
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn(str(source), result.stderr)
-                self.assertIn("cross_section must be positive", result.stderr)
-                self.assertNotIn("Traceback", result.stderr)
-                if existing:
-                    self.assertEqual(output.read_bytes(), b"original\n")
-                else:
-                    self.assertFalse(output.exists())
-
     def test_negative_reaction_indices(self):
         for name in ("chemistry_vibration", "electron_impact_ionisation"):
             data = copy.deepcopy(self.data)

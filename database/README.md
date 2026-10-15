@@ -4,6 +4,12 @@ The JSON schemas in this directory validate the structure of Canary database
 files. Passing a schema check does not establish that a file can construct a
 valid gas, reaction mechanism or energy-exchange model.
 
+Supported source importers are `tools/species_database/thermo_inp_to_json.py`
+for NASA Glenn records and `tools/species_database/cantera_to_json.py` for
+Cantera NASA9 YAML. GDTk Lua import is not supported. Existing GDTk-derived
+Canary datasets retain their data and provenance; the JSON-to-header tools
+consume those datasets directly.
+
 ## Check a file
 
 With Python and `jsonschema` installed, run from the repository root:
@@ -50,8 +56,8 @@ substitute for construction. Individual schemas may contain additional
 constraints, including those on elemental composition; inspect the shipped
 schema when integrating an editor or an external validator.
 
-The reaction JSON converter and reaction header generator require Python's
-`jsonschema` package. They share structural validation against
+The reaction header generator requires Python's `jsonschema` package. It uses
+structural validation against
 `reactions.schema.json`, format/unit checks and the Arrhenius/equilibrium rules
 of `mechanism_input`. The forward rate must be Arrhenius; a backward rate must
 be Arrhenius or equilibrium. Arrhenius requires `A`, `n` and
@@ -59,7 +65,7 @@ be Arrhenius or equilibrium. Arrhenius requires `A`, `n` and
 `translational_exponent`. An optional `null` value is unset, as in the C++ file
 reader. `other_temperature` remains optional for either model. Errors identify
 the source and the reaction or structural field before output is written.
-The header generator also rejects duplicate JSON keys. Both tools require a
+The header generator also rejects duplicate JSON keys. It requires a
 nonempty reaction list, nonempty sides with positive integer coefficients,
 finite nonnegative third-body efficiencies, positive finite Arrhenius `A`,
 finite `n`, nonnegative finite activation temperatures, and translational
@@ -68,8 +74,8 @@ exponents in [0, 1]. File temperature limits must be finite and satisfy
 after unit conversion, species identity and conservation still require model
 construction checks.
 
-The energy-exchange JSON converter and header generator use the same schema
-validation helper and require `jsonschema`. Their shared model checks match
+The energy-exchange header generator uses the schema validation helper and
+requires `jsonschema`. Its model checks match
 `energy_exchange_input` and `electron_exchange_input`: Park 1993 requires
 `reference_temperature`, Kim 2021 requires `exponent`, and each correction
 forbids the other models' optional fields. Neutral electron cross-sections
@@ -96,8 +102,8 @@ NASA9/CEA coefficient row widths, matching temperature-boundary and blend counts
 matching electronic degeneracy/temperature counts, and sufficient positive
 array capacities. Schema checks reject fractional or out-of-int32 electronic
 degeneracies before integer emission. Missing or null electronic levels still
-produce zero active levels. Collision records require exactly two species names;
-the collision converter shares this validation. Species thermodynamic inputs
+produce zero active levels. Collision records require exactly two species names.
+Species thermodynamic inputs
 require positive finite molar mass and finite charge. NASA9 and CEA boundaries
 must be finite, positive and strictly increasing, with finite coefficients.
 NASA9 blend widths must be finite and positive; blend regions must lie within

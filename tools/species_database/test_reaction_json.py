@@ -268,29 +268,6 @@ class ReactionJsonTests(unittest.TestCase):
                     else:
                         self.assertFalse(self.output.exists())
 
-    def test_invalid_converter_rates_preserve_json_output(self):
-        source = self.directory / "mechanism.inp"
-        original = (ROOT / "tests/data/species/gdtk_mechanism_sample.inp").read_text()
-        invalid = original.replace("A=1.216e+20", "A=-1.216e+20", 1)
-        self.assertNotEqual(original, invalid)
-        source.write_text(invalid)
-        output = self.directory / "output.json"
-        for existing in (False, True):
-            with self.subTest(existing=existing):
-                if existing:
-                    output.write_bytes(b"original\n")
-                result = subprocess.run([sys.executable, str(TOOLS / "gdtk_reactions_to_json.py"), str(source),
-                                         "--source", "test", "-o", str(output)],
-                                        capture_output=True, text=True, timeout=30)
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn(str(source), result.stderr)
-                self.assertIn("A must be finite and positive", result.stderr)
-                self.assertNotIn("Traceback", result.stderr)
-                if existing:
-                    self.assertEqual(output.read_bytes(), b"original\n")
-                else:
-                    self.assertFalse(output.exists())
-
     def test_all_shipped_mechanisms_pass(self):
         for name in ("air5_kim_jo", "air5_park", "air11_kim_jo"):
             with self.subTest(name=name):

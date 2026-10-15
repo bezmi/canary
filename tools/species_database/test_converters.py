@@ -1,9 +1,7 @@
-"""Converts the test excerpts of NASA's thermo.inp, Cantera's airNASA9.yaml
-and a GDTk-layout file, and checks that each gives the same molar masses,
-charges, temperature ranges, blend widths and coefficients as the shipped
-five-species air file (with its transport data for the GDTk layout).
-Converts the GDTk-layout reaction-mechanism, energy-exchange and
-collision-integral samples and checks the converted values.
+"""Convert NASA thermo.inp and Cantera NASA9 excerpts and compare molar masses,
+charges, temperature ranges, blend widths and coefficients with the shipped
+five-species air file. Check malformed inputs, explicit roles, generated
+metadata and JSON output handling.
 
 Usage: test_converters.py <canary source directory>
 """
@@ -32,14 +30,11 @@ runs = {
     "Cantera": [tools / "cantera_to_json.py", data / "cantera_excerpt.yaml", "--species", "N2", "O2", "NO",
                 "--roles", "N2=heavy", "O2=heavy", "NO=heavy",
                 "--atomic-weights", "N=14.0067", "O=15.9994", *blend],
-    "GDTk layout": [tools / "gdtk_to_json.py", "--database", data / "gdtk", "--species", "N2", "--transport",
-                    "--electronic", "--roles", "N2=heavy"],
 }
 
 expected_species = {
     "thermo.inp": {"N2", "O2", "NO"},
     "Cantera": {"N2", "O2", "NO"},
-    "GDTk layout": {"N2"},
 }
 
 failures = 0
@@ -50,9 +45,6 @@ with tempfile.TemporaryDirectory() as tmp:
         converted = json.loads(out.read_text())
         assert converted["format"] == "canary-species-2"
         assert set(converted["species"]) == expected_species[label], f"{label}: unexpected species set"
-        if label == "GDTk layout":
-            assert converted["species"]["N2"]["electronic_levels"] == shipped["N2"]["electronic_levels"]
-            assert converted["species"]["N2"]["transport"] == shipped["N2"]["transport"]
         for name, record in converted["species"].items():
             expected = shipped[name]
             for key in ("molar_mass", "charge", "role", "elements"):
@@ -63,12 +55,6 @@ with tempfile.TemporaryDirectory() as tmp:
                 if record["thermo"][key] != expected["thermo"][key]:
                     failures += 1
                     print(f"{label} {name}: thermo {key} differs")
-            if "electronic_levels" in record and record["electronic_levels"] != expected["electronic_levels"]:
-                failures += 1
-                print(f"{label} {name}: electronic levels differ")
-            if "transport" in record and record["transport"] != expected["transport"]:
-                failures += 1
-                print(f"{label} {name}: transport differs")
             print(f"{label} {name}: checked")
 
 # Duplicate atomic weights and species names must be rejected before output.
@@ -100,6 +86,31 @@ def reject_conversion(command, out, diagnostic):
     assert result.returncode != 0 and diagnostic in result.stderr, result.stderr
     assert "Traceback" not in result.stderr, result.stderr
     assert not out.exists()
+
+
+# Unsupported models and missing selected records must not produce JSON.
+with tempfile.TemporaryDirectory() as tmp:
+    out = Path(tmp) / "invalid.json"
+    records = yaml.load((data / "cantera_excerpt.yaml").read_text(), Loader=yaml.BaseLoader)
+    for model in ("NASA7", "constant-cp", "unknown"):
+        changed = copy.deepcopy(records)
+        changed["species"][0]["thermo"]["model"] = model
+        source = Path(tmp) / "unsupported.yaml"
+        source.write_text(yaml.safe_dump(changed))
+        command = list(runs["Cantera"])
+        command[1] = source
+        reject_conversion(command, out, f"N2: thermo model is {model}, not NASA9")
+    source = Path(tmp) / "empty.yaml"
+    source.write_text("species: []\n")
+    command = list(runs["Cantera"])
+    command[1] = source
+    reject_conversion(command, out, f"N2: not in {source}")
+    source = Path(tmp) / "empty.inp"
+    source.write_text("")
+    command = list(runs["thermo.inp"])
+    command[1] = source
+    reject_conversion(command, out, "N2: not found in thermo.inp")
+print("Unsupported models and missing species: checked")
 
 
 # Every importer requires one unambiguous declaration for each selected species.
@@ -151,18 +162,6 @@ with tempfile.TemporaryDirectory() as tmp:
     assert records["carrier"]["role"] == "electron" and records["carrier"]["charge"] == -1
     assert records["carrier"]["elements"] == {}
     assert records["e-"]["elements"] == {"N": 1}
-
-    # A GDTk-layout electron with a user-chosen label and a constant cp/R fit.
-    (Path(tmp) / "carrier.lua").write_text(
-        "db.carrier.charge = -1\n"
-        "db.carrier.M = {value = 5.48579909e-7}\n"
-        "db.carrier.ceaThermoCoeffs = {nsegments = 1, T_break_points = {200, 20000}, "
-        "segment0 = {0, 0, 2.5, 0, 0, 0, 0, 0, 0}}\n", encoding="utf-8")
-    subprocess.run([sys.executable, str(tools / "gdtk_to_json.py"), "--database", tmp,
-                    "--species", "carrier", "--roles", "carrier=electron",
-                    "--source", "test", "-o", str(out)], check=True)
-    record = json.loads(out.read_text())["species"]["carrier"]
-    assert record["role"] == "electron" and record["charge"] == -1
 
     # A complete fixed-width electron record in thermo.inp layout.
     metadata = " 1" + " " * 8 + "E " + "  1.00" + " " * 34 + "0.0005485799".rjust(13)
@@ -277,137 +276,6 @@ with tempfile.TemporaryDirectory() as tmp:
         out.unlink()
 print("NASA9 complete records, powers and Fortran numbers: checked")
 
-# GDTk layout with the bracket form of a species name (N+ in N_plus.lua),
-# with its electronic levels converted to temperatures: equal to the shipped
-# eleven-species air file.
-with tempfile.TemporaryDirectory() as tmp:
-    out = Path(tmp) / "ion.json"
-    subprocess.run([sys.executable, str(tools / "gdtk_to_json.py"), "--database", str(data / "gdtk"),
-                    "--species", "N+", "--roles", "N+=heavy", "--electronic", "--source", "test", "-o", str(out)], check=True)
-    converted = json.loads(out.read_text())["species"]["N+"]
-    expected = json.loads((root / "database" / "data" / "air11.json").read_text())["species"]["N+"]
-    for key in ("molar_mass", "charge", "role", "electronic_levels"):
-        if converted[key] != expected[key]:
-            failures += 1
-            print(f"GDTk bracket form N+: {key} {converted[key]} != {expected[key]}")
-    for key in ("temperature_ranges", "blend_widths", "coefficients"):
-        if converted["thermo"][key] != expected["thermo"][key]:
-            failures += 1
-            print(f"GDTk bracket form N+: thermo {key} differs")
-    print("GDTk bracket form N+: checked")
-
-# Reaction mechanism converter: CGS to SI by (1e-6)^(order - 1), third-body
-# efficiencies, the default backward rate from the equilibrium constant, and
-# Park rates as Arrhenius rates with a translational exponent.
-with tempfile.TemporaryDirectory() as tmp:
-    out = Path(tmp) / "reactions.json"
-    subprocess.run([sys.executable, str(tools / "gdtk_reactions_to_json.py"), str(data / "gdtk_mechanism_sample.inp"),
-                    "--source", "test", "-o", str(out)], check=True)
-    mechanism = json.loads(out.read_text())
-    checks = [
-        (mechanism["format"], "canary-reactions-1"),
-        (mechanism["temperature_limits"], {"lower": 300.0, "upper": 30000.0}),
-        (len(mechanism["reactions"]), 5),
-        (mechanism["reactions"][0]["reactants"], {"N2": 2.0}),
-        (mechanism["reactions"][0]["products"], {"N": 2.0, "N2": 1.0}),
-        (mechanism["reactions"][0]["forward"], {"model": "arrhenius", "A": 1.216e14, "n": -1.214,
-                                                "activation_temperature": 113200.0}),
-        (mechanism["reactions"][0]["backward"], {"model": "equilibrium"}),
-        (mechanism["reactions"][1]["forward"]["A"], 1.45e9),
-        (mechanism["reactions"][1]["third_body"]["efficiencies"]["NO"], 0.664827586),
-        (mechanism["reactions"][2]["backward"], {"model": "arrhenius", "A": 1.6e7, "n": 0.1,
-                                                 "activation_temperature": 0.0}),
-        (mechanism["reactions"][3]["forward"], {"model": "arrhenius", "A": 2.0e15, "n": -1.5,
-                                                "activation_temperature": 59500.0,
-                                                "translational_exponent": 0.5}),
-        ("translational_exponent" in mechanism["reactions"][0]["forward"], False),
-        (mechanism["reactions"][4]["reactants"], {"N": 1.0, "e-": 1.0}),
-        (mechanism["reactions"][4]["products"], {"N+": 1.0, "e-": 2.0}),
-        (mechanism["reactions"][4]["forward"], {"model": "arrhenius", "A": 2.5e28, "n": -3.82,
-                                                "activation_temperature": 168600.0, "translational_exponent": 0.0,
-                                                "other_temperature": "electron"}),
-        (mechanism["reactions"][4]["backward"], {"model": "equilibrium", "other_temperature": "electron"}),
-    ]
-    for got, expected in checks:
-        if got != expected:
-            failures += 1
-            print(f"reaction converter: {got} != {expected}")
-    print("reaction converter: checked")
-
-# Energy-exchange converter: V-T entries without and with the Park (1993),
-# Kim and Jo and Park (1985) corrections, an impartial-dissociation C-V
-# entry (and one with negative dissociation energy, dropped), elastic
-# electron exchange with a neutral and an ion, and Candler's V-E.
-with tempfile.TemporaryDirectory() as tmp:
-    out = Path(tmp) / "exchange.json"
-    subprocess.run([sys.executable, str(tools / "gdtk_exchange_to_json.py"), str(data / "gdtk_exchange_sample.lua"),
-                    "--source", "test", "-o", str(out)], check=True)
-    exchange = json.loads(out.read_text())
-    checks = [
-        (exchange["format"], "canary-energy-exchange-1"),
-        (exchange["units"], {"energy": "J/mol", "temperature": "K", "area": "m^2"}),
-        (exchange["vibration_translation"], [
-            {"species": "N2", "partner": "N", "model": "landau_teller",
-             "relaxation_time": {"model": "millikan_white", "a": 180.0, "b": 0.0262,
-                                 "high_temperature_correction": {"model": "park_1993", "cross_section": 1.0e-21,
-                                                                 "reference_temperature": 50000.0}}},
-            {"species": "O2", "partner": "O2", "model": "landau_teller",
-             "relaxation_time": {"model": "millikan_white", "a": 138.0, "b": 0.03}},
-            {"species": "N2", "partner": "N2", "model": "landau_teller",
-             "relaxation_time": {"model": "millikan_white", "a": 221.53, "b": 0.029,
-                                 "high_temperature_correction": {"model": "kim_2021", "cross_section": 1.7e-23,
-                                                                 "exponent": 0.55}}},
-            {"species": "NO", "partner": "N", "model": "landau_teller",
-             "relaxation_time": {"model": "millikan_white", "a": 49.5, "b": 0.042,
-                                 "high_temperature_correction": {"model": "park_1985", "cross_section": 5.8e-20}}},
-        ]),
-        (exchange["chemistry_vibration"], [
-            {"reaction": 0, "species": "N2", "model": "impartial_dissociation",
-             "dissociation_energy": 945360.0, "vibrational_temperature": 3393.44},
-        ]),
-        (exchange["electron_translation"], [
-            {"partner": "N2", "model": "elastic",
-             "cross_section": {"model": "gnoffo_neutral", "a": 7.5e-20, "b": 5.5e-24, "c": -1e-28,
-                               "maximum_temperature": 30000.0}},
-            {"partner": "N+", "model": "elastic", "cross_section": {"model": "coulomb"}},
-        ]),
-        (exchange["vibration_electron"], [
-            {"species": "N2", "model": "landau_teller",
-             "relaxation_time": {"model": "candler", "a_low": 7.5, "b_low": -57.0, "c_low": 98.7,
-                                 "a_high": 2.36, "b_high": -17.9, "c_high": 24.35,
-                                 "blend_lower": 6950.0, "blend_upper": 7050.0}},
-        ]),
-        (exchange["electron_impact_ionisation"], []),
-    ]
-    for got, expected in checks:
-        if got != expected:
-            failures += 1
-            print(f"exchange converter: {got} != {expected}")
-    print("exchange converter: checked")
-
-# Collision-integral converter: D shifted to m^2 by ln(1e-20), pairs in file
-# order, equal to the shipped five-species file for the same pairs.
-with tempfile.TemporaryDirectory() as tmp:
-    out = Path(tmp) / "collision_integrals.json"
-    subprocess.run([sys.executable, str(tools / "gdtk_collision_integrals_to_json.py"),
-                    str(data / "gdtk_collision_integrals_sample.lua"), "--species", "N2", "O2",
-                    "--source", "test", "-o", str(out)], check=True)
-    converted = json.loads(out.read_text())
-    shipped_pairs = json.loads((root / "database" / "data" / "air5_collision_integrals.json").read_text())["pairs"]
-    checks = [
-        (converted["format"], "canary-collision-integrals-1"),
-        (converted["units"], {"temperature": "K", "area": "m^2"}),
-        ([p["species"] for p in converted["pairs"]], [["N2", "N2"], ["O2", "N2"], ["O2", "O2"]]),
-        (converted["pairs"], shipped_pairs[:3]),
-    ]
-    for got, expected in checks:
-        if got != expected:
-            failures += 1
-            print(f"collision-integral converter: {got} != {expected}")
-    print("collision-integral converter: checked")
-
-
-
 # Species header generation preserves all three composition states.
 with tempfile.TemporaryDirectory() as tmp:
     file = json.loads((root / "database/data/air11.json").read_text())
@@ -452,11 +320,7 @@ for valid in ({}, {"N": 2}, {"N": 4294967295}, None):
 print("Element schema and import validation boundaries: checked")
 
 # Every JSON converter shares the regular-file output contract.
-output_runs = [*runs.values(),
-               [tools / "gdtk_reactions_to_json.py", data / "gdtk_mechanism_sample.inp"],
-               [tools / "gdtk_exchange_to_json.py", data / "gdtk_exchange_sample.lua"],
-               [tools / "gdtk_collision_integrals_to_json.py", data / "gdtk_collision_integrals_sample.lua",
-                "--species", "N2", "O2"]]
+output_runs = list(runs.values())
 with tempfile.TemporaryDirectory() as tmp:
     directory = Path(tmp)
     original = directory / "original.json"
