@@ -1577,14 +1577,13 @@ void test_multi_temperature_kinetics()
         e.electron_impact_ionisation[0].species = "e-";
         starts(base,
                e,
-               "electron-impact ionisation 0 (e-): species \"e-\" has no singly charged ion");
+               "electron-impact ionisation 0 (e-): the ionised species must be a heavy species");
         // Reaction 38 ionises O, not N.
         e = electrons;
         e.electron_impact_ionisation[0].species = "N";
         starts(base,
                e,
-               "electron-impact ionisation 0 (N): reaction 38 does not turn one \"N\" into one "
-               "\"N+\"");
+               "electron-impact ionisation 0 (N): reaction 38 must consume one \"N\" (net change -1)");
         for (const double energy : {nan, inf, 0.0, -1.0}) {
             e = electrons;
             e.electron_impact_ionisation[1].ionisation_energy = energy;
@@ -1640,6 +1639,100 @@ void test_multi_temperature_kinetics()
                                                                             si_scales);
         expect(!vibration_only.electron && !vibration_only.electron_mode);
     };
+    "electron-impact ionisation validates participants and charge at construction"_test = [&] {
+        const auto source = *canary::detail::species_index(names, "O");
+        const auto ion = *canary::detail::species_index(names, "O+");
+        const auto carrier = *canary::electron_species_index(gas);
+        const auto spectator = *canary::detail::species_index(names, "N2");
+        const canary::EnergyExchangeInput<0, 0> heavy {};
+        canary::ElectronExchangeInput<0, 0, 1> input {};
+        input.electron_impact_ionisation[0] =
+          canary::air11_kim_jo_exchange_electrons.electron_impact_ionisation[0];
+        const auto build = [&](const auto& species, const auto& mechanism, const auto& labels) {
+            return canary::make_multi_temperature_exchange(
+              heavy, input, labels, species, mechanism, gas, si_scales);
+        };
+        const auto rejects = [&](const auto& species, const auto& mechanism, auto reason) {
+            const auto message = error_message([&] { (void)build(species, mechanism, names); });
+            expect(message.starts_with("electron-impact ionisation 0 (O): ")) << message;
+            expect(message.find(reason) != std::string::npos) << message;
+        };
+        const auto reference = build(built.species, mech, names);
+        auto renamed = names;
+        renamed[ion.value()] = "oxygen ion";
+        renamed[carrier.value()] = "carrier";
+        const auto arbitrary_names = build(built.species, mech, renamed);
+        expect(arbitrary_names.electron == reference.electron);
+        expect(arbitrary_names.electron_impact_ionisation[0].species == source);
+        expect(arbitrary_names.electron_impact_ionisation[0].ionisation_energy ==
+               reference.electron_impact_ionisation[0].ionisation_energy);
+
+        auto changed = mech;
+        changed.reactions[38].reactants[spectator.value()] = 2;
+        changed.reactions[38].products[spectator.value()] = 2;
+        expect(error_message([&] { (void)build(built.species, changed, names); }) == "no exception");
+        changed.reactions[38].products[spectator.value()] = 3;
+        rejects(built.species, changed, "no other net species changes");
+        changed.reactions[38].products[spectator.value()] = 1;
+        rejects(built.species, changed, "no other net species changes");
+        for (const int count : {0, 1, 3}) {
+            changed = mech;
+            changed.reactions[38].products[carrier.value()] = count;
+            rejects(built.species, changed, "net electron production +1");
+        }
+        changed = mech;
+        changed.reactions[38].reactants[carrier.value()] = 0;
+        changed.reactions[38].products[carrier.value()] = 1;
+        rejects(built.species, changed, "incident electron");
+        changed = mech;
+        changed.reactions[38].products[source.value()] = 1;
+        rejects(built.species, changed, "must consume one");
+        for (const int count : {0, 2}) {
+            changed = mech;
+            changed.reactions[38].products[ion.value()] = count;
+            rejects(built.species, changed, "must produce one ion");
+        }
+        const double q = built.species.charge[ion.value()].value();
+        const double nan = std::numeric_limits<double>::quiet_NaN();
+        const double inf = std::numeric_limits<double>::infinity();
+        for (const double charge : {q, -q, nan, inf}) {
+            auto species = built.species;
+            species.charge[source.value()] = canary::Charge<double, si> {charge};
+            rejects(species, mech, "must be neutral");
+        }
+        for (const double charge : {0.0, q, nan, inf, -inf}) {
+            auto species = built.species;
+            species.charge[carrier.value()] = canary::Charge<double, si> {charge};
+            rejects(species, mech, "electron charge must be finite and negative");
+        }
+        for (const double charge : {0.0, -q, 2.0 * q, nan, inf}) {
+            auto species = built.species;
+            species.charge[ion.value()] = canary::Charge<double, si> {charge};
+            rejects(species, mech, "must have charge opposite to the electron charge");
+        }
+    };
+    "electron-impact ionisation charge checks support float and double in SI and scaled units"_test =
+      [] {
+          const auto check = []<typename P, typename U>(const canary::UnitScales<P, U>& scales) {
+              const auto built = canary::make_air11_three_temperature<P>(scales);
+              const auto mechanism = canary::make_air11_kim_jo(
+                built.species,
+                scales,
+                canary::convert<U>(canary::Pressure<P, si> {P(atmosphere)}, scales),
+                built.model);
+              const auto exchange = canary::make_air11_kim_jo_exchange(
+                built.species, mechanism, built.model, scales);
+              expect(exchange.electron == canary::electron_species_index(built.model));
+              for (const auto& coupling : exchange.electron_impact_ionisation) {
+                  expect(std::isfinite(coupling.ionisation_energy) && coupling.ionisation_energy > P(0));
+              }
+          };
+          check(canary::UnitScales<float, si> {});
+          check(canary::UnitScales<double, si> {});
+          check(canary::UnitScales<float, scaled> {{
+            .mass = 4.65e-26F, .density = 1e-3F, .temperature = 1000.0F, .length = 1.0F}});
+          check(reference_scales);
+      };
     "multi-temperature exchange rejects duplicate physical electron processes"_test = [&] {
         const auto build = [&](const auto& electrons) {
             return canary::make_multi_temperature_exchange(canary::air11_kim_jo_exchange,

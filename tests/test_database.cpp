@@ -1534,6 +1534,69 @@ int main()
         });
     };
 
+    "exchange JSON rejects noninteger and unrepresentable ionisation reaction indices"_test = [] {
+        const auto json = db::write_energy_exchange(
+          db::read_energy_exchange_file(air11_exchange_path()));
+        const auto section = json.find("\"electron_impact_ionisation\"");
+        expect(fatal(section != std::string::npos));
+        const auto key = json.find("\"reaction\"", section);
+        expect(fatal(key != std::string::npos));
+        const auto start = json.find_first_not_of(" \t\r\n", json.find(':', key) + 1);
+        const auto end = json.find_first_not_of("0123456789", start);
+        expect(fatal(start != std::string::npos && end != std::string::npos && end > start));
+        for (const auto token : {"0.5", "true", "\"38\"", "2147483648", "-2147483649"}) {
+            auto changed = json;
+            changed.replace(start, end - start, token);
+            expect(throws_database_error([&] { (void)db::parse_energy_exchange(changed); })) << token;
+        }
+    };
+
+    "file-backed ionisation construction checks reaction bounds and charge transfer"_test = [] {
+        const auto file = db::read_energy_exchange_file(air11_exchange_path());
+        const auto species_file = db::read_species_file(air11_path());
+        const auto heavy = db::energy_exchange_input<30, 21>(file);
+        const canary::UnitScales<double, canary::si> scales {};
+        const auto gas = canary::make_air11_three_temperature(scales);
+        const auto mechanism = canary::make_air11_kim_jo(
+          gas.species, scales, canary::Pressure<double, canary::si> {1e5}, gas.model);
+        const auto electron = *canary::electron_species_index(gas.model);
+        const auto ion = *canary::detail::species_index(air11_names, "O+");
+        const auto spectator = *canary::detail::species_index(air11_names, "N2");
+        const auto check = [&](const auto& input_file, const auto& species, const auto& reactions,
+                               std::string_view reason) {
+            const auto owner = db::electron_exchange_input<10, 1, 2>(input_file, species_file);
+            std::string message;
+            try {
+                (void)canary::make_multi_temperature_exchange(
+                  heavy, owner, air11_names, species, reactions, gas.model, scales);
+            } catch (const canary::ParameterError& error) {
+                message = error.what();
+            }
+            if (reason.empty()) {
+                expect(message.empty()) << message;
+            } else {
+                expect(message.starts_with("electron-impact ionisation 0 (O): ")) << message;
+                expect(message.find(reason) != std::string::npos) << message;
+            }
+        };
+        check(file, gas.species, mechanism, "");
+        for (const int index : {-1, 40}) {
+            auto changed = file;
+            changed.electron_impact_ionisation[0].reaction = index;
+            check(changed, gas.species, mechanism, "reaction index must be between 0 and 39");
+        }
+        auto changed = mechanism;
+        changed.reactions[38].products[electron.value()] = 1;
+        check(file, gas.species, changed, "net electron production +1");
+        auto species = gas.species;
+        species.charge[ion.value()] =
+          canary::Charge<double, canary::si> {2.0 * species.charge[ion.value()].value()};
+        check(file, species, mechanism, "must have charge opposite to the electron charge");
+        changed = mechanism;
+        changed.reactions[38].products[spectator.value()] += 1;
+        check(file, gas.species, changed, "no other net species changes");
+    };
+
     "the eleven-species exchange file reads and maps to the compiled electron exchanges"_test = [] {
         const db::EnergyExchangeFile file = db::read_energy_exchange_file(air11_exchange_path());
         expect(file.vibration_translation.size() == 30_u &&

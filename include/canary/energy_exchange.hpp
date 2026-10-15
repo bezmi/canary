@@ -175,8 +175,8 @@ struct VibrationElectronInput {
 };
 
 // Host input of one electron-impact ionisation: the index of the reaction
-// in the mechanism, the neutral species it ionises (to the species named
-// with "+" appended) and its ionisation energy in J/mol.
+// in the mechanism, the neutral species it ionises and its ionisation energy
+// in J/mol. The reaction identifies the product ion by its net production.
 struct ElectronImpactIonisationInput {
     int reaction;
     const char* species;
@@ -1148,6 +1148,8 @@ template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t R>
 ElectronImpactIonisationCoupling<P, U>
   make_ionisation_coupling(const ElectronImpactIonisationInput& input,
                            const std::array<std::string_view, N>& names,
+                           const SpeciesData<P, U, N>& species,
+                           SpeciesIndex electron,
                            const ReactionMechanism<P, U, N, R>& mechanism,
                            const UnitScales<P, U>& scales)
 {
@@ -1158,20 +1160,49 @@ ElectronImpactIonisationCoupling<P, U>
     }
     coupling.reaction = static_cast<std::size_t>(input.reaction);
     coupling.species = known_species(names, input.species, "species");
-    const std::string ion = std::format("{}+", input.species);
-    const auto ion_index = species_index(names, ion);
-    if (!ion_index) {
-        throw ParameterError(
-          std::format(R"(species "{}" has no singly charged ion "{}")", input.species, ion));
+    if (coupling.species == electron) {
+        throw ParameterError("the ionised species must be a heavy species");
+    }
+    if (species.charge[coupling.species.value()].value() != P(0)) {
+        throw ParameterError("the ionised species must be neutral");
+    }
+    const P electron_charge = species.charge[electron.value()].value();
+    if (!std::isfinite(electron_charge) || !(electron_charge < P(0))) {
+        throw ParameterError("the electron charge must be finite and negative");
     }
     const Reaction<P, U, N>& r = mechanism.reactions[coupling.reaction];
-    const int lost = r.reactants[coupling.species.value()] - r.products[coupling.species.value()];
-    const int gained = r.products[(*ion_index).value()] - r.reactants[(*ion_index).value()];
-    if (lost != 1 || gained != 1) {
-        throw ParameterError(std::format(R"(reaction {} does not turn one "{}" into one "{}")",
+    // Widen before subtraction so malformed stored coefficients cannot overflow.
+    const auto net = [&](SpeciesIndex i) {
+        return std::int64_t {r.products[i.value()]} - std::int64_t {r.reactants[i.value()]};
+    };
+    if (net(coupling.species) != -1) {
+        throw ParameterError(std::format(R"(reaction {} must consume one "{}" (net change -1))",
                                          input.reaction,
-                                         input.species,
-                                         ion));
+                                         input.species));
+    }
+    if (r.reactants[electron.value()] < 1 || net(electron) != 1) {
+        throw ParameterError(std::format(
+          "reaction {} must have an incident electron and net electron production +1",
+          input.reaction));
+    }
+    OptionalSpeciesIndex ion;
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        if (i == coupling.species || i == electron || net(i) == 0) { continue; }
+        if (net(i) != 1 || ion) {
+            throw ParameterError(std::format(
+              "reaction {} must produce one ion (net change +1) with no other net species changes",
+              input.reaction));
+        }
+        ion = OptionalSpeciesIndex {i};
+    }
+    if (!ion) {
+        throw ParameterError(std::format("reaction {} must produce one ion (net change +1)",
+                                         input.reaction));
+    }
+    if (species.charge[(*ion).value()].value() != -electron_charge) {
+        throw ParameterError(std::format(
+          R"(product ion "{}" must have charge opposite to the electron charge)",
+          names[(*ion).value()]));
     }
     const auto energy = positive_parameter<double>(input.ionisation_energy, "ionisation energy");
     // Energy per particle.
@@ -1209,11 +1240,16 @@ ElectronImpactIonisationCoupling<P, U>
 //   [0, maximum_temperature] before or after parameter conversion;
 // - a relaxation-time parameter is not finite or blend_upper <=
 //   blend_lower;
-// - an ionisation's reaction index is outside [0, R), the species named
-//   with "+" appended does not exist, the reaction does not take one of the
-//   species and give one of its ion (net change -1 and +1), or the
+// - an ionisation's reaction index is outside [0, R), its source is not a
+//   neutral heavy species, or the electron charge is not finite and negative;
+// - an ionisation reaction has no incident electron, or its net changes are
+//   not -1 source, +1 electron, +1 product ion and zero for every other species;
+// - the product ion's charge is not opposite to the electron charge, or the
 //   ionisation energy is not finite and positive;
-// - a derived constant is not finite (and positive where it must be) in P.
+// - a derived constant is not finite (and positive where required) in P.
+//
+// Unchanged spectators are allowed. Product-ion names are unrestricted.
+// Elemental conservation must be checked when constructing the mechanism.
 template <std::floating_point P,
           UnitSystem U,
           std::size_t N,
@@ -1310,7 +1346,7 @@ MultiTemperatureExchange<P, U, N, G::mode_count, V, C, E, VE, I>
         try {
             check_electrons();
             exchange.electron_impact_ionisation[k] =
-              detail::make_ionisation_coupling(entry, names, mechanism, scales);
+              detail::make_ionisation_coupling(entry, names, species, *e, mechanism, scales);
             detail::check_duplicate_exchange(
               exchange.electron_impact_ionisation,
               k,
