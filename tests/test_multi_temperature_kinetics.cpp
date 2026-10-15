@@ -444,6 +444,25 @@ static_assert(std::is_trivially_copyable_v<canary::Air11KimJoExchange<float, sca
 static_assert(std::is_trivially_copyable_v<canary::MultiTemperatureSources<D, si, 11, 2>>);
 static_assert(Exchange::mode_count == 2);
 
+namespace
+{
+template <typename V>
+concept AcceptsReactionModes = requires(
+  const Gas& gas, const Mechanism& mechanism, const Gas::Mixture<double>& mix, const V& modes) {
+    canary::rates_of_progress(mechanism, gas, mix, Rho {1}, Temp {4000}, modes);
+    canary::production_rates(mechanism, gas, mix, Rho {1}, Temp {4000}, modes);
+};
+using RawModes = canary::ModeTemperatureView<double, si>;
+static_assert(AcceptsReactionModes<canary::IndexedView<canary::ModeIndex, RawModes>>);
+static_assert(!AcceptsReactionModes<canary::IndexedView<canary::SpeciesIndex, RawModes>>);
+static_assert(
+  AcceptsReactionModes<std::array<canary::ModeTemperature<double, si>, Gas::mode_count>>);
+static_assert(
+  !AcceptsReactionModes<std::array<canary::ModeTemperature<double, si>, Gas::mode_count + 1>>);
+static_assert(!AcceptsReactionModes<canary::ModeTemperatureView<double, scaled>>);
+static_assert(!AcceptsReactionModes<canary::ModeEnergyDensityView<double, si>>);
+}  // namespace
+
 void test_multi_temperature_kinetics()
 {
     using namespace boost::ut;
@@ -456,6 +475,73 @@ void test_multi_temperature_kinetics()
       canary::make_air11_kim_jo_exchange(built.species, mech, gas, si_scales);
     const std::array<std::string_view, species_count> names =
       canary::detail::air11_kim_jo_species_names;
+
+    "mode views preserve closure and reaction results across cell layouts"_test = [&] {
+        const auto run = [&]<typename T, typename Layout>() {
+            const auto equal = [](const T& a, const T& b) {
+                expect(canary::ScalarTraits<T>::value(a) == canary::ScalarTraits<T>::value(b));
+                if constexpr (requires { a.dual(); }) { expect(a.dual() == b.dual()); }
+            };
+            std::array<T, species_count> y {};
+            for (const auto i : canary::species_indices(0, species_count)) {
+                y[i.value()] = T(reference_states[0].y[i.value()]);
+            }
+            const auto mix = canary::mixture(gas, fractions(y));
+            const auto seed = [](double v) {
+                if constexpr (requires { T(v, 1.0); }) {
+                    return T(v, 1.0);
+                } else {
+                    return T(v);
+                }
+            };
+            const std::array<canary::ModeTemperature<T, si>, 2> modes {
+              canary::ModeTemperature<T, si> {seed(5000)},
+              canary::ModeTemperature<T, si> {T(8000)}};
+            std::array<T, 8> storage {};
+            using Grid = Kokkos::mdspan<T, Kokkos::dextents<std::size_t, 2>, Layout>;
+            const Grid grid(storage.data() + 1, 3, 2);
+            for (std::size_t cell = 0; cell < 3; ++cell) {
+                for (const auto m : canary::mode_indices(0, 2)) {
+                    storage[1 + grid.mapping()(cell, m.value())] =
+                      cell == 1 ? modes[m.value()].value() : T(99);
+                }
+            }
+            using Mapping = Kokkos::layout_stride::mapping<Extents>;
+            const Kokkos::mdspan<const T, Extents, Kokkos::layout_stride> raw(
+              storage.data() + 1 + grid.mapping()(1, 0),
+              Mapping(Extents(2), std::array<std::size_t, 1> {grid.stride(1)}));
+            const auto quantities = canary::as_kind<canary::kind::mode_temperature, si>(raw);
+            const auto view = canary::as_indexed<canary::ModeIndex>(quantities);
+            const canary::Density<T, si> rho {T(0.001)};
+            const canary::Temperature<T, si> temp {T(10000)};
+            const auto expected = canary::rates_of_progress(mech, gas, mix, rho, temp, modes);
+            const auto typed = canary::rates_of_progress(mech, gas, mix, rho, temp, view);
+            const auto untyped = canary::rates_of_progress(mech, gas, mix, rho, temp, quantities);
+            for (std::size_t k = 0; k < reaction_count; ++k) {
+                equal(typed.forward[k].value(), expected.forward[k].value());
+                equal(typed.backward[k].value(), expected.backward[k].value());
+                equal(untyped.forward[k].value(), expected.forward[k].value());
+                equal(untyped.backward[k].value(), expected.backward[k].value());
+            }
+            const auto omega = canary::production_rates(mech, gas, mix, rho, temp, view);
+            const auto omega_expected = canary::production_rates(mech, gas, mix, rho, temp, modes);
+            for (const auto i : canary::species_indices(0, species_count)) {
+                equal(omega[i.value()].value(), omega_expected[i.value()].value());
+            }
+            const auto c = canary::thermo_state(gas, mix, view, temp, rho);
+            const auto base = canary::thermo_state(gas, mix, rho, temp, quantities);
+            expect(c.status == base.status && c.diagnostic.reason == base.diagnostic.reason);
+            equal(c.state.e.value(), base.state.e.value());
+            equal(c.state.p.value(), base.state.p.value());
+            for (const auto m : canary::mode_indices(0, 2)) {
+                equal(c.state.mode_e[m.value()].value(), base.state.mode_e[m.value()].value());
+            }
+        };
+        run.template operator()<double, Kokkos::layout_left>();
+        run.template operator()<double, Kokkos::layout_right>();
+        run.template operator()<D, Kokkos::layout_left>();
+        run.template operator()<D, Kokkos::layout_right>();
+    };
 
     "energy exchange resolves electron identity through the typed model query"_test = [&] {
         auto renamed = names;

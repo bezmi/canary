@@ -61,6 +61,15 @@ static_assert(!canary::ModeRangeOf<ModeTempView, canary::kind::mode_temperature,
 static_assert(
   !canary::ModeRangeOf<ModeTempView, canary::kind::mode_temperature, double, canary::scaled>);
 static_assert(!canary::ModeRangeOf<ModeView, canary::kind::mode_temperature, double, si>);
+using TypedModes = canary::IndexedView<canary::ModeIndex, ModeTempView>;
+using WrongModes = canary::IndexedView<canary::SpeciesIndex, ModeTempView>;
+static_assert(canary::ModeRangeOf<TypedModes, canary::kind::mode_temperature, double, si>);
+static_assert(!canary::ModeRangeOf<WrongModes, canary::kind::mode_temperature, double, si>);
+static_assert(
+  !canary::ModeRangeOf<TypedModes, canary::kind::mode_temperature, double, canary::scaled>);
+static_assert(canary::detail::state_rank<TypedModes>() == 4);
+static_assert(canary::detail::argument_order<TypedModes, Temp, Rho>() ==
+              std::array<std::size_t, 3> {2, 1, 0});
 static_assert(!canary::StateVariable<canary::MassFraction<double>>);
 static_assert(!canary::StateVariable<canary::test::TemperatureGuess>);
 

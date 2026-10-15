@@ -52,6 +52,34 @@ concept ClosureArgument = std::copyable<A>;
 
 namespace detail
 {
+// Raw mdspan inputs retain their existing interface; typed inputs require ModeIndex.
+template <SpeciesRange V>
+CANARY_HOST_DEVICE constexpr decltype(auto) mode_at(const V& modes, ModeIndex index)
+{ return modes[index.value()]; }
+
+template <RankOneMdspan M>
+CANARY_HOST_DEVICE constexpr decltype(auto) mode_at(const IndexedView<ModeIndex, M>& modes,
+                                                    ModeIndex index)
+{ return modes[index]; }
+
+template <typename V>
+concept ModeRange = requires(const V& modes, ModeIndex index) {
+    requires std::remove_cvref_t<V>::rank() == 1;
+    { modes.extent(0) } -> std::convertible_to<std::size_t>;
+    { mode_at(modes, index) } -> QuantityKind;
+};
+
+template <ModeRange V>
+using mode_quantity_t =
+  std::remove_cvref_t<decltype(mode_at(std::declval<const V&>(), ModeIndex {}))>;
+
+template <typename G>
+concept HasModeCount =
+  requires { std::integral_constant<std::size_t, G::mode_count> {}; } && (G::mode_count > 0);
+}  // namespace detail
+
+namespace detail
+{
 
 // Rank of a state variable, or -1 for any other argument. thermo_state passes
 // state variables to close in increasing rank, so callers may give them in
@@ -72,9 +100,12 @@ template <typename A> constexpr int state_rank()
         } else {
             return -1;
         }
-    } else if constexpr (SpeciesRangeOf<A, kind::mode_energy_density> ||
-                         SpeciesRangeOf<A, kind::mode_temperature>) {
-        return 4;
+    } else if constexpr (ModeRange<A>) {
+        using K = typename mode_quantity_t<A>::kind;
+        return (std::same_as<K, kind::mode_energy_density> ||
+                std::same_as<K, kind::mode_temperature>)
+                 ? 4
+                 : -1;
     } else {
         return -1;
     }
@@ -333,14 +364,14 @@ template <Scalar T, UnitSystem U>
 using ModeTemperatureView = decltype(as_kind<kind::mode_temperature, U>(
   std::declval<Kokkos::mdspan<const T, Kokkos::dextents<std::size_t, 1>>>()));
 
-// A rank-1 range of quantities of kind K with value type T in unit system U,
-// of any layout and accessor; for example a ModeEnergyDensityView or a
-// ModeTemperatureView. Models with internal energy modes take their mode
-// inputs as such ranges.
+// A rank-one range of mode quantities with the required kind, scalar and units.
+// Raw mdspans and IndexedView<ModeIndex, ...> preserve their layout and accessor.
+// Views indexed by another domain are rejected.
 template <typename V, typename K, typename T, typename U>
-concept ModeRangeOf = SpeciesRangeOf<V, K> && Scalar<T> && UnitSystem<U> &&
-                      std::same_as<typename range_quantity_t<V>::value_type, T> &&
-                      std::same_as<typename range_quantity_t<V>::units, U>;
+concept ModeRangeOf =
+  detail::ModeRange<V> && KindOf<detail::mode_quantity_t<V>, K> && Scalar<T> && UnitSystem<U> &&
+  std::same_as<typename detail::mode_quantity_t<V>::value_type, T> &&
+  std::same_as<typename detail::mode_quantity_t<V>::units, U>;
 
 namespace detail
 {

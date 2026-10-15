@@ -195,6 +195,22 @@ void test_two_temperature()
     const AirSingle single = canary::make_air5<double>(canary::UnitScales<double, si> {}).model;
     const double r = gas_constant_ratio;
 
+    "typed mode views preserve two-temperature closures"_test = [&] {
+        const std::array<double, 3> data {4000, -1, 5000};
+        using Mapping = Kokkos::layout_stride::mapping<Extents>;
+        const Kokkos::mdspan<const double, Extents, Kokkos::layout_stride> storage(
+          data.data() + 2,
+          Mapping(Extents(1), std::array<std::size_t, 1> {2}));
+        const auto values = canary::as_kind<canary::kind::mode_temperature, si>(storage);
+        const auto modes = canary::as_indexed<canary::ModeIndex>(values);
+        const auto mix = mixture(gas, fractions(air));
+        const auto a = thermo_state(gas, mix, modes, Temp {4000}, Rho {1});
+        const auto b = thermo_state(gas, mix, Rho {1}, Temp {4000}, values);
+        expect(a.status == b.status);
+        expect(a.state.e == b.state.e && a.state.p == b.state.p);
+        expect(a.state.mode_temp[0] == b.state.mode_temp[0]);
+    };
+
     "two-temperature diagnostics distinguish mode and equilibrium solves"_test = [&] {
         const std::array<double, 5> y {1, 0, 0, 0, 0};
         const auto mix = mixture(gas, fractions(y));

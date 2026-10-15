@@ -1074,6 +1074,39 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
                                            std::array<T, 1> {temp_ve.value()});
 }
 
+// Mode temperatures borrow the caller's storage. The extent must equal
+// G::mode_count; the model determines the size of the numerical scratch arrays.
+template <Scalar T,
+          std::floating_point P,
+          UnitSystem U,
+          std::size_t N,
+          std::size_t R,
+          typename G,
+          typename V>
+    requires ReactingModel<G, T, P, N> && std::same_as<typename G::units, U> &&
+             detail::HasModeCount<G> && ModeRangeOf<V, kind::mode_temperature, T, U>
+CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
+  rates_of_progress(const ReactionMechanism<P, U, N, R>& mech,
+                    const G& gas,
+                    const NormalisedComposition<T, U, N>& mix,
+                    Density<T, U> rho,
+                    Temperature<T, U> temp,
+                    const V& mode_temp)
+{
+    constexpr std::size_t modes = G::mode_count;
+    CANARY_ASSERT(static_cast<std::size_t>(mode_temp.extent(0)) == modes);
+    std::array<T, modes> other {};
+    for (const ModeIndex m : mode_indices(0, modes)) {
+        other[m.value()] = detail::mode_at(mode_temp, m).value();
+    }
+    return detail::rates_of_progress_at<modes>(mech,
+                                               gas,
+                                               mix,
+                                               rho,
+                                               detail::clamped_temperature(mech, temp),
+                                               other);
+}
+
 // Rates of progress with the M mode temperatures mode_temp of the cell
 // (for example MultiTemperatureState::mode_temp): as above, with T_o of
 // each rate the temperature of its other mode (ArrheniusRate::other_mode;
@@ -1087,7 +1120,8 @@ template <Scalar T,
           std::size_t R,
           typename G,
           std::size_t M>
-    requires ReactingModel<G, T, P, N> && std::same_as<typename G::units, U> && (M > 0)
+    requires ReactingModel<G, T, P, N> && std::same_as<typename G::units, U> &&
+             detail::HasModeCount<G> && (M == G::mode_count)
 CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
   rates_of_progress(const ReactionMechanism<P, U, N, R>& mech,
                     const G& gas,
@@ -1096,16 +1130,10 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
                     Temperature<T, U> temp,
                     const std::array<ModeTemperature<T, U>, M>& mode_temp)
 {
-    std::array<T, M> other {};
-    for (const ModeIndex m : mode_indices(0, M)) {
-        other[m.value()] = mode_temp[m.value()].value();
-    }
-    return detail::rates_of_progress_at<M>(mech,
-                                           gas,
-                                           mix,
-                                           rho,
-                                           detail::clamped_temperature(mech, temp),
-                                           other);
+    const auto view = as_indexed<ModeIndex>(
+      Kokkos::mdspan<const ModeTemperature<T, U>, Kokkos::extents<std::size_t, M>>(
+        mode_temp.data()));
+    return rates_of_progress(mech, gas, mix, rho, temp, view);
 }
 
 // Rates of progress at one temperature: every T_o is T_l, so that every
@@ -1144,6 +1172,28 @@ CANARY_HOST_DEVICE std::array<MassProductionRate<T, U>, N>
                                          rates_of_progress(mech, gas, mix, rho, temp, temp_ve));
 }
 
+// Production rates using a borrowed mode-temperature view of G::mode_count entries.
+template <Scalar T,
+          std::floating_point P,
+          UnitSystem U,
+          std::size_t N,
+          std::size_t R,
+          typename G,
+          typename V>
+    requires ReactingModel<G, T, P, N> && std::same_as<typename G::units, U> &&
+             detail::HasModeCount<G> && ModeRangeOf<V, kind::mode_temperature, T, U>
+CANARY_HOST_DEVICE std::array<MassProductionRate<T, U>, N>
+  production_rates(const ReactionMechanism<P, U, N, R>& mech,
+                   const G& gas,
+                   const NormalisedComposition<T, U, N>& mix,
+                   Density<T, U> rho,
+                   Temperature<T, U> temp,
+                   const V& mode_temp)
+{
+    return detail::mass_production_rates(mech,
+                                         rates_of_progress(mech, gas, mix, rho, temp, mode_temp));
+}
+
 // As above with the M mode temperatures of the cell.
 template <Scalar T,
           std::floating_point P,
@@ -1152,7 +1202,8 @@ template <Scalar T,
           std::size_t R,
           typename G,
           std::size_t M>
-    requires ReactingModel<G, T, P, N> && std::same_as<typename G::units, U> && (M > 0)
+    requires ReactingModel<G, T, P, N> && std::same_as<typename G::units, U> &&
+             detail::HasModeCount<G> && (M == G::mode_count)
 CANARY_HOST_DEVICE std::array<MassProductionRate<T, U>, N>
   production_rates(const ReactionMechanism<P, U, N, R>& mech,
                    const G& gas,

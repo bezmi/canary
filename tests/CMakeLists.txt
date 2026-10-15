@@ -25,6 +25,17 @@ target_link_libraries(canary_tests PRIVATE canary::canary Boost::ut)
 canary_test_options(canary_tests)
 add_test(NAME canary.unit COMMAND canary_tests)
 
+# Extent preconditions are checked in isolated processes before storage access.
+add_executable(canary_mode_extent_tests test_mode_extent.cpp)
+target_link_libraries(canary_mode_extent_tests PRIVATE canary::canary)
+canary_test_options(canary_mode_extent_tests)
+foreach(operation closure rates production)
+  foreach(view raw typed)
+    add_test(NAME canary.mode_extent.${operation}.${view}
+             COMMAND canary_mode_extent_tests ${operation} ${view})
+  endforeach()
+endforeach()
+
 # Code that must not compile. compile_fail/<name>.cpp is compiled twice: as
 # written, as part of the normal build, where it must compile; and with
 # CANARY_COMPILE_FAIL defined, by the test, which passes only if the build

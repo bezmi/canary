@@ -265,11 +265,11 @@ CANARY_HOST_DEVICE ClosureOf<MultiTemperatureState<T, U, 1>>
 }
 
 // The element of a mode range of one mode.
-template <SpeciesRange V> CANARY_HOST_DEVICE range_quantity_t<V> single_mode(const V& modes)
+template <ModeRange V> CANARY_HOST_DEVICE mode_quantity_t<V> single_mode(const V& modes)
 {
     // NOLINTNEXTLINE(misc-static-assert): run-time extent
     CANARY_ASSERT(static_cast<std::size_t>(modes.extent(0)) == 1);
-    return modes[0];
+    return mode_at(modes, ModeIndex {0});
 }
 
 // T_ve from e_ve by solve_temperature of the single-temperature model on

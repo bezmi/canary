@@ -437,13 +437,13 @@ CANARY_HOST_DEVICE T electron_temperature(const MultiTemperatureMixture<P, U, N,
 { return !gas.electron_mode ? temp : mode_temp[(*gas.electron_mode).value()].value(); }
 
 // The elements of a mode range of M modes.
-template <std::size_t M, SpeciesRange V>
-CANARY_HOST_DEVICE std::array<range_quantity_t<V>, M> mode_values(const V& modes)
+template <std::size_t M, ModeRange V>
+CANARY_HOST_DEVICE std::array<mode_quantity_t<V>, M> mode_values(const V& modes)
 {
     // NOLINTNEXTLINE(misc-static-assert): run-time extent
     CANARY_ASSERT(static_cast<std::size_t>(modes.extent(0)) == M);
-    std::array<range_quantity_t<V>, M> out {};
-    for (const ModeIndex m : mode_indices(0, M)) { out[m.value()] = modes[m.value()]; }
+    std::array<mode_quantity_t<V>, M> out {};
+    for (const ModeIndex m : mode_indices(0, M)) { out[m.value()] = mode_at(modes, m); }
     return out;
 }
 
