@@ -61,16 +61,21 @@ CANARY_HOST_DEVICE std::array<T, 7>
 // each power t^p contributes d*u²*t^p*(3*M(2,p)-2*u*M(3,p)) to h.
 // Entropy replaces d by y and p by p-1 in the moments only. This local
 // representation avoids powers of the reciprocal transition width.
+// inv must equal 1 / t.
 template <bool Entropy, HasLog T, std::floating_point P>
     requires ScalarWith<T, P>
-CANARY_HOST_DEVICE T nasa9_integral(
-  const std::array<P, 9>& lower, const std::array<P, 9>& upper, T t, P start, P end) noexcept
+CANARY_HOST_DEVICE T nasa9_integral(const std::array<P, 9>& lower,
+                                    const std::array<P, 9>& upper,
+                                    T t,
+                                    T inv,
+                                    P start,
+                                    P end) noexcept
 {
     using V = ScalarTraits<T>::value_type;
     const T d = T(t - start);
     const T u = T(d / (end - start));
-    const T y = d / t;
-    const T s = T(start / t);
+    const T y = T(d * inv);
+    const T s = T(start * inv);
     T a4(V(0));
     if (ScalarTraits<T>::value(y) <= V(0.5)) {
         // A4=sum(y^k/(k+4)). The omitted tail is bounded by
@@ -94,10 +99,18 @@ CANARY_HOST_DEVICE T nasa9_integral(
     for (std::size_t j = 0; j < 7; ++j) {
         weighted[j] = T((T(static_cast<V>(upper[j])) - T(static_cast<V>(lower[j]))) * weighted[j]);
     }
-    const T inv = T(V(1)) / t;
     const T sum = (weighted[0] * inv + weighted[1]) * inv + weighted[2] +
                   t * (weighted[3] + t * (weighted[4] + t * (weighted[5] + t * weighted[6])));
     return (Entropy ? y : d) * u * u * sum;
+}
+
+template <bool Entropy, HasLog T, std::floating_point P>
+    requires ScalarWith<T, P>
+CANARY_HOST_DEVICE T nasa9_integral(
+  const std::array<P, 9>& lower, const std::array<P, 9>& upper, T t, P start, P end) noexcept
+{
+    using V = ScalarTraits<T>::value_type;
+    return nasa9_integral<Entropy>(lower, upper, t, T(T(V(1)) / t), start, end);
 }
 
 }  // namespace canary::detail

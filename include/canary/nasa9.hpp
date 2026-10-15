@@ -61,30 +61,52 @@ namespace detail
 {
 
 // Ordinary NASA9 polynomials; integration constants are stored in k[7:9].
+// inv must equal 1 / t, so that callers evaluating several polynomials at
+// one temperature divide once. The fixed divisors of the integrated
+// coefficients are applied as multiplications by their reciprocals.
+template <Scalar T, typename P>
+CANARY_HOST_DEVICE T nasa9_cp(const std::array<P, 9>& k, T t, T inv) noexcept
+{ return T(((k[0] * inv) + k[1]) * inv + k[2] + t * (k[3] + t * (k[4] + t * (k[5] + t * k[6])))); }
+
+template <Scalar T, typename P>
+CANARY_HOST_DEVICE T nasa9_h(const std::array<P, 9>& k, T t, T ln_t, T inv) noexcept
+{
+    using V = ScalarTraits<T>::value_type;
+    constexpr V third = V(1) / V(3);
+    constexpr V fifth = V(1) / V(5);
+    return T(-k[0] * inv + k[1] * ln_t + k[7] +
+             t * (k[2] + t * (k[3] * V(0.5) +
+                              t * (k[4] * third + t * (k[5] * V(0.25) + t * (k[6] * fifth))))));
+}
+
+template <Scalar T, typename P>
+CANARY_HOST_DEVICE T nasa9_entropy(const std::array<P, 9>& k, T t, T ln_t, T inv) noexcept
+{
+    using V = ScalarTraits<T>::value_type;
+    constexpr V third = V(1) / V(3);
+    return T(((-k[0] * V(0.5)) * inv - k[1]) * inv + k[2] * ln_t + k[8] +
+             t * (k[3] + t * (k[4] * V(0.5) + t * (k[5] * third + t * (k[6] * V(0.25))))));
+}
+
 template <Scalar T, typename P>
 CANARY_HOST_DEVICE T nasa9_cp(const std::array<P, 9>& k, T t) noexcept
 {
     using V = ScalarTraits<T>::value_type;
-    const T inv = T(V(1)) / t;
-    return T(((k[0] * inv) + k[1]) * inv + k[2] + t * (k[3] + t * (k[4] + t * (k[5] + t * k[6]))));
+    return nasa9_cp(k, t, T(T(V(1)) / t));
 }
 
 template <Scalar T, typename P>
 CANARY_HOST_DEVICE T nasa9_h(const std::array<P, 9>& k, T t, T ln_t) noexcept
 {
     using V = ScalarTraits<T>::value_type;
-    return T(
-      -k[0] / t + k[1] * ln_t + k[7] +
-      t * (k[2] + t * (k[3] / V(2) + t * (k[4] / V(3) + t * (k[5] / V(4) + t * (k[6] / V(5)))))));
+    return nasa9_h(k, t, ln_t, T(T(V(1)) / t));
 }
 
 template <Scalar T, typename P>
 CANARY_HOST_DEVICE T nasa9_entropy(const std::array<P, 9>& k, T t, T ln_t) noexcept
 {
     using V = ScalarTraits<T>::value_type;
-    const T inv = T(V(1)) / t;
-    return T(((-k[0] / V(2)) * inv - k[1]) * inv + k[2] * ln_t + k[8] +
-             t * (k[3] + t * (k[4] / V(2) + t * (k[5] / V(3) + t * (k[6] / V(4))))));
+    return nasa9_entropy(k, t, ln_t, T(T(V(1)) / t));
 }
 
 }  // namespace detail
@@ -133,24 +155,27 @@ class Nasa9Curve
         using V = ScalarTraits<T>::value_type;
         const auto r = region(ScalarTraits<T>::value(t));
         const auto& lower = b[r.lower];
-        const T cp = detail::nasa9_cp(lower, t);
-        const T h = detail::nasa9_h(lower, t, ln_t);
+        const T inv = T(T(V(1)) / t);
+        const T cp = detail::nasa9_cp(lower, t, inv);
+        const T h = detail::nasa9_h(lower, t, ln_t, inv);
         if (!r.transition) { return {cp, h}; }
         const auto& upper = b[r.lower + 1];
         const T u = T((t - r.start) / (r.end - r.start));
         const T w = u * u * (T(V(3)) - T(V(2)) * u);
-        return {T((T(V(1)) - w) * cp + w * detail::nasa9_cp(upper, t)),
-                T(h + detail::nasa9_integral<false>(lower, upper, t, r.start, r.end))};
+        return {T((T(V(1)) - w) * cp + w * detail::nasa9_cp(upper, t, inv)),
+                T(h + detail::nasa9_integral<false>(lower, upper, t, inv, r.start, r.end))};
     }
 
     template <HasLog T>
         requires ScalarWith<T, P>
     CANARY_HOST_DEVICE T inside_s(T t, T ln_t) const noexcept
     {
+        using V = ScalarTraits<T>::value_type;
         const auto r = region(ScalarTraits<T>::value(t));
-        const T s = detail::nasa9_entropy(b[r.lower], t, ln_t);
+        const T inv = T(T(V(1)) / t);
+        const T s = detail::nasa9_entropy(b[r.lower], t, ln_t, inv);
         if (!r.transition) { return s; }
-        return T(s + detail::nasa9_integral<true>(b[r.lower], b[r.lower + 1], t, r.start, r.end));
+        return T(s + detail::nasa9_integral<true>(b[r.lower], b[r.lower + 1], t, inv, r.start, r.end));
     }
 
     template <std::size_t M, std::floating_point Q>
