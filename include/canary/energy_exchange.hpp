@@ -617,10 +617,28 @@ CANARY_HOST_DEVICE constexpr ValueAndDerivative<V> bernoulli_remainder(V y)
 //   theta_v h(theta_v x) - theta_d h(theta_d x), with h of
 //   bernoulli_remainder, in which the divergent terms 1 / x cancel exactly
 //   (g(0) = (theta_d - theta_v) / 2);
-// - otherwise, at |x|, theta / (exp(theta |x|) - 1) = theta exp(-theta |x|)
-//   / (-expm1(-theta |x|)), and for x < 0, g(x) = (theta_d - theta_v) -
-//   g(|x|), so that dg/dx is even.
+// - otherwise, at |x|, theta / (exp(theta |x|) - 1) = theta e / d with
+//   e = exp(-theta |x|) and d = 1 - e (oscillator_terms), and for x < 0,
+//   g(x) = (theta_d - theta_v) - g(|x|), so that dg/dx is even.
 // The relative error is a few ulp when theta_d is not close to theta_v.
+template <std::floating_point V> struct OscillatorTerms {
+    V e;
+    V d;
+};
+
+// e = exp(-a) and d = 1 - e for a > 0, from one exponential: for a > ln 2,
+// e from exp and d = 1 - e >= 1/2; otherwise d = -expm1(-a) and
+// e = 1 - d >= 1/2. Neither subtraction cancels.
+template <std::floating_point V> CANARY_HOST_DEVICE OscillatorTerms<V> oscillator_terms(V a)
+{
+    if (a > std::numbers::ln2_v<V>) {
+        const V e = std::exp(-a);
+        return {.e = e, .d = V(1) - e};
+    }
+    const V m = std::expm1(-a);
+    return {.e = V(1) + m, .d = -m};
+}
+
 template <std::floating_point V>
 CANARY_HOST_DEVICE ValueAndDerivative<V> truncated_oscillator_energy(V theta_v, V theta_d, V x)
 {
@@ -635,12 +653,15 @@ CANARY_HOST_DEVICE ValueAndDerivative<V> truncated_oscillator_energy(V theta_v, 
           .derivative = (theta_v * theta_v * h_v.derivative) - (theta_d * theta_d * h_d.derivative),
         };
     }
-    const V e_v = std::exp(-theta_v * abs_x);
-    const V d_v = -std::expm1(-theta_v * abs_x);
-    const V e_d = std::exp(-theta_d * abs_x);
-    const V d_d = -std::expm1(-theta_d * abs_x);
-    const V g = (theta_v * e_v / d_v) - (theta_d * e_d / d_d);
-    const V dg = (theta_d * theta_d * e_d / (d_d * d_d)) - (theta_v * theta_v * e_v / (d_v * d_v));
+    const OscillatorTerms<V> v = oscillator_terms(theta_v * abs_x);
+    const OscillatorTerms<V> d = oscillator_terms(theta_d * abs_x);
+    // r = e / d, shared with dg = theta^2 e / d^2 = theta^2 r / d.
+    const V inv_v = V(1) / v.d;
+    const V inv_d = V(1) / d.d;
+    const V r_v = v.e * inv_v;
+    const V r_d = d.e * inv_d;
+    const V g = (theta_v * r_v) - (theta_d * r_d);
+    const V dg = (theta_d * theta_d * r_d * inv_d) - (theta_v * theta_v * r_v * inv_v);
     return {.value = x < V(0) ? (theta_d - theta_v) - g : g, .derivative = dg};
 }
 
@@ -662,13 +683,13 @@ CANARY_HOST_DEVICE std::array<T, N>
     const T ln_t = math::log(t);
     const T t_inverse_cbrt = math::exp(T(-ln_t / T(Real(3))));
     const T sqrt_t = math::sqrt(t);
-    const T kt = T(boltzmann.value() * t_bath);
+    const T inv_kt = T(T(Real(1)) / T(boltzmann.value() * t_bath));
     std::array<T, N> inverse_tau {};
     inverse_tau.fill(T(Real(0)));
     for (const VibrationTranslationPair<P, U>& pair : pairs) {
         const T millikan_white =
-          T(math::exp(T(T(pair.millikan_white_a * t_inverse_cbrt) + pair.millikan_white_offset)) /
-            kt);
+          T(math::exp(T(T(pair.millikan_white_a * t_inverse_cbrt) + pair.millikan_white_offset)) *
+            inv_kt);
         T correction = T(Real(0));
         if (pair.correction_coefficient != P(0)) {
             // T^beta, with the exponents of park_1993 and park_1985 from sqrt(T).
