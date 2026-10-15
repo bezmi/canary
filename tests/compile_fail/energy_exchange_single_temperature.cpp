@@ -18,7 +18,7 @@ using Extents = Kokkos::dextents<std::size_t, 1>;
 const canary::UnitScales<double, canary::si> scales {};
 const auto built = canary::make_air5_two_temperature<double>(scales);
 const auto single = canary::make_air5<double>(scales).model;
-const auto mechanism = canary::make_air5_park(built.species, scales);
+const auto mechanism = canary::make_air5_park(scales);
 const auto exchange = canary::make_air5_park_exchange(built.species, mechanism, scales);
 const std::array<double, 5> y {0.767, 0.233, 0.0, 0.0, 0.0};
 const auto mix = canary::mixture(

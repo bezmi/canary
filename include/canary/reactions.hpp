@@ -40,6 +40,7 @@
 #include <canary/config.hpp>
 #include <canary/models/thermally_perfect.hpp>
 #include <canary/quantity.hpp>
+#include <canary/reaction_species.hpp>
 #include <canary/scalar.hpp>
 #include <canary/species.hpp>
 #include <canary/thermo.hpp>
@@ -50,6 +51,7 @@
 #include <cstdint>
 #include <format>
 #include <limits>
+#include <map>
 #include <string_view>
 #include <type_traits>
 
@@ -433,32 +435,84 @@ Reaction<P, U, N> make_reaction(const ReactionInput<K>& input,
     return r;
 }
 
+// Products fit in int64_t because coefficients and charge numbers use signed
+// 32-bit storage and element counts use unsigned 32-bit storage. Check sums
+// before addition so large mechanisms cannot overflow conservation arithmetic.
+inline void add_conservation_term(std::int64_t& sum, std::int64_t term)
+{
+    if ((term > 0 && sum > std::numeric_limits<std::int64_t>::max() - term) ||
+        (term < 0 && sum < std::numeric_limits<std::int64_t>::min() - term)) {
+        throw ParameterError("conservation sum exceeds the signed 64-bit range");
+    }
+    sum += term;
+}
+
+template <std::floating_point P, UnitSystem U, typename Source, std::size_t N>
+void check_reaction_conservation(const Reaction<P, U, N>& reaction,
+                                 const ReactionSpeciesView<Source, N>& species)
+{
+    std::int64_t charge_balance = 0;
+    std::map<std::string_view, std::int64_t> element_balance;
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        const int reactant = reaction.reactants[i.value()];
+        const int product = reaction.products[i.value()];
+        if (reactant == 0 && product == 0) { continue; }
+        const ChargeNumber charge = species.charge_number(i);
+        const auto metadata = species.metadata(i);
+        try {
+            check_species_metadata(metadata, charge.value());
+            if (!metadata.elements) {
+                throw ParameterError("elemental composition is required for reaction participants");
+            }
+        } catch (const ParameterError& error) {
+            throw ParameterError(std::format(R"(species "{}": {})", species.name(i), error.what()));
+        }
+        const std::int64_t net = std::int64_t {product} - reactant;
+        add_conservation_term(charge_balance, net * charge.value());
+        for (const auto& element : *metadata.elements) {
+            add_conservation_term(element_balance[element.element],
+                                  net * std::int64_t {element.count});
+        }
+    }
+    if (charge_balance != 0) {
+        throw ParameterError(
+          std::format("charge is not conserved (net elementary charges {})", charge_balance));
+    }
+    for (const auto& [element, balance] : element_balance) {
+        if (balance != 0) {
+            throw ParameterError(
+              std::format("element {} is not conserved (net nuclei {})", element, balance));
+        }
+    }
+}
+
 // Builds the reactions of input into mech; see make_reaction_mechanism.
 template <std::floating_point P,
           UnitSystem U,
           std::size_t N,
           std::size_t R,
           std::size_t K,
+          typename Source,
           typename OtherMode>
 ReactionMechanism<P, U, N, R> build_mechanism(const MechanismInput<R, K>& input,
-                                              const std::array<std::string_view, N>& names,
-                                              const SpeciesData<P, U, N>& species,
+                                              const ReactionSpeciesView<Source, N>& species,
                                               const UnitScales<P, U>& scales,
                                               Pressure<P, U> standard_pressure,
                                               const OtherMode& other_mode)
 {
-    if (species.n != static_cast<int>(N)) {
-        throw ParameterError(
-          std::format("species data must have {} species, got {}", N, species.n));
+    std::array<std::string_view, N> names {};
+    std::array<ParticleMass<P, U>, N> mass {};
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        try {
+            names[i.value()] = species.name(i);
+            mass[i.value()] = particle_mass_parameter(species.molar_mass(i), scales);
+        } catch (const ParameterError& error) {
+            throw ParameterError(std::format("species {}: {}", i.value(), error.what()));
+        }
     }
     for (const SpeciesIndex i : species_indices(0, N)) {
         if (species_index(names, names[i.value()]) != OptionalSpeciesIndex {i}) {
-            throw ParameterError(std::format("species \"{}\" is named twice", names[i.value()]));
-        }
-        const auto mass = species.mass[i.value()];
-        if (!std::isfinite(mass.value()) || !(mass.value() > P(0))) {
-            throw ParameterError(std::format("species \"{}\": particle mass must be finite and positive",
-                                             names[i.value()]));
+            throw ParameterError(std::format(R"(species "{}" is named twice)", names[i.value()]));
         }
     }
     const double lower = input.temperature_lower;
@@ -479,6 +533,7 @@ ReactionMechanism<P, U, N, R> build_mechanism(const MechanismInput<R, K>& input,
         const ReactionInput<K>& reaction = input.reactions[k];
         try {
             mech.reactions[k] = make_reaction(reaction, names, scales, other_mode);
+            check_reaction_conservation(mech.reactions[k], species);
         } catch (const ParameterError& error) {
             throw ParameterError(std::format("reaction {} ({}): {}",
                                              k,
@@ -486,7 +541,7 @@ ReactionMechanism<P, U, N, R> build_mechanism(const MechanismInput<R, K>& input,
                                              error.what()));
         }
     }
-    mech.mass = species.mass;
+    mech.mass = mass;
     using W = std::common_type_t<double, P>;
     mech.temperature_lower = positive_thermodynamic_parameter<P>(
       convert<U>(Temperature<W, si> {static_cast<W>(lower)}, scales), "temperature lower limit");
@@ -503,13 +558,13 @@ ReactionMechanism<P, U, N, R> build_mechanism(const MechanismInput<R, K>& input,
 }  // namespace detail
 
 // Mechanism of the reactions of input over the N species of a thermo model,
-// named in its species order (for example the name of each Nasa9Species),
-// with their particle masses from species, in the unit system of the
+// from one host species view in model order. Names, particle masses, charges
+// and elemental composition come from those definitions, in the unit system of the
 // scales, with standard pressure p0. Rate constants are converted to
 // per-particle model units, activation temperatures and the temperature
 // limits to the temperature unit of U. Throws ParameterError when:
-// - species.n is not N, a name is listed twice, or a stored particle mass is
-//   not finite and positive;
+// - a name is null, empty or listed twice, or a molar/stored particle mass
+//   is not finite and positive;
 // - the temperature limits are not finite with 0 < lower < upper, or p0 is
 //   not finite and positive; converted temperature limits must also remain
 //   finite, positive and strictly ordered;
@@ -524,23 +579,28 @@ ReactionMechanism<P, U, N, R> build_mechanism(const MechanismInput<R, K>& input,
 //   rate is checked only with BackwardRateModel::arrhenius).
 // Stored efficiencies, n, activation temperatures and translational exponents
 // must remain finite after conversion to the parameter type.
-// names, species and the thermodynamic model used during rate evaluation
-// must use the same species order. Construction checks names and counts,
-// but SpeciesData carries no names to verify this ordering.
+// Every reaction participant must have valid explicit metadata, known elemental
+// composition and an integral signed 32-bit charge number. Elemental and charge
+// balances are exact checked integer sums; nonzero or overflowing balances are
+// rejected with reaction context. Unchanged explicit participants are validated.
+// The host species and thermo model used for rate evaluation must share ordering.
 // Every rate's other mode is 0, whatever its other_temperature: each T_o is
 // the single second temperature T_ve of a two-temperature evaluation, and a
 // backward input of an equilibrium rate with an other_temperature gives an
 // equilibrium backward rate at T_ve.
-template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t R, std::size_t K>
+template <std::floating_point P,
+          UnitSystem U,
+          typename Source,
+          std::size_t N,
+          std::size_t R,
+          std::size_t K>
     requires(N > 0 && R > 0 && K > 0)
 ReactionMechanism<P, U, N, R> make_reaction_mechanism(const MechanismInput<R, K>& input,
-                                                      const std::array<std::string_view, N>& names,
-                                                      const SpeciesData<P, U, N>& species,
+                                                      const ReactionSpeciesView<Source, N>& species,
                                                       const UnitScales<P, U>& scales,
                                                       Pressure<P, U> standard_pressure)
 {
     return detail::build_mechanism(input,
-                                   names,
                                    species,
                                    scales,
                                    standard_pressure,
@@ -548,15 +608,18 @@ ReactionMechanism<P, U, N, R> make_reaction_mechanism(const MechanismInput<R, K>
 }
 
 // As above, with the standard pressure 1 bar (1e5 Pa).
-template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t R, std::size_t K>
+template <std::floating_point P,
+          UnitSystem U,
+          typename Source,
+          std::size_t N,
+          std::size_t R,
+          std::size_t K>
     requires(N > 0 && R > 0 && K > 0)
 ReactionMechanism<P, U, N, R> make_reaction_mechanism(const MechanismInput<R, K>& input,
-                                                      const std::array<std::string_view, N>& names,
-                                                      const SpeciesData<P, U, N>& species,
+                                                      const ReactionSpeciesView<Source, N>& species,
                                                       const UnitScales<P, U>& scales)
 {
     return make_reaction_mechanism(input,
-                                   names,
                                    species,
                                    scales,
                                    convert<U>(Pressure<P, si> {P(1.0e5)}, scales));
@@ -643,7 +706,7 @@ template <HasEnergyModes G, std::size_t N> struct ModelOtherTemperature {
 
 // As make_reaction_mechanism with a standard pressure, with each rate's
 // other temperature resolved against the energy modes of gas, whose
-// species are those of names in the same order. The other mode of a rate
+// species are those of the host definitions in the same order. The other mode of a rate
 // is:
 // - for other_temperature "electron": electron_energy_mode(gas);
 // - for a species name: species_vibration_mode(gas) of that species;
@@ -663,22 +726,39 @@ template <std::floating_point P,
           std::size_t N,
           std::size_t R,
           std::size_t K,
+          typename Source,
           HasEnergyModes G>
     requires(N > 0 && R > 0 && K > 0) && std::same_as<typename G::units, U>
 ReactionMechanism<P, U, N, R> make_reaction_mechanism(const MechanismInput<R, K>& input,
-                                                      const std::array<std::string_view, N>& names,
-                                                      const SpeciesData<P, U, N>& species,
+                                                      const ReactionSpeciesView<Source, N>& species,
                                                       const UnitScales<P, U>& scales,
                                                       Pressure<P, U> standard_pressure,
                                                       const G& gas)
 {
+    std::array<std::string_view, N> names {};
+    for (const SpeciesIndex i : species_indices(0, N)) { names[i.value()] = species.name(i); }
     return detail::build_mechanism(
       input,
-      names,
       species,
       scales,
       standard_pressure,
       detail::ModelOtherTemperature<G, N> {.gas = &gas, .names = &names});
+}
+
+// Owned host species definitions are borrowed only during construction.
+template <typename... Explicit, typename Input, typename Source, typename... Rest>
+auto make_reaction_mechanism(const Input& input,
+                             const detail::OwnedReactionSpecies<Source>& species,
+                             const Rest&... rest)
+{
+    return detail::with_inputs(
+      [&](const auto& borrowed, const auto& definitions) {
+          return make_reaction_mechanism<Explicit...>(borrowed,
+                                                      reaction_species(definitions),
+                                                      rest...);
+      },
+      input,
+      species.input);
 }
 
 // A thermo model of N species whose species_properties(gas, temp) gives the

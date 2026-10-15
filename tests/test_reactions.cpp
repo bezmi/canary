@@ -5,6 +5,7 @@
 #include <array>
 #include <boost/ut.hpp>
 #include <canary/build.hpp>
+#include <canary/data/air11_kim_jo.hpp>
 #include <canary/data/air5.hpp>
 #include <canary/data/air5_kim_jo.hpp>
 #include <canary/models/calorically_perfect.hpp>
@@ -189,7 +190,7 @@ void test_reactions()
     const auto built = canary::make_air5<double>(si_scales);
     const Air& gas = built.model;
     const Mechanism mech =
-      canary::make_air5_kim_jo(built.species, si_scales, canary::Pressure<double, si> {atmosphere});
+      canary::make_air5_kim_jo(si_scales, canary::Pressure<double, si> {atmosphere});
 
     "the builder converts rate constants to per-particle units"_test = [&] {
         // N2 + N2 <=> N + N + N2: order 2. NO + M <=> N + O + M: order 2.
@@ -218,12 +219,11 @@ void test_reactions()
         for (std::size_t e = 2; e < 5; ++e) {
             input.reactions[10].efficiencies.entries[e].value = 0.6648276;
         }
-        const Mechanism reference_mech = canary::make_reaction_mechanism(
-          input,
-          std::array<std::string_view, 5> {"N2", "O2", "N", "O", "NO"},
-          built.species,
-          si_scales,
-          canary::Pressure<double, si> {atmosphere});
+        const Mechanism reference_mech =
+          canary::make_reaction_mechanism(input,
+                                          canary::reaction_species(canary::air5_species),
+                                          si_scales,
+                                          canary::Pressure<double, si> {atmosphere});
         const double r = canary::constants::universal_gas_constant<double> / reference_gas_constant;
         for (const ReferenceState& s : reference_states) {
             const Rates got = evaluate(reference_mech, gas, s.y, s.rho, s.temp);
@@ -320,7 +320,7 @@ void test_reactions()
       };
 
     "the default standard pressure is 1 bar"_test = [&] {
-        const Mechanism bar = canary::make_air5_kim_jo(built.species, si_scales);
+        const Mechanism bar = canary::make_air5_kim_jo(si_scales);
         expect(bar.standard_pressure.value() == 1.0e5);
         const ReferenceState& s = reference_states[1];
         const Rates a = evaluate(bar, gas, s.y, s.rho, s.temp);
@@ -421,7 +421,6 @@ void test_reactions()
     "a scaled mechanism gives the SI rates after conversion"_test = [&] {
         const auto built_s = canary::make_air5<double>(reference_scales);
         const auto mech_s = canary::make_air5_kim_jo(
-          built_s.species,
           reference_scales,
           canary::convert<scaled>(canary::Pressure<double, si> {atmosphere}, reference_scales));
         for (const ReferenceState& s : reference_states) {
@@ -486,7 +485,6 @@ void test_reactions()
         }};
         const auto built_f = canary::make_air5<float>(scales_f);
         const auto mech_f = canary::make_air5_kim_jo(
-          built_f.species,
           scales_f,
           canary::convert<scaled>(canary::Pressure<float, si> {101325.0F}, scales_f));
         for (const std::size_t state : {std::size_t {1}, std::size_t {2}}) {
@@ -514,10 +512,7 @@ void test_reactions()
 
     "stored reaction parameters reject narrowing overflow"_test = [] {
         const canary::UnitScales<float, si> scales;
-        canary::SpeciesData<float, si, 1> species {};
-        species.n = 1;
-        species.mass[0] = canary::ParticleMass<float, si> {1.0F};
-        const std::array<std::string_view, 1> names {"N"};
+        const std::array species {canary::air5_species[2]};
         canary::MechanismInput<1, 1> base {};
         base.temperature_lower = 300;
         base.temperature_upper = 30000;
@@ -528,7 +523,9 @@ void test_reactions()
         reaction.forward = {.A = 1.0, .n = 0.0, .activation_temperature = 0.0,
                             .translational_exponent = 1.0};
         const auto build = [&](const auto& input) {
-            return canary::make_reaction_mechanism(input, names, species, scales);
+            return canary::make_reaction_mechanism(input,
+                                                   canary::reaction_species(species),
+                                                   scales);
         };
         const double large = 2.0 * std::numeric_limits<float>::max();
         for (const bool backward : {false, true}) {
@@ -576,13 +573,10 @@ void test_reactions()
     };
 
     "stored reaction temperatures are converted before narrowing"_test = [] {
-        const std::array<std::string_view, 1> names {"N"};
         const auto check = [&]<typename P>(P temperature_scale, double lower) {
             const canary::UnitScales<P, scaled> scales {{
               .mass = P(1), .density = P(1), .temperature = temperature_scale, .length = P(1)}};
-            canary::SpeciesData<P, scaled, 1> species {};
-            species.n = 1;
-            species.mass[0] = canary::ParticleMass<P, scaled> {P(1)};
+            const std::array species {canary::air5_species[2]};
             canary::MechanismInput<1, 1> input {};
             input.temperature_lower = lower;
             input.temperature_upper = 2 * lower;
@@ -592,8 +586,10 @@ void test_reactions()
             reaction.products = reaction.reactants;
             reaction.forward = {.A = 1.0, .n = 0.0, .activation_temperature = lower,
                                 .translational_exponent = 1.0};
-            const auto result = canary::make_reaction_mechanism(
-              input, names, species, scales, canary::Pressure<P, scaled> {P(1)});
+            const auto result = canary::make_reaction_mechanism(input,
+                                                                canary::reaction_species(species),
+                                                                scales,
+                                                                canary::Pressure<P, scaled> {P(1)});
             const P expected = static_cast<P>(lower / static_cast<double>(temperature_scale));
             expect(std::isfinite(result.temperature_lower.value()));
             expect(result.temperature_lower.value() > P(0));
@@ -602,8 +598,10 @@ void test_reactions()
             expect(result.reactions[0].forward.activation_temperature.value() == expected);
             input.reactions[0].forward.activation_temperature = std::numeric_limits<double>::max();
             expect(error_message([&] {
-                       (void)canary::make_reaction_mechanism(
-                         input, names, species, scales, canary::Pressure<P, scaled> {P(1)});
+                       (void)canary::make_reaction_mechanism(input,
+                                                             canary::reaction_species(species),
+                                                             scales,
+                                                             canary::Pressure<P, scaled> {P(1)});
                    }).starts_with("reaction 0 (N <=> N): forward rate: activation temperature"));
         };
         check(1.0e10F, 1.0e40);
@@ -613,8 +611,7 @@ void test_reactions()
 
     "stored reaction masses must remain finite and positive"_test = [] {
         const auto check = []<typename P, typename U>(const canary::UnitScales<P, U>& scales) {
-            canary::SpeciesData<P, U, 1> species {};
-            species.n = 1;
+            std::array species {canary::air5_species[2]};
             canary::MechanismInput<1, 1> input {};
             input.temperature_lower = 300;
             input.temperature_upper = 30000;
@@ -624,17 +621,21 @@ void test_reactions()
             reaction.products = reaction.reactants;
             reaction.forward = {.A = 1.0, .n = 0.0, .activation_temperature = 0.0,
                                 .translational_exponent = 1.0};
-            const std::array<std::string_view, 1> names {"N"};
             for (const P mass : {P(0), P(-1), std::numeric_limits<P>::infinity(),
                                  std::numeric_limits<P>::quiet_NaN()}) {
-                species.mass[0] = canary::ParticleMass<P, U> {mass};
+                species[0].molar_mass = static_cast<double>(mass);
                 expect(error_message([&] {
-                           (void)canary::make_reaction_mechanism(input, names, species, scales);
-                       }).starts_with("species \"N\": particle mass"));
+                           (void)canary::make_reaction_mechanism(input,
+                                                                 canary::reaction_species(species),
+                                                                 scales);
+                       }).starts_with("species 0: molar mass"));
             }
-            species.mass[0] = canary::ParticleMass<P, U> {P(1)};
-            const auto result = canary::make_reaction_mechanism(input, names, species, scales);
-            expect(result.mass[0] == species.mass[0]);
+            species[0].molar_mass = 0.014;
+            const auto result =
+              canary::make_reaction_mechanism(input, canary::reaction_species(species), scales);
+            expect(result.mass[0] == canary::detail::particle_mass_parameter(
+                                       canary::MolarMass<double> {species[0].molar_mass},
+                                       scales));
         };
         check(canary::UnitScales<float, si> {});
         check(canary::UnitScales<double, si> {});
@@ -659,11 +660,9 @@ void test_reactions()
                    }).starts_with("forward rate: reaction order"));
         }
         const auto build = [&](const auto& input) {
-            (void)canary::make_reaction_mechanism(
-              input,
-              std::array<std::string_view, 5> {"N2", "O2", "N", "O", "NO"},
-              built.species,
-              si_scales);
+            (void)canary::make_reaction_mechanism(input,
+                                                  canary::reaction_species(canary::air5_species),
+                                                  si_scales);
         };
         auto input = canary::air5_kim_jo;
         auto& reaction = input.reactions[0];
@@ -687,11 +686,9 @@ void test_reactions()
 
     "the builder rejects invalid input with the reaction in the message"_test = [&] {
         const auto build = [&](const canary::MechanismInput<13, 5>& input) {
-            (void)canary::make_reaction_mechanism(
-              input,
-              std::array<std::string_view, 5> {"N2", "O2", "N", "O", "NO"},
-              built.species,
-              si_scales);
+            (void)canary::make_reaction_mechanism(input,
+                                                  canary::reaction_species(canary::air5_species),
+                                                  si_scales);
         };
         const auto starts = [](const std::string& message, std::string_view prefix) {
             return message.starts_with(prefix);
@@ -764,22 +761,149 @@ void test_reactions()
         input.temperature_lower = 40000.0;
         expect(starts(error_message([&] { build(input); }), "temperature limits"));
         expect(starts(error_message([&] {
-                          (void)canary::make_air5_kim_jo(built.species,
-                                                         si_scales,
+                          (void)canary::make_air5_kim_jo(si_scales,
                                                          canary::Pressure<double, si> {0.0});
                       }),
                       "standard pressure"));
-        auto species = built.species;
-        species.n = 4;
-        expect(starts(error_message([&] { (void)canary::make_air5_kim_jo(species, si_scales); }),
-                      "species data"));
+        auto invalid_species = canary::air5_species;
+        invalid_species[0].name = nullptr;
         expect(starts(error_message([&] {
                           (void)canary::make_reaction_mechanism(
                             canary::air5_kim_jo,
-                            std::array<std::string_view, 5> {"N2", "O2", "N", "N2", "NO"},
-                            built.species,
+                            canary::reaction_species(invalid_species),
+                            si_scales);
+                      }),
+                      "species 0: species name must not be null"));
+        auto duplicate_species = canary::air5_species;
+        duplicate_species[3].name = "N2";
+        expect(starts(error_message([&] {
+                          (void)canary::make_reaction_mechanism(
+                            canary::air5_kim_jo,
+                            canary::reaction_species(duplicate_species),
                             si_scales);
                       }),
                       "species \"N2\" is named twice"));
+    };
+    "reaction construction conserves elements and integer charge numbers"_test = [&] {
+        static_assert(sizeof(canary::ChargeNumber) == sizeof(std::int32_t));
+        static_assert(!std::is_convertible_v<canary::ChargeNumber, int>);
+        static_assert(!std::is_convertible_v<int, canary::ChargeNumber>);
+        static_assert(std::is_trivially_copyable_v<canary::ChargeNumber>);
+        const auto view = canary::reaction_species(canary::air11_species);
+        const auto source =
+          *canary::detail::species_index(canary::detail::air11_kim_jo_species_names, "O");
+        const auto ion =
+          *canary::detail::species_index(canary::detail::air11_kim_jo_species_names, "O+");
+        const auto electron =
+          *canary::detail::species_index(canary::detail::air11_kim_jo_species_names, "e-");
+        canary::MechanismInput<1, 11> input {.temperature_lower = 300.0,
+                                             .temperature_upper = 30000.0,
+                                             .reactions = {canary::air11_kim_jo.reactions[38]}};
+        input.reactions[0].forward.other_temperature = nullptr;
+        input.reactions[0].forward.translational_exponent = 1.0;
+        const auto check = [&](const auto& definitions, const auto& mechanism) {
+            return error_message([&] {
+                (void)canary::make_reaction_mechanism(mechanism,
+                                                      canary::reaction_species(definitions),
+                                                      si_scales);
+            });
+        };
+        expect(view.charge_number(electron).value() == -1);
+        expect(check(canary::air11_species, input) == "no exception");
+        auto changed = input;
+        changed.reactions[0].products.entries[1].value = 1.0;
+        const auto charge_error = check(canary::air11_species, changed);
+        expect(charge_error.starts_with("reaction 0 (")) << charge_error;
+        expect(charge_error.find("charge is not conserved") != std::string::npos) << charge_error;
+
+        auto species = canary::air11_species;
+        for (const double charge : {0.5,
+                                    -0.5,
+                                    2147483648.0,
+                                    -2147483649.0,
+                                    std::numeric_limits<double>::infinity(),
+                                    std::numeric_limits<double>::quiet_NaN()}) {
+            species[source.value()].charge = charge;
+            const auto message = check(species, input);
+            expect(message.find("charge number must be an integer") != std::string::npos)
+              << message;
+        }
+        species = canary::air11_species;
+        species[ion.value()].charge = 2;
+        changed = input;
+        changed.reactions[0].products.entries[1].value = 3.0;
+        expect(check(species, changed) == "no exception");
+        species[ion.value()].charge = -1;
+        changed.reactions[0].products.count = 1;
+        expect(check(species, changed) == "no exception");
+
+        species = canary::air11_species;
+        species[source.value()].metadata.elements.reset();
+        expect(check(species, input).find("elemental composition is required") !=
+               std::string::npos);
+        species = canary::air11_species;
+        species[source.value()].metadata.role = canary::SpeciesRole::unspecified;
+        expect(check(species, input).find("species role must be specified") != std::string::npos);
+        species = canary::air11_species;
+        // Unused species do not participate in conservation checks.
+        species[0].metadata.elements.reset();
+        species[0].charge = 0.5;
+        expect(check(species, input) == "no exception");
+
+        auto dissociation = canary::air5_kim_jo;
+        dissociation.reactions[0].products.entries[0].value = 1;
+        const auto element_error = check(canary::air5_species, dissociation);
+        expect(element_error.starts_with("reaction 0 (")) << element_error;
+        expect(element_error.find("element N is not conserved") != std::string::npos)
+          << element_error;
+        const std::array<canary::ElementCount, 2> duplicate {{{"N", 1}, {"N", 1}}};
+        auto nitrogen = canary::air5_species;
+        nitrogen[0].metadata.elements = duplicate;
+        expect(check(nitrogen, canary::air5_kim_jo).find("element N: given twice") !=
+               std::string::npos);
+        nitrogen = canary::air5_species;
+        const std::array<canary::ElementCount, 1> zero {{{"N", 0}}};
+        nitrogen[0].metadata.elements = zero;
+        expect(check(nitrogen, canary::air5_kim_jo).find("count must be positive") !=
+               std::string::npos);
+    };
+
+    "reaction species support typed definitions without thermodynamic fits"_test = [&] {
+        struct Definition {
+            std::string_view name;
+            canary::MolarMass<double> molar_mass;
+            canary::ChargeNumber charge;
+            canary::SpeciesMetadataView metadata;
+        };
+        static_assert(!std::is_constructible_v<canary::ChargeNumber, double>);
+        const std::array<canary::ElementCount, 1> molecule {{{"X", 2}}};
+        const std::array<canary::ElementCount, 1> atom {{{"X", 1}}};
+        const std::array definitions {Definition {"molecule",
+                                                  canary::MolarMass<double> {0.028},
+                                                  canary::ChargeNumber {0},
+                                                  {canary::SpeciesRole::heavy, molecule}},
+                                      Definition {"atom",
+                                                  canary::MolarMass<double> {0.014},
+                                                  canary::ChargeNumber {0},
+                                                  {canary::SpeciesRole::heavy, atom}}};
+        using View = decltype(canary::reaction_species(definitions));
+        static_assert(!std::is_constructible_v<View, decltype(definitions)&&>);
+        canary::MechanismInput<1, 2> input {};
+        input.temperature_lower = 300;
+        input.temperature_upper = 30000;
+        input.reactions[0].equation = "molecule -> 2 atom";
+        input.reactions[0].reactants = {.count = 1, .entries = {{{"molecule", 1}}}};
+        input.reactions[0].products = {.count = 1, .entries = {{{"atom", 2}}}};
+        input.reactions[0].forward.A = 1;
+        const auto mechanism =
+          canary::make_reaction_mechanism(input, canary::reaction_species(definitions), si_scales);
+        expect(mechanism.mass[0].value() == 2 * mechanism.mass[1].value());
+        auto broken = input;
+        broken.reactions[0].products.entries[0].value = 1;
+        expect(error_message([&] {
+                   (void)canary::make_reaction_mechanism(broken,
+                                                         canary::reaction_species(definitions),
+                                                         si_scales);
+               }).find("element X is not conserved") != std::string::npos);
     };
 }

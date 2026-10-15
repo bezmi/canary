@@ -451,7 +451,7 @@ void test_multi_temperature_kinetics()
     const auto built = canary::make_air11_three_temperature<double>(si_scales);
     const Gas& gas = built.model;
     const canary::Pressure<double, si> p0 {atmosphere};
-    const Mechanism mech = canary::make_air11_kim_jo(built.species, si_scales, p0, gas);
+    const Mechanism mech = canary::make_air11_kim_jo(si_scales, p0, gas);
     const Exchange exchange =
       canary::make_air11_kim_jo_exchange(built.species, mech, gas, si_scales);
     const std::array<std::string_view, species_count> names =
@@ -676,8 +676,8 @@ void test_multi_temperature_kinetics()
                                                                 single_mode,
                                                                 si_scales);
         static_assert(decltype(one.model)::mode_count == 1);
-        const Mechanism with_gas = canary::make_air11_kim_jo(one.species, si_scales, p0, one.model);
-        const Mechanism without = canary::make_air11_kim_jo(one.species, si_scales, p0);
+        const Mechanism with_gas = canary::make_air11_kim_jo(si_scales, p0, one.model);
+        const Mechanism without = canary::make_air11_kim_jo(si_scales, p0);
         for (std::size_t k = 0; k < reaction_count; ++k) {
             expect(with_gas.reactions[k].forward.other_mode == canary::ModeIndex {0});
             expect(with_gas.reactions[k].backward.other_mode == canary::ModeIndex {0});
@@ -746,8 +746,7 @@ void test_multi_temperature_kinetics()
               .reactions = {r},
             };
             return canary::make_reaction_mechanism(input,
-                                                   names,
-                                                   built.species,
+                                                   canary::reaction_species(canary::air11_species),
                                                    si_scales,
                                                    p0,
                                                    model)
@@ -880,7 +879,6 @@ void test_multi_temperature_kinetics()
         // The two-temperature model has one mode holding every species and
         // no free electrons.
         const auto air5 = canary::make_air5_two_temperature<double>(si_scales);
-        const auto air5_names = std::array<std::string_view, 5> {"N2", "O2", "N", "O", "NO"};
         const auto build5 = [&](canary::ArrheniusInput f) {
             const canary::MechanismInput<1, 3> input {
               .temperature_lower = 300.0,
@@ -896,8 +894,7 @@ void test_multi_temperature_kinetics()
                 },
             };
             return canary::make_reaction_mechanism(input,
-                                                   air5_names,
-                                                   air5.species,
+                                                   canary::reaction_species(canary::air5_species),
                                                    si_scales,
                                                    p0,
                                                    air5.model)
@@ -1307,8 +1304,7 @@ void test_multi_temperature_kinetics()
     "multi-temperature kinetics: scaled units give the SI results after conversion"_test = [&] {
         const auto built_s = canary::make_air11_three_temperature<double>(reference_scales);
         const auto& gas_s = built_s.model;
-        const auto mech_s = canary::make_air11_kim_jo(built_s.species,
-                                                      reference_scales,
+        const auto mech_s = canary::make_air11_kim_jo(reference_scales,
                                                       canary::convert<scaled>(p0, reference_scales),
                                                       gas_s);
         const auto exchange_s =
@@ -1598,7 +1594,7 @@ void test_multi_temperature_kinetics()
 
         // Five-species air has no free electrons.
         const auto air5 = canary::make_air5_four_temperature<double>(si_scales);
-        const auto air5_mech = canary::make_air5_park(air5.species, si_scales, p0, air5.model);
+        const auto air5_mech = canary::make_air5_park(si_scales, p0, air5.model);
         const std::array<std::string_view, 5> air5_names {"N2", "O2", "N", "O", "NO"};
         const canary::EnergyExchangeInput<0, 0> nothing {};
         const auto without_electrons = [&](const auto& extra) {
@@ -1716,7 +1712,6 @@ void test_multi_temperature_kinetics()
           const auto check = []<typename P, typename U>(const canary::UnitScales<P, U>& scales) {
               const auto built = canary::make_air11_three_temperature<P>(scales);
               const auto mechanism = canary::make_air11_kim_jo(
-                built.species,
                 scales,
                 canary::convert<U>(canary::Pressure<P, si> {P(atmosphere)}, scales),
                 built.model);

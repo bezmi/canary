@@ -248,11 +248,10 @@ int main()
     "converted owners survive source destruction and value operations"_test = [] {
         const canary::UnitScales<double, canary::si> scales {};
         const auto gas5 = canary::make_air5<double>(scales);
-        const auto mechanism5 = canary::make_air5_park(gas5.species, scales);
+        const auto mechanism5 = canary::make_air5_park(scales);
         const auto gas11 = canary::make_air11_three_temperature(scales);
         const auto mechanism11 =
-          canary::make_air11_kim_jo(gas11.species,
-                                    scales,
+          canary::make_air11_kim_jo(scales,
                                     canary::Pressure<double, canary::si> {1e5},
                                     gas11.model);
         const auto exercise = [](const auto& factory, const auto& consume) {
@@ -304,8 +303,7 @@ int main()
           [&](const auto& owner) {
               const auto built =
                 canary::make_reaction_mechanism(owner,
-                                                air11_names,
-                                                gas11.species,
+                                                canary::reaction_species(canary::air11_species),
                                                 scales,
                                                 canary::Pressure<double, canary::si> {1e5},
                                                 gas11.model);
@@ -1024,10 +1022,11 @@ int main()
             }
             // The mechanism built from the file is the compiled one.
             const canary::UnitScales<double, canary::si> scales {};
-            const auto built = canary::make_air5<double>(scales);
             const auto from_file =
-              canary::make_reaction_mechanism(input, air5_names, built.species, scales);
-            const auto from_header = canary::make_air5_kim_jo(built.species, scales);
+              canary::make_reaction_mechanism(input,
+                                              canary::reaction_species(canary::air5_species),
+                                              scales);
+            const auto from_header = canary::make_air5_kim_jo(scales);
             for (std::size_t k = 0; k < 13; ++k) {
                 const auto& a = from_file.reactions[k];
                 const auto& b = from_header.reactions[k];
@@ -1076,17 +1075,21 @@ int main()
         const auto input_owner = db::mechanism_input<13, 5>(changed);
         canary::detail::with_input(input_owner, [&](const auto& input) {
             const canary::UnitScales<double, canary::si> scales {};
-            const auto built = canary::make_air5<double>(scales);
             expect(throws_parameter_error([&] {
-                (void)canary::make_reaction_mechanism(input, air5_names, built.species, scales);
+                (void)canary::make_reaction_mechanism(
+                  input,
+                  canary::reaction_species(canary::air5_species),
+                  scales);
             }));
             changed = file;
             changed.reactions[8].forward.A = -1.0;
             const auto negative_owner = db::mechanism_input<13, 5>(changed);
             canary::detail::with_input(negative_owner, [&](const auto& negative) {
                 expect(throws_parameter_error([&] {
-                    (void)
-                      canary::make_reaction_mechanism(negative, air5_names, built.species, scales);
+                    (void)canary::make_reaction_mechanism(
+                      negative,
+                      canary::reaction_species(canary::air5_species),
+                      scales);
                 }));
             });
         });
@@ -1219,7 +1222,7 @@ int main()
             // The energy exchange built from the file builds like the compiled one.
             const canary::UnitScales<double, canary::si> scales {};
             const auto built = canary::make_air5<double>(scales);
-            const auto mechanism = canary::make_air5_park(built.species, scales);
+            const auto mechanism = canary::make_air5_park(scales);
             (void)canary::make_energy_exchange(input, air5_names, built.species, mechanism, scales);
             (void)canary::make_air5_park_exchange(built.species, mechanism, scales);
         });
@@ -1534,6 +1537,36 @@ int main()
         });
     };
 
+    "reaction species adapters retain owned definitions through source destruction"_test = [] {
+        const canary::UnitScales<double, canary::si> scales {};
+        const auto adapted = [] {
+            auto file = db::read_species_file(air11_path());
+            auto owner = db::nasa9_species<4>(file, air11_names);
+            return canary::reaction_species(std::move(owner));
+        }();
+        const auto copied = adapted;
+        const auto mechanism =
+          db::mechanism_input<40, 11>(db::read_reactions_file(air11_kim_jo_path()));
+        const auto gas = canary::make_air11_three_temperature(scales);
+        const auto reference = canary::make_air11_kim_jo(scales);
+        const auto result = canary::make_reaction_mechanism(mechanism, copied, scales);
+        expect(result.mass == gas.species.mass);
+        expect(result.reactions[38].products == reference.reactions[38].products);
+        auto file = db::read_species_file(air11_path());
+        file.species.at("O+").charge = 2;
+        const auto invalid = canary::reaction_species(db::nasa9_species<4>(file, air11_names));
+        expect(throws_parameter_error(
+          [&] { (void)canary::make_reaction_mechanism(mechanism, invalid, scales); }));
+        file = db::read_species_file(air11_path());
+        file.species.at("O").elements.reset();
+        expect(throws_parameter_error([&] {
+            (void)canary::make_reaction_mechanism(
+              mechanism,
+              canary::reaction_species(db::nasa9_species<4>(file, air11_names)),
+              scales);
+        }));
+    };
+
     "exchange JSON rejects noninteger and unrepresentable ionisation reaction indices"_test = [] {
         const auto json = db::write_energy_exchange(
           db::read_energy_exchange_file(air11_exchange_path()));
@@ -1557,8 +1590,8 @@ int main()
         const auto heavy = db::energy_exchange_input<30, 21>(file);
         const canary::UnitScales<double, canary::si> scales {};
         const auto gas = canary::make_air11_three_temperature(scales);
-        const auto mechanism = canary::make_air11_kim_jo(
-          gas.species, scales, canary::Pressure<double, canary::si> {1e5}, gas.model);
+        const auto mechanism =
+          canary::make_air11_kim_jo(scales, canary::Pressure<double, canary::si> {1e5}, gas.model);
         const auto electron = *canary::electron_species_index(gas.model);
         const auto ion = *canary::detail::species_index(air11_names, "O+");
         const auto spectator = *canary::detail::species_index(air11_names, "N2");

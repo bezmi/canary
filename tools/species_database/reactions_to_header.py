@@ -151,33 +151,30 @@ inline constexpr auto {args.name}_species_names = [] {{
 }}  // namespace detail
 
 // {args.alias} model of {args.name} for the species of {args.species_array}, in
-// their order, with their species data, in the unit system of the scales,
+// their order, in the unit system of the scales,
 // with standard pressure p0. See make_reaction_mechanism.
 template <std::floating_point P, UnitSystem U>
-{args.alias}<P, U> make_{args.name}(const SpeciesData<P, U, {args.species_array}.size()>& species,
-                                const UnitScales<P, U>& scales,
+{args.alias}<P, U> make_{args.name}(const UnitScales<P, U>& scales,
                                 Pressure<P, U> standard_pressure)
 {{
-    return make_reaction_mechanism({args.name}, detail::{args.name}_species_names, species, scales, standard_pressure);
+    return make_reaction_mechanism({args.name}, reaction_species({args.species_array}), scales, standard_pressure);
 }}
 
 // As above, with the standard pressure 1 bar (1e5 Pa).
 template <std::floating_point P, UnitSystem U>
-{args.alias}<P, U> make_{args.name}(const SpeciesData<P, U, {args.species_array}.size()>& species,
-                                const UnitScales<P, U>& scales)
+{args.alias}<P, U> make_{args.name}(const UnitScales<P, U>& scales)
 {{
-    return make_reaction_mechanism({args.name}, detail::{args.name}_species_names, species, scales);
+    return make_reaction_mechanism({args.name}, reaction_species({args.species_array}), scales);
 }}
 
 // As above for the thermo model gas with several energy modes: rates'
 // other temperatures resolve to its modes. See make_reaction_mechanism.
 template <std::floating_point P, UnitSystem U, typename G>
-{args.alias}<P, U> make_{args.name}(const SpeciesData<P, U, {args.species_array}.size()>& species,
-                                const UnitScales<P, U>& scales,
+{args.alias}<P, U> make_{args.name}(const UnitScales<P, U>& scales,
                                 Pressure<P, U> standard_pressure,
                                 const G& gas)
 {{
-    return make_reaction_mechanism({args.name}, detail::{args.name}_species_names, species, scales, standard_pressure, gas);
+    return make_reaction_mechanism({args.name}, reaction_species({args.species_array}), scales, standard_pressure, gas);
 }}
 
 }}  // namespace canary

@@ -9,13 +9,13 @@
 // (gdtk-uq/gdtk commit bf559c3f), converted to SI
 
 #include <array>
-#include <concepts>
-#include <cstddef>
 #include <canary/data/air5.hpp>
 #include <canary/quantity.hpp>
 #include <canary/reactions.hpp>
 #include <canary/species.hpp>
 #include <canary/units.hpp>
+#include <concepts>
+#include <cstddef>
 #include <string_view>
 
 namespace canary
@@ -817,37 +817,30 @@ inline constexpr auto air5_kim_jo_species_names = [] {
 }  // namespace detail
 
 // Air5KimJo model of air5_kim_jo for the species of air5_species, in
-// their order, with their species data, in the unit system of the scales,
+// their order, in the unit system of the scales,
 // with standard pressure p0. See make_reaction_mechanism.
 template <std::floating_point P, UnitSystem U>
-Air5KimJo<P, U> make_air5_kim_jo(const SpeciesData<P, U, air5_species.size()>& species,
-                                 const UnitScales<P, U>& scales,
-                                 Pressure<P, U> standard_pressure)
+Air5KimJo<P, U> make_air5_kim_jo(const UnitScales<P, U>& scales, Pressure<P, U> standard_pressure)
 {
     return make_reaction_mechanism(air5_kim_jo,
-                                   detail::air5_kim_jo_species_names,
-                                   species,
+                                   reaction_species(air5_species),
                                    scales,
                                    standard_pressure);
 }
 
 // As above, with the standard pressure 1 bar (1e5 Pa).
 template <std::floating_point P, UnitSystem U>
-Air5KimJo<P, U> make_air5_kim_jo(const SpeciesData<P, U, air5_species.size()>& species,
-                                 const UnitScales<P, U>& scales)
-{ return make_reaction_mechanism(air5_kim_jo, detail::air5_kim_jo_species_names, species, scales); }
+Air5KimJo<P, U> make_air5_kim_jo(const UnitScales<P, U>& scales)
+{ return make_reaction_mechanism(air5_kim_jo, reaction_species(air5_species), scales); }
 
 // As above for the thermo model gas with several energy modes: rates'
 // other temperatures resolve to its modes. See make_reaction_mechanism.
 template <std::floating_point P, UnitSystem U, typename G>
-Air5KimJo<P, U> make_air5_kim_jo(const SpeciesData<P, U, air5_species.size()>& species,
-                                 const UnitScales<P, U>& scales,
-                                 Pressure<P, U> standard_pressure,
-                                 const G& gas)
+Air5KimJo<P, U>
+  make_air5_kim_jo(const UnitScales<P, U>& scales, Pressure<P, U> standard_pressure, const G& gas)
 {
     return make_reaction_mechanism(air5_kim_jo,
-                                   detail::air5_kim_jo_species_names,
-                                   species,
+                                   reaction_species(air5_species),
                                    scales,
                                    standard_pressure,
                                    gas);

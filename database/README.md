@@ -165,3 +165,33 @@ It does not provide power-loss durability: the writers do not synchronize files
 or directories to persistent storage. Callers must coordinate concurrent changes
 to the destination and its parent directories; inspection and replacement do
 not constitute a filesystem transaction.
+
+## Reaction construction from species definitions
+
+Reaction construction takes one ordered set of host species definitions for
+names, masses, charge numbers and elemental composition:
+
+```cpp
+const auto species = database::nasa9_species<4>(species_file, names);
+const auto input = database::mechanism_input<13, 5>(reaction_file);
+const auto mechanism = make_reaction_mechanism(
+    input, reaction_species(species), scales);
+```
+
+`reaction_species` borrows fixed-array definitions; keep the array and its
+borrowed names/composition alive through construction. For `OwnedInput`, it
+retains an owning copy or accepts a moved owner, including a temporary returned
+by the database converter. The numerical mechanism stores no host views.
+The supplied species order must match the thermodynamic model used to evaluate
+rates. Bundled `make_air5_park`, `make_air5_kim_jo` and `make_air11_kim_jo`
+builders use their bundled species definitions and take `scales` first;
+they no longer accept separately constructed `SpeciesData`.
+
+Every explicitly listed reactant/product requires known elemental composition,
+including species present unchanged on both sides. Each participant's charge
+number must be an integer in the signed 32-bit range. `ChargeNumber` represents
+that host chemistry value; it is distinct from `Charge<T,U>` in physical units.
+Element counts and charge numbers are balanced with checked signed 64-bit sums.
+A nonzero balance or arithmetic overflow raises `ParameterError` with reaction
+context. General thermodynamic inputs may still contain fractional charges;
+mixture charge neutrality is not a reaction-construction requirement.

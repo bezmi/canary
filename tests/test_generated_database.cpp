@@ -19,7 +19,7 @@ void construct_generated(const canary::UnitScales<P, U>& scales)
 {
     const auto built =
       canary::make_thermally_perfect_mixture(canary::generated_species_species, scales);
-    const auto mechanism = canary::make_generated_reactions(built.species, scales);
+    const auto mechanism = canary::make_generated_reactions(scales);
     expect(
       nothrow([&] { (void)canary::make_generated_exchange(built.species, mechanism, scales); }));
     expect(nothrow([&] {

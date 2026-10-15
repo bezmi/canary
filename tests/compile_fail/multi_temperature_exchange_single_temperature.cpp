@@ -20,8 +20,8 @@ using Extents = Kokkos::dextents<std::size_t, 1>;
 const canary::UnitScales<double, canary::si> scales {};
 const auto built = canary::make_air11_three_temperature<double>(scales);
 const auto single = canary::make_air11<double>(scales).model;
-const auto mechanism = canary::make_air11_kim_jo(
-  built.species, scales, canary::Pressure<double, canary::si> {101325.0}, built.model);
+const auto mechanism =
+  canary::make_air11_kim_jo(scales, canary::Pressure<double, canary::si> {101325.0}, built.model);
 const auto exchange =
   canary::make_air11_kim_jo_exchange(built.species, mechanism, built.model, scales);
 const std::array<double, 11> y {0.767, 0.233, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};

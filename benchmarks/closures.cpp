@@ -538,10 +538,10 @@ try {
                            ionised_y,
                            ionised_temp);
     const auto air5_built = canary::make_air5<double>(si_scales);
-    const auto kim_jo = canary::make_air5_kim_jo(air5_built.species, si_scales);
+    const auto kim_jo = canary::make_air5_kim_jo(si_scales);
     production_case("unchecked Kim-Jo air (13 reactions) production", c, kim_jo, air5);
     const auto air5_two_temperature_built = canary::make_air5_two_temperature<double>(si_scales);
-    const auto park = canary::make_air5_park(air5_two_temperature_built.species, si_scales);
+    const auto park = canary::make_air5_park(si_scales);
     const auto park_exchange =
       canary::make_air5_park_exchange(air5_two_temperature_built.species, park, si_scales);
     sources_case("unchecked Park air (5 reactions) 2T sources",
@@ -550,8 +550,7 @@ try {
                  park_exchange,
                  air5_two_temperature_built.model);
     const auto air11_built = canary::make_air11_three_temperature<double>(si_scales);
-    const auto air11_kim_jo = canary::make_air11_kim_jo(air11_built.species,
-                                                        si_scales,
+    const auto air11_kim_jo = canary::make_air11_kim_jo(si_scales,
                                                         canary::Pressure<double, si> {101325.0},
                                                         air11_built.model);
     const auto air11_exchange = canary::make_air11_kim_jo_exchange(air11_built.species,

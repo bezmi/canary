@@ -254,7 +254,7 @@ void test_energy_exchange()
     const auto built = canary::make_air5_two_temperature<double>(si_scales);
     const Air& gas = built.model;
     const Mechanism mech =
-      canary::make_air5_park(built.species, si_scales, canary::Pressure<double, si> {atmosphere});
+      canary::make_air5_park(si_scales, canary::Pressure<double, si> {atmosphere});
     const Exchange exchange = canary::make_air5_park_exchange(built.species, mech, si_scales);
     const double ru = canary::constants::universal_gas_constant<double>;
 
@@ -806,7 +806,6 @@ void test_energy_exchange()
     "energy exchange: scaled units give the SI results after conversion"_test = [&] {
         const auto built_s = canary::make_air5_two_temperature<double>(reference_scales);
         const auto mech_s = canary::make_air5_park(
-          built_s.species,
           reference_scales,
           canary::convert<scaled>(canary::Pressure<double, si> {atmosphere}, reference_scales));
         const auto exchange_s =
@@ -947,7 +946,7 @@ void test_energy_exchange()
           }
           const auto check_float = [&]<typename U>(const canary::UnitScales<float, U>& scales) {
               const auto gas_f = canary::make_air5<float>(scales);
-              const auto mech_f = canary::make_air5_park(gas_f.species, scales);
+              const auto mech_f = canary::make_air5_park(scales);
               auto input = canary::air5_park_exchange;
               input.chemistry_vibration[0].vibrational_temperature = 1000.0;
               input.chemistry_vibration[0].dissociation_energy = 1000.00001 * ru;
@@ -1141,7 +1140,7 @@ void test_energy_exchange()
     "exchange construction checks stored masses and correction exponents"_test = [] {
         const auto check = []<typename P, typename U>(const canary::UnitScales<P, U>& scales) {
             const auto gas = canary::make_air5<P>(scales);
-            const auto mechanism = canary::make_air5_park(gas.species, scales);
+            const auto mechanism = canary::make_air5_park(scales);
             for (P mass : {P(0),
                            P(-1),
                            std::numeric_limits<P>::infinity(),

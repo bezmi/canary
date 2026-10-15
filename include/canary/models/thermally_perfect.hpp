@@ -88,58 +88,6 @@ struct ThermallyPerfectMixture {
 namespace detail
 {
 
-// Validates host metadata before numerical parameters are constructed.
-inline void check_species_metadata(const SpeciesMetadataView& metadata, double charge)
-{
-    switch (metadata.role) {
-    case SpeciesRole::heavy: break;
-    case SpeciesRole::electron:
-        if (charge != -1.0) {
-            throw ParameterError(std::format("charge must be -1, got {}", charge));
-        }
-        if (metadata.elements && !metadata.elements->empty()) {
-            throw ParameterError("free-electron elemental composition must be empty");
-        }
-        break;
-    case SpeciesRole::unspecified: throw ParameterError("species role must be specified");
-    default: throw ParameterError("unknown species role");
-    }
-    if (!metadata.elements) { return; }
-    const auto elements = *metadata.elements;
-    for (std::size_t i = 0; i < elements.size(); ++i) {
-        const auto& entry = elements[i];
-        if (entry.element.empty()) { throw ParameterError("element identifier must not be empty"); }
-        if (entry.count == 0) {
-            throw ParameterError(std::format("element {}: count must be positive", entry.element));
-        }
-        for (std::size_t j = 0; j < i; ++j) {
-            if (elements[j].element == entry.element) {
-                throw ParameterError(std::format("element {}: given twice", entry.element));
-            }
-        }
-    }
-}
-
-// Narrow only after unit conversion, preserving the quantity's kind and units.
-template <std::floating_point P, KindTag K, std::floating_point W, UnitTag U>
-Quantity<K, P, U> thermodynamic_parameter(Quantity<K, W, U> value, const char* name)
-{
-    if (!std::isfinite(value.value()) || std::abs(value.value()) > std::numeric_limits<P>::max()) {
-        throw ParameterError(std::format("{} is outside the finite parameter range", name));
-    }
-    return Quantity<K, P, U> {value};
-}
-
-template <std::floating_point P, KindTag K, std::floating_point W, UnitTag U>
-Quantity<K, P, U> positive_thermodynamic_parameter(Quantity<K, W, U> value, const char* name)
-{
-    const auto stored = thermodynamic_parameter<P>(value, name);
-    if (!(stored.value() > P(0))) {
-        throw ParameterError(std::format("{} must remain positive after conversion", name));
-    }
-    return stored;
-}
-
 // Fills entry i of the model and of the species data from one species, after
 // the model's reference temperature is set. Throws ParameterError.
 template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
@@ -161,17 +109,15 @@ void fill_thermally_perfect_species(ThermallyPerfectMixture<P, U, N, S>& model,
     const auto molar_mass = static_cast<long double>(input.molar_mass);
     const SpecificGasConstant<long double, si> gas_constant {
       constants::universal_gas_constant<long double> / molar_mass};
-    const ParticleMass<long double, si> mass {molar_mass / constants::avogadro<long double>};
     const Charge<long double, si> charge {static_cast<long double>(input.charge) *
                                           constants::elementary_charge<long double>};
-    model.gas_constant[i] =
-      positive_thermodynamic_parameter<P>(convert<U>(gas_constant, scales), "stored gas constant");
-    species.mass[i] =
-      positive_thermodynamic_parameter<P>(convert<U>(mass, scales), "stored particle mass");
-    species.charge[i] = thermodynamic_parameter<P>(convert<U>(charge, scales), "stored charge");
-    if (input.charge != 0.0 && species.charge[i].value() == P(0)) {
+    if (input.charge != 0.0 && charge.value() == 0.0L) {
         throw ParameterError("nonzero charge rounds to zero in the model's units");
     }
+    model.gas_constant[i] =
+      positive_thermodynamic_parameter<P>(convert<U>(gas_constant, scales), "stored gas constant");
+    species.mass[i] = particle_mass_parameter(MolarMass<double> {input.molar_mass}, scales);
+    species.charge[i] = species_charge_parameter(charge, scales);
 
     const P t_ref = model.reference_temperature.value();
     const Nasa9CpH<P> ref = nasa9_cp_h(model.curve[i], t_ref, std::log(t_ref));

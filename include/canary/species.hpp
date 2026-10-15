@@ -8,10 +8,12 @@
 #include <canary/quantity.hpp>
 #include <canary/scalar.hpp>
 #include <canary/status.hpp>
+#include <canary/units.hpp>
 #include <cmath>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <format>
 #include <iterator>
 #include <limits>
 #include <mdspan/mdspan.hpp>
@@ -183,6 +185,83 @@ struct SpeciesData {
 
 namespace detail
 {
+
+// Validates host metadata before numerical parameters are constructed.
+inline void check_species_metadata(const SpeciesMetadataView& metadata, double charge)
+{
+    switch (metadata.role) {
+    case SpeciesRole::heavy: break;
+    case SpeciesRole::electron:
+        if (charge != -1.0) {
+            throw ParameterError(std::format("charge must be -1, got {}", charge));
+        }
+        if (metadata.elements && !metadata.elements->empty()) {
+            throw ParameterError("free-electron elemental composition must be empty");
+        }
+        break;
+    case SpeciesRole::unspecified: throw ParameterError("species role must be specified");
+    default: throw ParameterError("unknown species role");
+    }
+    if (!metadata.elements) { return; }
+    const auto elements = *metadata.elements;
+    for (std::size_t i = 0; i < elements.size(); ++i) {
+        const auto& entry = elements[i];
+        if (entry.element.empty()) { throw ParameterError("element identifier must not be empty"); }
+        if (entry.count == 0) {
+            throw ParameterError(std::format("element {}: count must be positive", entry.element));
+        }
+        for (std::size_t j = 0; j < i; ++j) {
+            if (elements[j].element == entry.element) {
+                throw ParameterError(std::format("element {}: given twice", entry.element));
+            }
+        }
+    }
+}
+
+// Narrow only after unit conversion, preserving the quantity's kind and units.
+template <std::floating_point P, KindTag K, std::floating_point W, UnitTag U>
+Quantity<K, P, U> thermodynamic_parameter(Quantity<K, W, U> value, const char* name)
+{
+    if (!std::isfinite(value.value()) || std::abs(value.value()) > std::numeric_limits<P>::max()) {
+        throw ParameterError(std::format("{} is outside the finite parameter range", name));
+    }
+    return Quantity<K, P, U> {value};
+}
+
+template <std::floating_point P, KindTag K, std::floating_point W, UnitTag U>
+Quantity<K, P, U> positive_thermodynamic_parameter(Quantity<K, W, U> value, const char* name)
+{
+    const auto stored = thermodynamic_parameter<P>(value, name);
+    if (!(stored.value() > P(0))) {
+        throw ParameterError(std::format("{} must remain positive after conversion", name));
+    }
+    return stored;
+}
+
+// Convert the host molar mass before narrowing to the model parameter type.
+template <std::floating_point P, UnitSystem U>
+ParticleMass<P, U> particle_mass_parameter(MolarMass<double> input, const UnitScales<P, U>& scales)
+{
+    if (!std::isfinite(input.value()) || !(input.value() > 0.0)) {
+        throw ParameterError("molar mass must be finite and positive");
+    }
+    const ParticleMass<long double, si> mass {static_cast<long double>(input.value()) /
+                                              constants::avogadro<long double>};
+    return positive_thermodynamic_parameter<P>(convert<U>(mass, scales), "stored particle mass");
+}
+
+// Nonzero host charges must remain nonzero in model storage.
+template <std::floating_point P, UnitSystem U>
+Charge<P, U> species_charge_parameter(Charge<long double, si> charge,
+                                      const UnitScales<P, U>& scales)
+{
+    const auto stored = thermodynamic_parameter<P>(convert<U>(charge, scales), "stored charge");
+    if (charge.value() != 0.0L && stored.value() == P(0)) {
+        throw ParameterError("nonzero charge rounds to zero in the model's units");
+    }
+    return stored;
+}
+
 template <typename M> struct is_mdspan : std::false_type {};
 template <typename E, typename X, typename L, typename A>
 struct is_mdspan<Kokkos::mdspan<E, X, L, A>> : std::true_type {};
