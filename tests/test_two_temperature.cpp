@@ -84,7 +84,9 @@ constexpr std::array<double, 5> dissociated {0.3, 0.1, 0.3, 0.25, 0.05};
 // TwoTemperatureGas (gdtk-uq/gdtk commit bf559c3f, libgas.so through its C
 // interface, five-species air). Values: mass fractions, pressure, both
 // temperatures, density, internal energy per unit mass without (u) and of
-// (u_ve) the vibrational-electronic mode, and the frozen sound speed.
+// (u_ve) the vibrational-electronic mode. Sound speeds are calculated separately
+// for fixed specific mode energy: a^2 = (1 + R/cv_tr) R T, with R = sum(y R_u/M)
+// and cv_tr = sum(y (3 + rotational_degrees) R_u/(2 M)), using R_u = 8.31451.
 struct ReferenceState {
     std::array<double, 5> y;
     double p;
@@ -106,7 +108,7 @@ constexpr std::array<ReferenceState, 5> reference_states {
       .rho = 1.1719636407483949,
       .u = -84591.42008858029,
       .u_ve = 5.015268335709959,
-      .a = 347.7192295347248,
+      .a = 347.90867262549483,
     },
     {
       .y = air,
@@ -116,7 +118,7 @@ constexpr std::array<ReferenceState, 5> reference_states {
       .rho = 0.07031781844490369,
       .u = 3301659.110231412,
       .u_ve = 251464.28084760078,
-      .a = 1366.852988585643,
+      .a = 1420.3312083691005,
     },
     {
       .y = air,
@@ -126,7 +128,7 @@ constexpr std::array<ReferenceState, 5> reference_states {
       .rho = 0.0003855460615999325,
       .u = 6183574.455184597,
       .u_ve = 4650385.702086919,
-      .a = 1757.549519887224,
+      .a = 1905.5742794866362,
     },
     {
       .y = dissociated,
@@ -136,7 +138,7 @@ constexpr std::array<ReferenceState, 5> reference_states {
       .rho = 0.0014305926434206111,
       .u = 20085845.70890493,
       .u_ve = 853034.3232539449,
-      .a = 2217.956172390224,
+      .a = 2332.8440603648296,
     },
     {
       .y = dissociated,
@@ -146,7 +148,7 @@ constexpr std::array<ReferenceState, 5> reference_states {
       .rho = 0.0038149137157882955,
       .u = 16164831.924025863,
       .u_ve = 241567.21495804077,
-      .a = 1389.5377073645948,
+      .a = 1428.5693993440777,
     },
   },
 };
@@ -231,6 +233,76 @@ void test_two_temperature()
           relative(props.mode_cv[0].value().real(), mode.state.mode_e[0].value().dual(), 1.0e-11));
         expect(props.gas_constant_electron.value().real() == 0.0);
         expect(props.gas_constant_heavy == mix.gas_constant);
+    };
+
+    "two-temperature acoustics match compression with fixed specific mode energy"_test = [] {
+        const auto run = []<std::floating_point V, canary::UnitSystem U>(
+                           const canary::UnitScales<V, U>& scales) {
+            using Dual = canary::test::Dual<V>;
+            const auto model = canary::make_air5_two_temperature<V>(scales).model;
+            const V tolerance = V(256) * std::numeric_limits<V>::epsilon();
+            for (const auto& composition : {air, dissociated}) {
+                std::array<Dual, 5> y {};
+                for (const canary::SpeciesIndex i : canary::species_indices(0, y.size())) {
+                    y[i.value()] = Dual(V(composition[i.value()]));
+                }
+                const auto mix = mixture(model, fractions(y));
+                const V rho = canary::convert<U>(canary::Density<V, si> {V(0.01)}, scales).value();
+                for (const V temperature : {V(600), V(4000)}) {
+                    const V temp =
+                      canary::convert<U>(canary::Temperature<V, si> {temperature}, scales).value();
+                    V first_speed = V(0);
+                    for (const V mode_temperature : {V(500), V(5000)}) {
+                        const V mode_temp =
+                          canary::convert<U>(canary::ModeTemperature<V, si> {mode_temperature},
+                                             scales)
+                            .value();
+                        const std::array<Dual, 1> modes {Dual(mode_temp)};
+                        const auto base = thermo_state(model,
+                                                       mix,
+                                                       canary::Density<Dual, U> {Dual(rho)},
+                                                       canary::Temperature<Dual, U> {Dual(temp)},
+                                                       mode_temperatures<U>(modes));
+                        expect(fatal(base.status == Status::Valid));
+                        const auto props = canary::properties(model, mix, base.state);
+                        const V a = props.acoustics.sound_speed.value().real();
+                        if (first_speed == V(0)) { first_speed = a; }
+                        expect(a == first_speed);
+
+                        // Continuity and pressure work give de/drho = p/rho^2.
+                        // Fixed composition and T_ve keep specific mode energy fixed.
+                        const Dual density(rho, V(1));
+                        const Dual energy(base.state.e.value().real(),
+                                          base.state.p.value().real() / (rho * rho));
+                        const auto compressed =
+                          thermo_state(model,
+                                       mix,
+                                       canary::Density<Dual, U> {density},
+                                       canary::EnergyDensity<Dual, U> {density * energy},
+                                       mode_temperatures<U>(modes));
+                        expect(fatal(compressed.status == Status::Valid));
+                        expect(relative(compressed.state.p.value().dual(), a * a, tolerance));
+                        expect(relative(props.acoustics.acoustic_exponent.value().real(),
+                                        rho * a * a / base.state.p.value().real(),
+                                        tolerance));
+
+                        auto changed_pressure = base.state;
+                        changed_pressure.p =
+                          canary::Pressure<Dual, U> {base.state.p.value() * V(2)};
+                        const auto changed = canary::properties(model, mix, changed_pressure);
+                        expect(changed.acoustics.sound_speed.value().real() == a);
+                        expect(relative(changed.acoustics.acoustic_exponent.value().real(),
+                                        props.acoustics.acoustic_exponent.value().real() / V(2),
+                                        tolerance));
+                    }
+                }
+            }
+        };
+        run.template operator()<float>(canary::UnitScales<float, si> {});
+        run.template operator()<double>(canary::UnitScales<double, si> {});
+        run.template operator()<float>(canary::UnitScales<float, scaled> {
+          {.mass = 4.65e-26F, .density = 1.0e-3F, .temperature = 1000.0F, .length = 1.0F}});
+        run.template operator()<double>(reference_scales);
     };
 
     "two-temperature closures validate pressure with and without explicit modes"_test = [&] {

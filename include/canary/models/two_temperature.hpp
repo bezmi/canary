@@ -726,7 +726,11 @@ CANARY_HOST_DEVICE std::array<SpecificEnergy<T, U>, N>
 }
 
 // Heat capacities per mixture mass at their respective temperatures.
-// The acoustic estimate uses 1 + R / (cv_heavy + mode_cv[0]).
+// Sound speed assumes common velocity, frozen composition and no finite-rate
+// exchange. Specific vibrational/electronic energy is fixed during compression:
+// D e / Dt = -(p/rho) div(u), D e_ve / Dt = 0, D rho / Dt = -rho div(u).
+// Thus a^2 = (1 + R/cv_heavy) R T. The acoustic exponent is rho a^2 / p;
+// it does not imply a calorically perfect pressure/energy relation.
 template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
     requires ScalarWith<T, P> && HasLog<T> && HasSqrt<T>
 CANARY_HOST_DEVICE MultiTemperatureProperties<T, U, 1>
@@ -738,16 +742,15 @@ CANARY_HOST_DEVICE MultiTemperatureProperties<T, U, 1>
     const T cv_ve =
       detail::vibrational_electronic_energy(gas, mix.fractions, state.mode_temp[0].value()).cv;
     const T cv_heavy = T(sums.cp - mix.gas_constant.value());
-    const SpecificHeat<T, U> cv {T(cv_heavy + cv_ve)};
-    const SpecificHeat<T, U> cp {cv.value() + mix.gas_constant.value()};
-    const AcousticExponent<T> exponent {heat_capacity_ratio(cp, cv).value()};
+    const T r = mix.gas_constant.value();
+    const T a = math::sqrt(T((T(1) + r / cv_heavy) * r * state.temp.value()));
+    const AcousticExponent<T> exponent {T(state.rho.value() * a * a / state.p.value())};
     return {
       .cv_heavy = SpecificHeat<T, U> {cv_heavy},
       .mode_cv = {SpecificHeat<T, U> {cv_ve}},
       .gas_constant_heavy = mix.gas_constant,
       .gas_constant_electron = SpecificGasConstant<T, U> {T(0)},
-      .acoustics = {.sound_speed = SoundSpeed<T, U> {sound_speed(exponent, state.p, state.rho)},
-                    .acoustic_exponent = exponent},
+      .acoustics = {.sound_speed = SoundSpeed<T, U> {a}, .acoustic_exponent = exponent},
     };
 }
 
