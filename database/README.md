@@ -50,8 +50,14 @@ be Arrhenius or equilibrium. Arrhenius requires `A`, `n` and
 `translational_exponent`. An optional `null` value is unset, as in the C++ file
 reader. `other_temperature` remains optional for either model. Errors identify
 the source and the reaction or structural field before output is written.
-The header generator also rejects duplicate JSON keys. Numerical domains and
-species-dependent checks still belong to model construction.
+The header generator also rejects duplicate JSON keys. Both tools require a
+nonempty reaction list, nonempty sides with positive integer coefficients,
+finite nonnegative third-body efficiencies, positive finite Arrhenius `A`,
+finite `n`, nonnegative finite activation temperatures, and translational
+exponents in [0, 1]. File temperature limits must be finite and satisfy
+`0 < lower < upper`. Integer storage and reaction-order bounds, representability
+after unit conversion, species identity and conservation still require model
+construction checks.
 
 The energy-exchange JSON converter and header generator use the same schema
 validation helper and require `jsonschema`. Their shared model checks match

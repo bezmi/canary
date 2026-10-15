@@ -158,6 +158,128 @@ class ReactionJsonTests(unittest.TestCase):
         self.assertIn(str(self.source), result.stderr)
         self.assertFalse(self.output.exists())
 
+    def test_arrhenius_input_domains(self):
+        invalid = {"A": (0.0, -1.0, float("nan"), float("inf")),
+                   "n": (float("nan"), float("inf")),
+                   "activation_temperature": (-1.0, float("nan"), float("inf")),
+                   "translational_exponent": (-0.01, 1.01, float("nan"), float("inf"))}
+        for role in ("forward", "backward"):
+            for field, values in invalid.items():
+                for value in values:
+                    with self.subTest(role=role, field=field, value=value):
+                        data = copy.deepcopy(self.data)
+                        rate = copy.deepcopy(data["reactions"][0]["forward"])
+                        rate[field] = value
+                        data["reactions"][0][role] = rate
+                        with self.assertRaises(SystemExit) as caught:
+                            reaction_json.validate(data, self.source)
+                        message = str(caught.exception)
+                        self.assertIn(str(self.source), message)
+                        self.assertIn(role, message)
+                        self.assertIn(field, message)
+        for role in ("forward", "backward"):
+            for exponent in (None, 0.0, 1.0):
+                data = copy.deepcopy(self.data)
+                data["reactions"][0][role] = {"model": "arrhenius", "A": 1e-300, "n": -2.0,
+                                              "activation_temperature": -0.0,
+                                              "translational_exponent": exponent}
+                reaction_json.validate(data, self.source)
+
+    def test_stoichiometry_and_efficiency_domains(self):
+        for role in ("reactants", "products"):
+            for value in (0.0, -1.0, 0.5, float("nan"), float("inf")):
+                with self.subTest(role=role, value=value):
+                    data = copy.deepcopy(self.data)
+                    data["reactions"][0][role] = {"N2": value}
+                    with self.assertRaises(SystemExit) as caught:
+                        reaction_json.validate(data, self.source)
+                    self.assertIn(str(self.source), str(caught.exception))
+                    self.assertIn(role, str(caught.exception))
+            data = copy.deepcopy(self.data)
+            data["reactions"][0][role] = {}
+            self.assert_rejected(data, f"{role} must contain at least one species")
+        for value in (-1.0, float("nan"), float("inf")):
+            with self.subTest(efficiency=value):
+                data = copy.deepcopy(self.data)
+                data["reactions"][0]["third_body"] = {"efficiencies": {"N2": value}}
+                with self.assertRaises(SystemExit) as caught:
+                    reaction_json.validate(data, self.source)
+                self.assertIn(str(self.source), str(caught.exception))
+                self.assertIn("N2", str(caught.exception))
+        for coefficients in ({"N2": 1}, {"N2": 1.0, "N": 2.0}):
+            for efficiencies in ({}, {"N2": -0.0}, {"N2": 1.0}):
+                data = copy.deepcopy(self.data)
+                data["reactions"][0]["reactants"] = coefficients
+                data["reactions"][0]["third_body"] = {"efficiencies": efficiencies}
+                reaction_json.validate(data, self.source)
+
+    def test_temperature_limits_and_empty_mechanisms(self):
+        for lower, upper in ((0.0, 300.0), (-1.0, 300.0), (300.0, 300.0), (301.0, 300.0),
+                             (float("nan"), 300.0), (300.0, float("nan")), (300.0, float("inf"))):
+            with self.subTest(lower=lower, upper=upper):
+                data = copy.deepcopy(self.data)
+                data["temperature_limits"] = {"lower": lower, "upper": upper}
+                with self.assertRaises(SystemExit) as caught:
+                    reaction_json.validate(data, self.source)
+                self.assertIn(str(self.source), str(caught.exception))
+                self.assertIn("temperature", str(caught.exception))
+        self.data["reactions"] = []
+        with self.assertRaisesRegex(SystemExit, "at least one reaction"):
+            reaction_json.validate(self.data, self.source)
+
+    def test_invalid_domains_preserve_header_output(self):
+        original = copy.deepcopy(self.data)
+        for case in ("coefficient", "efficiency", "rate", "limits", "empty"):
+            for existing in (False, True):
+                with self.subTest(case=case, existing=existing):
+                    self.data = copy.deepcopy(original)
+                    if case == "coefficient":
+                        self.data["reactions"][0]["reactants"]["N2"] = 0.5
+                    elif case == "efficiency":
+                        self.data["reactions"][0]["third_body"] = {"efficiencies": {"N2": -1.0}}
+                    elif case == "rate":
+                        self.data["reactions"][0]["forward"]["A"] = -1.0
+                    elif case == "limits":
+                        self.data["temperature_limits"] = {"lower": 50000.0, "upper": 300.0}
+                    else:
+                        self.data["reactions"] = []
+                    self.source.write_text(json.dumps(self.data))
+                    if existing:
+                        self.output.write_bytes(b"original\n")
+                    elif self.output.exists():
+                        self.output.unlink()
+                    result = self.generate()
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(str(self.source), result.stderr)
+                    self.assertNotIn("Traceback", result.stderr)
+                    if existing:
+                        self.assertEqual(self.output.read_bytes(), b"original\n")
+                    else:
+                        self.assertFalse(self.output.exists())
+
+    def test_invalid_converter_rates_preserve_json_output(self):
+        source = self.directory / "mechanism.inp"
+        original = (ROOT / "tests/data/species/gdtk_mechanism_sample.inp").read_text()
+        invalid = original.replace("A=1.216e+20", "A=-1.216e+20", 1)
+        self.assertNotEqual(original, invalid)
+        source.write_text(invalid)
+        output = self.directory / "output.json"
+        for existing in (False, True):
+            with self.subTest(existing=existing):
+                if existing:
+                    output.write_bytes(b"original\n")
+                result = subprocess.run([sys.executable, str(TOOLS / "gdtk_reactions_to_json.py"), str(source),
+                                         "--source", "test", "-o", str(output)],
+                                        capture_output=True, text=True, timeout=30)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(str(source), result.stderr)
+                self.assertIn("A must be finite and positive", result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+                if existing:
+                    self.assertEqual(output.read_bytes(), b"original\n")
+                else:
+                    self.assertFalse(output.exists())
+
     def test_all_shipped_mechanisms_pass(self):
         for name in ("air5_kim_jo", "air5_park", "air11_kim_jo"):
             with self.subTest(name=name):
