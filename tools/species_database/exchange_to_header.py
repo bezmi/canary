@@ -15,26 +15,26 @@ Usage: exchange_to_header.py exchange.json --name air5_park_exchange
 """
 
 import argparse
-import json
 from pathlib import Path
 
+import exchange_json
+import species_json
+from _schema_validation import validate_structure
 from reactions_to_header import comment, number, string
 
-FORMAT = "canary-energy-exchange-1"
-UNITS = {"energy": "J/mol", "temperature": "K", "area": "m^2"}
+
+def _optional_number(record, field):
+    value = record.get(field)
+    return number(value if value is not None else 0.0)
 
 
 def vibration_translation(entry):
-    if entry["model"] != "landau_teller" or entry["relaxation_time"]["model"] != "millikan_white":
-        raise SystemExit(f"{entry['species']}-{entry['partner']}: unsupported V-T model")
     time = entry["relaxation_time"]
     correction = time.get("high_temperature_correction") or {"model": "none", "cross_section": 0.0}
-    if correction["model"] not in ("none", "park_1985", "park_1993", "kim_2021"):
-        raise SystemExit(f"{entry['species']}-{entry['partner']}: unsupported correction")
     correction_text = (f"{{.model = RelaxationCorrection::{correction['model']}, "
                        f".cross_section = {number(correction['cross_section'])}, "
-                       f".reference_temperature = {number(correction.get('reference_temperature', 0.0))}, "
-                       f".exponent = {number(correction.get('exponent', 0.0))},}}")
+                       f".reference_temperature = {_optional_number(correction, 'reference_temperature')}, "
+                       f".exponent = {_optional_number(correction, 'exponent')},}}")
     return "\n".join([
         "{",
         f".species = {string(entry['species'])},",
@@ -46,8 +46,6 @@ def vibration_translation(entry):
 
 
 def chemistry_vibration(entry):
-    if entry["model"] != "impartial_dissociation":
-        raise SystemExit(f"reaction {entry['reaction']}: unsupported C-V model")
     return "\n".join([
         "{",
         f".reaction = {int(entry['reaction'])},",
@@ -59,21 +57,15 @@ def chemistry_vibration(entry):
 
 
 def electron_translation(entry):
-    if entry["model"] != "elastic":
-        raise SystemExit(f"e- - {entry['partner']}: unsupported E-T model")
     section = entry["cross_section"]
-    if section["model"] not in ("gnoffo_neutral", "coulomb"):
-        raise SystemExit(f"e- - {entry['partner']}: unsupported cross-section")
     return (f"{{.partner = {string(entry['partner'])}, "
             f".cross_section = ElectronCrossSection::{section['model']}, "
-            + "".join(f".{k} = {number(section.get(k, 0.0))}, " for k in ("a", "b", "c", "maximum_temperature"))
+            + "".join(f".{k} = {_optional_number(section, k)}, " for k in ("a", "b", "c", "maximum_temperature"))
             + "},")
 
 
 def vibration_electron(entry):
     time = entry["relaxation_time"]
-    if entry["model"] != "landau_teller" or time["model"] != "candler":
-        raise SystemExit(f"{entry['species']}: unsupported V-E model")
     keys = ("a_low", "b_low", "c_low", "a_high", "b_high", "c_high", "blend_lower", "blend_upper")
     fit = "{" + "".join(f".{k} = {number(time[k])}, " for k in keys) + "}"
     return f"{{.species = {string(entry['species'])}, .relaxation_time = {fit},}},"
@@ -106,9 +98,7 @@ def main():
     parser.add_argument("-o", "--output", required=True)
     args = parser.parse_args()
 
-    data = json.loads(Path(args.exchange).read_text(encoding="utf-8"))
-    if data["format"] != FORMAT or data["units"] != UNITS:
-        raise SystemExit(f"{args.exchange}: not a {FORMAT} file in SI units")
+    data = exchange_json.load(args.exchange)
     vt = data["vibration_translation"]
     cv = data["chemistry_vibration"]
     et = data.get("electron_translation", [])
@@ -117,8 +107,13 @@ def main():
     electrons = bool(et or ve or ce)
     if electrons and not (args.model_alias and args.model_header):
         raise SystemExit("an exchange with electrons needs --model-alias and --model-header")
-    species = (json.loads(Path(args.species_file).read_text(encoding="utf-8"))["species"]
-               if args.species_file else {})
+    species = {}
+    if args.species_file:
+        species_data = species_json.load(args.species_file)
+        validate_structure(species_data, "species.schema.json", args.species_file)
+        if species_data["format"] != species_json.FORMAT or species_data["units"] != species_json.UNITS:
+            raise SystemExit(f"{args.species_file}: not a {species_json.FORMAT} file in SI units")
+        species = species_data["species"]
     guard = f"CANARY_DATA_{args.name.upper()}_HPP"
     reference = data.get("reference", "")
     source = Path(args.exchange).name

@@ -38,6 +38,7 @@ import argparse
 import json
 import re
 
+import exchange_json
 import species_json
 
 FORMAT = "canary-energy-exchange-1"
@@ -196,6 +197,7 @@ def main():
         out["chemistry_vibration"] = [e for e in out["chemistry_vibration"] if changes(e)]
         out["electron_impact_ionisation"] = ionisations(args.reactions, args.ionisation_label)
     out["reference"] = args.source
+    exchange_json.validate(out, args.exchange)
     species_json.dump(out, args.output)
 
 

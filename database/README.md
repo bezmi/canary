@@ -53,6 +53,19 @@ the source and the reaction or structural field before output is written.
 The header generator also rejects duplicate JSON keys. Numerical domains and
 species-dependent checks still belong to model construction.
 
+The energy-exchange JSON converter and header generator use the same schema
+validation helper and require `jsonschema`. Their shared model checks match
+`energy_exchange_input` and `electron_exchange_input`: Park 1993 requires
+`reference_temperature`, Kim 2021 requires `exponent`, and each correction
+forbids the other models' optional fields. Neutral electron cross-sections
+require `a`, `b`, `c` and `maximum_temperature`. Optional nulls are unset.
+An absent or null correction means no correction; an explicit correction record
+must name a supported physical model. The shipped schema rejects fractional
+reaction indices before C++ generation. The optional species file supplying
+ionisation energies is checked for structure, format, units and duplicate keys.
+Mechanism-relative index bounds, charge conservation and numerical domains
+still require model-construction checks.
+
 ## Tests and schema maintenance
 
 With a configured build that enables the database and Python validation:

@@ -5,10 +5,7 @@ Numerical domains, converted parameters and species-dependent constraints
 remain the responsibility of make_reaction_mechanism.
 """
 
-import json
-from pathlib import Path
-
-import jsonschema
+from _schema_validation import validate_structure
 
 import species_json
 
@@ -30,11 +27,7 @@ def _validate_rate(rate, role, context):
 
 def validate(data, source):
     """Check a decoded file, raising SystemExit with source/record context."""
-    schema_path = Path(__file__).resolve().parents[2] / "database" / "reactions.schema.json"
-    schema = json.loads(schema_path.read_text(encoding="utf-8"))
-    for error in jsonschema.Draft202012Validator(schema).iter_errors(data):
-        location = "/".join(map(str, error.path))
-        raise SystemExit(f"{source}: {location}: {error.message}")
+    validate_structure(data, "reactions.schema.json", source)
     if data["format"] != "canary-reactions-1":
         raise SystemExit(f"{source}: format must be canary-reactions-1")
     if data["units"] != {"quantity": "mol", "length": "m", "time": "s", "temperature": "K"}:
