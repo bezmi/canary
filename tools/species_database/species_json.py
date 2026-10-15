@@ -129,6 +129,83 @@ def load(path):
         return json.load(stream, object_pairs_hook=unique_object)
 
 
+def load_validated(path):
+    """Read a species file and check its schema, format, units and metadata.
+
+    Conversion-specific dimensions and numerical domains require subsequent
+    validation. Import schema support here so numeric/output helpers retain
+    their standard-library-only dependency.
+    """
+    from _schema_validation import validate_structure
+
+    data = load(path)
+    if isinstance(data, dict) and "format" in data and data["format"] != FORMAT:
+        raise SystemExit(f"{path}: format must be {FORMAT}; regenerate with explicit species roles")
+    validate_structure(data, "species.schema.json", path)
+    if data["units"] != UNITS:
+        raise SystemExit(f"{path}: not a {FORMAT} file in SI units")
+    for name, record in data["species"].items():
+        context = f"{path}: species {name}"
+        if record["role"] == "electron" and record["charge"] != -1:
+            raise SystemExit(f"{context}: electron role requires charge -1")
+        validate_elements(record, context)
+    return data
+
+
+def validate_selection(species, names, source):
+    """Require distinct selected species that are present in the source file."""
+    if len(set(names)) != len(names):
+        raise SystemExit(f"{source}: selected species must be distinct")
+    for name in names:
+        if name not in species:
+            raise SystemExit(f"{source}: species {name!r} is not in the file")
+
+
+def validate_nasa9(record, context, segments):
+    """Validate conversion dimensions before padding a fixed-capacity input."""
+    thermo = record["thermo"]
+    if thermo["model"] != "nasa9":
+        raise SystemExit(f"{context}: thermo model must be nasa9")
+    try:
+        nasa9_thermo(thermo["temperature_ranges"], thermo["coefficients"], thermo["blend_widths"])
+    except ValueError as error:
+        raise SystemExit(f"{context}: {error}") from None
+    if not 1 <= len(thermo["coefficients"]) <= segments:
+        raise SystemExit(f"{context}: NASA9 segments must fit capacity {segments}")
+
+
+def validate_electronic_levels(record, context, levels):
+    """Validate level-array dimensions after schema validation of integers."""
+    data = record.get("electronic_levels")
+    if data is None:
+        return
+    if len(data["degeneracies"]) != len(data["temperatures"]):
+        raise SystemExit(f"{context}: electronic degeneracies and temperatures must have equal lengths")
+    if len(data["degeneracies"]) > levels:
+        raise SystemExit(f"{context}: electronic levels exceed capacity {levels}")
+
+
+def validate_transport(record, context, segments):
+    """Validate required transport records and exact CEA conversion dimensions."""
+    transport = record.get("transport")
+    fields = ("viscosity", "thermal_conductivity", "lennard_jones")
+    if transport is None or any(transport.get(field) is None for field in fields):
+        raise SystemExit(f"{context}: needs viscosity, thermal_conductivity and lennard_jones transport data")
+    for field in ("viscosity", "thermal_conductivity"):
+        curve = transport[field]
+        location = f"{context}: {field}"
+        if curve["model"] != "cea":
+            raise SystemExit(f"{location}: transport curve model must be cea")
+        rows = curve["coefficients"]
+        if not 1 <= len(rows) <= segments:
+            raise SystemExit(f"{location}: CEA segments must fit capacity {segments}")
+        if len(curve["temperature_ranges"]) != len(rows) + 1:
+            raise SystemExit(f"{location}: temperature boundaries must number one more than coefficient rows")
+        for index, row in enumerate(rows):
+            if len(row) != 4:
+                raise SystemExit(f"{location}: coefficient row {index} requires exactly four values")
+
+
 def species_file(species, reference=None, notes=None):
     for name, record in species.items():
         if record.get("role") not in ("heavy", "electron"):

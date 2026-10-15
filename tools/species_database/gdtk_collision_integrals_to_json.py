@@ -15,6 +15,7 @@ import argparse
 import math
 import re
 
+import collision_json
 import species_json
 
 FORMAT = "canary-collision-integrals-1"
@@ -62,6 +63,7 @@ def main():
                 if frozenset((a, b)) not in have:
                     raise SystemExit(f"no collision integrals for {a}:{b}")
     out = {"format": FORMAT, "units": UNITS, "pairs": found, "reference": args.source}
+    collision_json.validate(out, args.data)
     species_json.dump(out, args.output)
 
 

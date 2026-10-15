@@ -20,8 +20,6 @@ import species_json
 
 from reactions_to_header import comment, number, string
 
-FORMAT = "canary-species-2"
-
 
 def array(items):
     """A std::array initialiser with trailing commas: {{a, b,},}."""
@@ -37,16 +35,11 @@ def padded(values, size, zero):
 
 
 def thermo_entry(name, record, segments, elements_name=None):
-    role = record.get("role")
-    if role not in ("heavy", "electron"):
-        raise SystemExit(f"{name}: role must be heavy or electron")
-    species_json.validate_elements(record, name)
+    role = record["role"]
     metadata = f".role = SpeciesRole::{role}"
     if elements_name is not None:
         metadata += f", .elements = std::span<const ElementCount>{{detail::{elements_name}}}"
     thermo = record["thermo"]
-    if thermo["model"] != "nasa9":
-        raise SystemExit(f"{name}: thermo model must be nasa9")
     count = len(thermo["coefficients"])
     breaks = padded(thermo["temperature_ranges"], segments + 1, 0.0)
     blends = padded(thermo["blend_widths"], segments, 0.0)
@@ -89,10 +82,19 @@ def main():
     parser.add_argument("-o", "--output", required=True)
     args = parser.parse_args()
 
-    data = species_json.load(args.species_file)
-    if data["format"] != FORMAT:
-        raise SystemExit(f"{args.species_file}: not a {FORMAT} file")
+    if args.thermo and args.segments <= 0:
+        parser.error("--segments must be positive")
+    if args.electronic and args.levels <= 0:
+        parser.error("--levels must be positive")
+    data = species_json.load_validated(args.species_file)
     species = data["species"]
+    species_json.validate_selection(species, args.species, args.species_file)
+    for name in args.species:
+        context = f"{args.species_file}: species {name}"
+        if args.thermo:
+            species_json.validate_nasa9(species[name], context, args.segments)
+        if args.electronic:
+            species_json.validate_electronic_levels(species[name], context, args.levels)
     source = Path(args.species_file).name
     guard = f"CANARY_DATA_{Path(args.output).stem.upper()}_HPP"
     includes = ["#include <array>"]
@@ -105,7 +107,6 @@ def main():
         element_arrays = []
         for i, name in enumerate(args.species):
             record = species[name]
-            species_json.validate_elements(record, name)
             if record.get("elements") is not None:
                 identifier = f"{args.name}_elements_{i}"
                 element_names[name] = identifier

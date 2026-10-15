@@ -122,6 +122,8 @@ if(TARGET canary_database)
                COMMAND ${Python3_EXECUTABLE} ${species_tools}/test_reaction_json.py)
       add_test(NAME canary.database.exchange_validation
                COMMAND ${Python3_EXECUTABLE} ${species_tools}/test_exchange_json.py)
+      add_test(NAME canary.database.species_validation
+               COMMAND ${Python3_EXECUTABLE} ${species_tools}/test_species_validation.py)
       add_test(NAME canary.database.schema_rejection
                COMMAND ${Python3_EXECUTABLE} ${species_tools}/test_schemas.py ${PROJECT_SOURCE_DIR})
       add_test(NAME canary.database.schema

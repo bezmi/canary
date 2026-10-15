@@ -19,7 +19,6 @@ from pathlib import Path
 
 import exchange_json
 import species_json
-from _schema_validation import validate_structure
 from reactions_to_header import comment, number, string
 
 
@@ -109,10 +108,7 @@ def main():
         raise SystemExit("an exchange with electrons needs --model-alias and --model-header")
     species = {}
     if args.species_file:
-        species_data = species_json.load(args.species_file)
-        validate_structure(species_data, "species.schema.json", args.species_file)
-        if species_data["format"] != species_json.FORMAT or species_data["units"] != species_json.UNITS:
-            raise SystemExit(f"{args.species_file}: not a {species_json.FORMAT} file in SI units")
+        species_data = species_json.load_validated(args.species_file)
         species = species_data["species"]
     guard = f"CANARY_DATA_{args.name.upper()}_HPP"
     reference = data.get("reference", "")

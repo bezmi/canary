@@ -15,13 +15,11 @@ Usage: transport_to_header.py species.json collision_integrals.json
 """
 
 import argparse
-import json
 from pathlib import Path
 
+import collision_json
+import species_json
 from reactions_to_header import comment, number, string
-
-SPECIES_FORMAT = "canary-species-2"
-COLLISION_FORMAT = "canary-collision-integrals-1"
 
 
 def array(items):
@@ -30,11 +28,7 @@ def array(items):
 
 
 def curve(name, record, segments):
-    if record["model"] != "cea":
-        raise SystemExit(f"{name}: unsupported transport curve model {record['model']}")
     ranges, coefficients = record["temperature_ranges"], record["coefficients"]
-    if len(coefficients) > segments or len(ranges) != len(coefficients) + 1:
-        raise SystemExit(f"{name}: {len(coefficients)} segments do not fit {segments}")
     breaks = ranges + [0.0] * (segments + 1 - len(ranges))
     rows = coefficients + [[0.0] * 4] * (segments - len(coefficients))
     row_text = ", ".join(array(number(x) for x in row) for row in rows)
@@ -44,9 +38,7 @@ def curve(name, record, segments):
 
 
 def species_entry(name, record, segments):
-    transport = record.get("transport")
-    if not transport or not {"viscosity", "thermal_conductivity", "lennard_jones"} <= transport.keys():
-        raise SystemExit(f"{name}: needs viscosity, thermal_conductivity and lennard_jones transport data")
+    transport = record["transport"]
     lj = transport["lennard_jones"]
     return "\n".join([
         "{",
@@ -78,10 +70,13 @@ def main():
     parser.add_argument("-o", "--output", required=True)
     args = parser.parse_args()
 
-    species = json.loads(Path(args.species_file).read_text(encoding="utf-8"))
-    collisions = json.loads(Path(args.collision_file).read_text(encoding="utf-8"))
-    if species["format"] != SPECIES_FORMAT or collisions["format"] != COLLISION_FORMAT:
-        raise SystemExit("not a species file and a collision-integral file")
+    if args.segments <= 0:
+        parser.error("--segments must be positive")
+    species = species_json.load_validated(args.species_file)
+    collisions = collision_json.load(args.collision_file)
+    species_json.validate_selection(species["species"], args.species, args.species_file)
+    for name in args.species:
+        species_json.validate_transport(species["species"][name], f"{args.species_file}: species {name}", args.segments)
     entries = [species_entry(n, species["species"][n], args.segments) for n in args.species]
     wanted = set(args.species)
     pairs = [p for p in collisions["pairs"] if set(p["species"]) <= wanted]

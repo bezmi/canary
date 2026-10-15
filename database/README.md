@@ -66,6 +66,16 @@ ionisation energies is checked for structure, format, units and duplicate keys.
 Mechanism-relative index bounds, charge conservation and numerical domains
 still require model-construction checks.
 
+Species and transport header generators also validate the shipped schemas,
+file formats, SI units and selected species before output. They require exact
+NASA9/CEA coefficient row widths, matching temperature-boundary and blend counts,
+matching electronic degeneracy/temperature counts, and sufficient positive
+array capacities. Schema checks reject fractional or out-of-int32 electronic
+degeneracies before integer emission. Missing or null electronic levels still
+produce zero active levels. Collision records require exactly two species names;
+the collision converter shares this validation. These input checks do not
+establish temperature-dependent physical validity or replace numerical builders.
+
 ## Tests and schema maintenance
 
 With a configured build that enables the database and Python validation:
