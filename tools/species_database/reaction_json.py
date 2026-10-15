@@ -53,7 +53,8 @@ def validate(data, source):
         raise SystemExit(f"{source}: format must be canary-reactions-1")
     if data["units"] != {"quantity": "mol", "length": "m", "time": "s", "temperature": "K"}:
         raise SystemExit(f"{source}: units must be quantity mol, length m, time s and temperature K")
-    lower, upper = data["temperature_limits"]["lower"], data["temperature_limits"]["upper"]
+    lower = float(data["temperature_limits"]["lower"])
+    upper = float(data["temperature_limits"]["upper"])
     if not math.isfinite(lower) or not math.isfinite(upper) or not 0 < lower < upper:
         raise SystemExit(f"{source}: temperature limits must be finite and satisfy 0 < lower < upper")
     if not data["reactions"]:

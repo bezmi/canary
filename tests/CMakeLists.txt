@@ -116,6 +116,27 @@ if(TARGET canary_database)
                     OUTPUT_QUIET ERROR_QUIET)
     if(NOT python_modules_missing)
       set(species_tools ${PROJECT_SOURCE_DIR}/tools/species_database)
+      set(generated_database_dir ${CMAKE_CURRENT_BINARY_DIR}/generated_database)
+      set(generated_database_headers generated_species.hpp generated_transport.hpp
+          generated_reactions.hpp generated_exchange.hpp negative_capacity.hpp small_mass.hpp)
+      list(TRANSFORM generated_database_headers PREPEND "${generated_database_dir}/")
+      file(GLOB database_generator_dependencies CONFIGURE_DEPENDS ${species_tools}/*.py
+           ${PROJECT_SOURCE_DIR}/database/*.schema.json)
+      add_custom_command(OUTPUT ${generated_database_headers}
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/generate_database_headers.py
+                ${PROJECT_SOURCE_DIR} ${generated_database_dir}
+        DEPENDS generate_database_headers.py ${database_generator_dependencies}
+                ${PROJECT_SOURCE_DIR}/database/data/air5.json
+                ${PROJECT_SOURCE_DIR}/database/data/air5_park.json
+                ${PROJECT_SOURCE_DIR}/database/data/air5_park_exchange.json
+                ${PROJECT_SOURCE_DIR}/database/data/air5_collision_integrals.json
+        BYPRODUCTS ${generated_database_dir}/negative_capacity.json ${generated_database_dir}/small_mass.json
+        VERBATIM)
+      add_executable(canary_generated_database_tests test_generated_database.cpp ${generated_database_headers})
+      target_link_libraries(canary_generated_database_tests PRIVATE canary::canary Boost::ut)
+      target_include_directories(canary_generated_database_tests PRIVATE ${generated_database_dir})
+      canary_test_options(canary_generated_database_tests)
+      add_test(NAME canary.database.generated COMMAND canary_generated_database_tests)
       add_test(NAME canary.database.converters
                COMMAND ${Python3_EXECUTABLE} ${species_tools}/test_converters.py ${PROJECT_SOURCE_DIR})
       add_test(NAME canary.database.reaction_validation

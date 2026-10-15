@@ -213,6 +213,17 @@ class ReactionJsonTests(unittest.TestCase):
                 data["reactions"][0]["third_body"] = {"efficiencies": efficiencies}
                 reaction_json.validate(data, self.source)
 
+    def test_temperature_limits_distinct_as_double_inputs(self):
+        self.data["temperature_limits"] = {"lower": 2**53, "upper": 2**53 + 1}
+        self.source.write_text(json.dumps(self.data))
+        self.output.write_bytes(b"original\n")
+        result = self.generate()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(str(self.source), result.stderr)
+        self.assertIn("temperature limits", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertEqual(self.output.read_bytes(), b"original\n")
+
     def test_temperature_limits_and_empty_mechanisms(self):
         for lower, upper in ((0.0, 300.0), (-1.0, 300.0), (300.0, 300.0), (301.0, 300.0),
                              (float("nan"), 300.0), (300.0, float("nan")), (300.0, float("inf"))):

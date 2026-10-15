@@ -44,6 +44,10 @@ def validate(data, source):
         raise SystemExit(f"{source}: format must be canary-energy-exchange-1")
     if data["units"] != {"energy": "J/mol", "temperature": "K", "area": "m^2"}:
         raise SystemExit(f"{source}: units must be energy J/mol, temperature K and area m^2")
+    for name in ("chemistry_vibration", "electron_impact_ionisation"):
+        for index, record in enumerate(data[name]):
+            if record["reaction"] < 0:
+                raise SystemExit(f"{source}: {name} {index} ({record['species']}): reaction index must be non-negative")
     for index, record in enumerate(data["vibration_translation"]):
         context = f"{source}: vibration_translation {index} ({record['species']}-{record['partner']})"
         _expect_model(record, ("landau_teller",), context)

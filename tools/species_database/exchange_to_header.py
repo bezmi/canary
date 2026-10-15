@@ -15,6 +15,7 @@ Usage: exchange_to_header.py exchange.json --name air5_park_exchange
 """
 
 import argparse
+import math
 from pathlib import Path
 
 import exchange_json
@@ -70,10 +71,13 @@ def vibration_electron(entry):
     return f"{{.species = {string(entry['species'])}, .relaxation_time = {fit},}},"
 
 
-def ionisation(entry, species):
+def ionisation(entry, species, context):
     record = species.get(entry["species"], {})
-    if "ionisation_energy" not in record:
-        raise SystemExit(f"{entry['species']}: no ionisation_energy in the species file")
+    energy = record.get("ionisation_energy")
+    if energy is None:
+        raise SystemExit(f"{context}: no ionisation_energy for {entry['species']} in the species file")
+    if not math.isfinite(energy) or energy <= 0:
+        raise SystemExit(f"{context}: ionisation_energy for {entry['species']} must be finite and positive")
     return (f"{{.reaction = {int(entry['reaction'])}, .species = {string(entry['species'])}, "
             f".ionisation_energy = {number(record['ionisation_energy'])},}},")
 
@@ -136,7 +140,7 @@ inline constexpr auto {args.name}_species_names = [] {{
 inline constexpr ElectronExchangeInput<{len(et)}, {len(ve)}, {len(ce)}> {args.name}_electrons {{
 .electron_translation = {listed([electron_translation(e) for e in et])},
 .vibration_electron = {listed([vibration_electron(e) for e in ve])},
-.electron_impact_ionisation = {listed([ionisation(e, species) for e in ce])},
+.electron_impact_ionisation = {listed([ionisation(e, species, f"{args.exchange}: electron_impact_ionisation {i}: {args.species_file}") for i, e in enumerate(ce)])},
 }};
 
 // Energy exchange of {args.name} over the species and modes of {args.model_alias}.

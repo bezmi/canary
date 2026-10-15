@@ -25,12 +25,21 @@ A successful result establishes the structural checks described below only.
 | JSON schema | Required properties, unknown properties, JSON value types and the array bounds and metadata constraints present in that schema. |
 | C++ `parse_*` / `read_*_file` | Decoding into the database record types, supported file format and units; species parsing also checks roles and elemental metadata. Failures report `DatabaseError`. |
 | Input conversion | Supported model identifiers, model-dependent required/forbidden fields, requested record counts and related array sizes. For example, `nasa9_data` checks the relationship between intervals, boundaries and blend widths; `mechanism_input` checks Arrhenius/equilibrium fields. |
+| Python header generation | Shipped schemas, format/units, supported models, required fields, exact record dimensions, integer-valued fields and basic SI parameter domains before output. The generated records remain host inputs, not validated model storage. |
 | Model construction | Numerical domains and stored-parameter representability for the selected model, scalar type and unit system. Failures report `ParameterError`. Consult each builder's documented checks and preconditions. |
 
 Use the corresponding C++ input converter and model builder after reading a
 file. Handle `DatabaseError` and `ParameterError` at the host-side loading
 boundary. Check each converter's documented exceptions; a missing requested
 species can also produce `DatabaseError` during input conversion.
+
+Header generation does not select the caller's precision, unit scales or model
+configuration. Construct the generated inputs with the corresponding C++ builder
+before using a numerical kernel. C++ construction owns coupled physical rules
+(such as heat-capacity positivity, oscillator ordering and cross-section interval
+validity), integer storage/order bounds, species/mechanism relationships and
+representability after conversion. Numerical checks occur during construction;
+kernels consume the resulting strongly typed data without repeating them.
 
 The generated schemas do not encode every supported format, unit or model name,
 every exact array length, relationships between array lengths, ordered
@@ -67,8 +76,10 @@ forbids the other models' optional fields. Neutral electron cross-sections
 require `a`, `b`, `c` and `maximum_temperature`. Optional nulls are unset.
 An absent or null correction means no correction; an explicit correction record
 must name a supported physical model. The shipped schema rejects fractional
-reaction indices before C++ generation. The optional species file supplying
-ionisation energies is checked for structure, format, units and duplicate keys.
+reaction indices before C++ generation; shared validation also rejects negative
+indices. The optional species file supplying ionisation energies is checked for
+structure, format, units and duplicate keys. Each referenced ionisation energy
+must be present, finite and positive before header output.
 Millikan-White coefficients and Kim exponents must be finite. Correction
 cross-sections, Park reference temperatures, dissociation energies and
 vibrational temperatures must be finite and positive. Neutral cross-section
@@ -117,6 +128,13 @@ The schemas are generated from the C++ database record definitions. The
 `canary.database` C++ test compares generated and shipped schema text. Update
 the record definitions and generation together; do not maintain an independent
 set of physical rules by hand in the generated JSON files.
+
+The `canary.database.generated` CTest target exercises the generation-to-construction
+boundary. The build runs all four header generators, then compiles and constructs
+the generated species, reactions, exchange and transport inputs with float/double
+and SI/scaled units. Source-valid fixtures verify that C++ construction still
+rejects negative heat capacity and a mass unrepresentable in the selected storage
+precision. These tests require the same Python dependencies as the converter tests.
 
 ## File replacement
 

@@ -324,6 +324,38 @@ class ExchangeJsonTests(unittest.TestCase):
                 else:
                     self.assertFalse(output.exists())
 
+    def test_negative_reaction_indices(self):
+        for name in ("chemistry_vibration", "electron_impact_ionisation"):
+            data = copy.deepcopy(self.data)
+            data[name][0]["reaction"] = -1
+            self.assert_rejected(data, f"{name} 0", "reaction index must be non-negative")
+
+    def test_invalid_species_ionisation_energy_preserves_output(self):
+        original = json.loads(self.species_source.read_text())
+        name = self.data["electron_impact_ionisation"][0]["species"]
+        for value in (None, "missing", 0.0, -1.0, float("nan"), float("inf")):
+            for existing in (False, True):
+                with self.subTest(value=value, existing=existing):
+                    species = copy.deepcopy(original)
+                    if value == "missing":
+                        del species["species"][name]["ionisation_energy"]
+                    else:
+                        species["species"][name]["ionisation_energy"] = value
+                    self.species_source.write_text(json.dumps(species))
+                    if existing:
+                        self.output.write_bytes(b"original\n")
+                    elif self.output.exists():
+                        self.output.unlink()
+                    result = self.generate()
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(str(self.species_source), result.stderr)
+                    self.assertIn("ionisation_energy", result.stderr)
+                    self.assertNotIn("Traceback", result.stderr)
+                    if existing:
+                        self.assertEqual(self.output.read_bytes(), b"original\n")
+                    else:
+                        self.assertFalse(self.output.exists())
+
     def test_shipped_files_pass_without_mutation(self):
         for name in ("air5_park_exchange", "air11_kim_jo_exchange"):
             with self.subTest(name=name):
