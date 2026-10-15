@@ -108,6 +108,21 @@ void test_calorically_perfect()
         expect(within_relative(a2, dp_drho, 1.0e-8)) << a2 << dp_drho;
     };
 
+    "sound speed follows T and the acoustic exponent is rho a^2 / p"_test = [&] {
+        const auto c = thermo_state(air, Rho {1.2}, E {2.15e5});
+        const auto props = canary::properties(air, c.state);
+        expect(within_ulp(props.acoustics.acoustic_exponent.value(), 1.4, 4.0));
+        // T doubled with p and rho unchanged: a follows T and the exponent
+        // follows rho a^2 / p, so it is no longer gamma.
+        canary::ThermoState<double, si> s = c.state;
+        s.temp = Temp {2.0 * c.state.temp.value()};
+        const auto q = canary::properties(air, s);
+        const double a = q.acoustics.sound_speed.value();
+        expect(within_ulp(a, std::sqrt(1.4 * 287.0 * s.temp.value()), 4.0));
+        expect(within_ulp(q.acoustics.acoustic_exponent.value(), 1.2 * a * a / s.p.value(), 4.0));
+        expect(within_ulp(q.acoustics.acoustic_exponent.value(), 2.8, 4.0));
+    };
+
     "dual numbers give dp/drho at constant e = (gamma - 1) e and dT/de = 1/cv"_test = [&] {
         const double e_v = 2.15e5;
         const auto by_rho = thermo_state(air,

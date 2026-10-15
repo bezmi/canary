@@ -197,23 +197,24 @@ CANARY_HOST_DEVICE Closure<T, U>
     return {.state = state, .status = state_status(k, state, energy_density(rho, e))};
 }
 
-// cv, cp, gamma and R, and the sound speed a = sqrt(gamma R T) from the
-// state temperature. For a state with p = rho R T this equals
-// sqrt(gamma p / rho).
+// cv, cp, gamma and R; the sound speed a = sqrt(gamma R T) from the state
+// temperature, and the acoustic exponent rho a^2 / p. For a state with
+// p = rho R T these equal sqrt(gamma p / rho) and gamma. A caller that reads
+// only the sound speed does not evaluate the exponent's division.
 template <Scalar T, Scalar C, UnitSystem U>
     requires ScalarPair<T, C> && HasSqrt<T>
 CANARY_HOST_DEVICE SingleTemperatureProperties<T, U>
   perfect_properties(const PerfectCoefficients<C, U>& k, const ThermoState<T, U>& state) noexcept
 {
+    const T a = math::sqrt(T(k.gamma.value() * k.gas_constant.value() * state.temp.value()));
     return {
       .cv = SpecificHeat<T, U> {k.cv},
       .cp = SpecificHeat<T, U> {k.cp},
       .capacity_ratio = HeatCapacityRatio<T> {k.gamma},
       .gas_constant = SpecificGasConstant<T, U> {k.gas_constant},
-      .acoustics = {.sound_speed =
-                      SoundSpeed<T, U> {math::sqrt(
-                        T(k.gamma.value() * k.gas_constant.value() * state.temp.value()))},
-                    .acoustic_exponent = AcousticExponent<T> {k.gamma.value()}},
+      .acoustics = {.sound_speed = SoundSpeed<T, U> {a},
+                    .acoustic_exponent =
+                      AcousticExponent<T> {T(state.rho.value() * a * a / state.p.value())}},
     };
 }
 
