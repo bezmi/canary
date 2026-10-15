@@ -584,7 +584,10 @@ std::string write_species(const SpeciesFile& file);
 // the destination. Throws DatabaseError for invalid metadata or write failures.
 void write_species_file(const std::filesystem::path& path, const SpeciesFile& file);
 
-// JSON Schema of species files.
+// Structural JSON Schema of species files: required/unknown properties, value
+// types and the bounds expressed in the schema. Schema success does not validate
+// all format/unit/model identifiers, array relationships or numerical domains.
+// Read, convert and construct the model to apply those operations' checks.
 std::string species_schema();
 
 // The reactions file in json. Throws DatabaseError.
@@ -600,7 +603,8 @@ std::string write_reactions(const ReactionsFile& file);
 // cannot be written.
 void write_reactions_file(const std::filesystem::path& path, const ReactionsFile& file);
 
-// JSON Schema of reactions files.
+// Structural JSON Schema of reactions files; the validation scope is
+// described with species_schema. Input conversion and construction remain required.
 std::string reactions_schema();
 
 // The energy-exchange file in json. Throws DatabaseError.
@@ -616,7 +620,8 @@ std::string write_energy_exchange(const EnergyExchangeFile& file);
 // cannot be written.
 void write_energy_exchange_file(const std::filesystem::path& path, const EnergyExchangeFile& file);
 
-// JSON Schema of energy-exchange files.
+// Structural JSON Schema of energy-exchange files; the validation scope is
+// described with species_schema. Input conversion and construction remain required.
 std::string energy_exchange_schema();
 
 // The collision-integral file in json. Throws DatabaseError.
@@ -633,7 +638,8 @@ std::string write_collision_integrals(const CollisionIntegralsFile& file);
 void write_collision_integrals_file(const std::filesystem::path& path,
                                     const CollisionIntegralsFile& file);
 
-// JSON Schema of collision-integral files.
+// Structural JSON Schema of collision-integral files; the validation scope is
+// described with species_schema. Input conversion and construction remain required.
 std::string collision_integrals_schema();
 
 // The NASA-9 fit of a thermo record with at most S segments. Throws

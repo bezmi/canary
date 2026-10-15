@@ -1,5 +1,9 @@
 """Validates species, reactions, energy-exchange and collision-integral files
-against the JSON Schemas of canary database files.
+against the structural JSON Schemas of canary database files.
+
+Success does not establish physical validity or that a model can be constructed.
+Apply C++ input conversion and model construction checks after reading a file; see
+database/README.md for the validation responsibilities.
 
 Usage: check_species_files.py <schema.json> <file>... [-- <schema.json> <file>...]...
 
