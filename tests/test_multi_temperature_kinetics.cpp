@@ -11,6 +11,7 @@
 #include <canary/data/air11_species.hpp>
 #include <canary/data/air5.hpp>
 #include <canary/data/air5_park.hpp>
+#include <canary/data/air5_park_exchange.hpp>
 #include <canary/energy_exchange.hpp>
 #include <canary/models/multi_temperature.hpp>
 #include <canary/models/thermally_perfect.hpp>
@@ -465,6 +466,19 @@ static_assert(!AcceptsReactionModes<canary::ModeEnergyDensityView<double, si>>);
 
 namespace
 {
+// Each field has its own accessor offset in addition to its layout mapping.
+template <typename T> struct StateOffsetAccessor {
+    using offset_policy = StateOffsetAccessor;
+    using element_type = T;
+    using reference = T&;
+    using data_handle_type = T*;
+    std::size_t offset_value;
+    constexpr reference access(data_handle_type p, std::size_t i) const noexcept
+    { return p[offset_value + i]; }
+    constexpr data_handle_type offset(data_handle_type p, std::size_t i) const noexcept
+    { return p + i; }
+};
+
 template <typename T, typename E, typename V> struct CustomModeState {
     using value_type = T;
     using units = si;
@@ -526,6 +540,212 @@ void test_multi_temperature_kinetics()
       canary::make_air11_kim_jo_exchange(built.species, mech, gas, si_scales);
     const std::array<std::string_view, species_count> names =
       canary::detail::air11_kim_jo_species_names;
+
+    "stateful accessor states match contiguous inputs across model sizes"_test = [] {
+        const auto run = []<typename T, typename Layout, bool Const, bool FiveSpecies>() {
+            using P = canary::ScalarTraits<T>::value_type;
+            using Element = std::conditional_t<Const, const T, T>;
+            const canary::UnitScales<P, si> scales {};
+            const auto built = [&] {
+                if constexpr (FiveSpecies) {
+                    return canary::make_air5_four_temperature<P>(scales);
+                } else {
+                    return canary::make_air11_three_temperature<P>(scales);
+                }
+            }();
+            const auto& model = built.model;
+            constexpr auto n = std::tuple_size_v<decltype(built.species.mass)>;
+            constexpr auto m_count = std::remove_cvref_t<decltype(model)>::mode_count;
+            const auto mechanism = [&] {
+                if constexpr (FiveSpecies) {
+                    return canary::make_air5_park(scales,
+                                                  canary::Pressure<P, si> {P(atmosphere)},
+                                                  model);
+                } else {
+                    return canary::make_air11_kim_jo(scales,
+                                                     canary::Pressure<P, si> {P(atmosphere)},
+                                                     model);
+                }
+            }();
+            const auto exchanges = [&] {
+                if constexpr (FiveSpecies) {
+                    return canary::make_multi_temperature_exchange(
+                      canary::air5_park_exchange,
+                      canary::ElectronExchangeInput<0, 0, 0> {},
+                      canary::detail::air5_species_names,
+                      built.species,
+                      mechanism,
+                      model,
+                      scales);
+                } else {
+                    return canary::make_air11_kim_jo_exchange(built.species,
+                                                              mechanism,
+                                                              model,
+                                                              scales);
+                }
+            }();
+            const auto seed = [](P value, P derivative) {
+                if constexpr (requires { T(value, derivative); }) {
+                    return T(value, derivative);
+                } else {
+                    return T(value);
+                }
+            };
+            const auto equal = [](const T& a, const T& b) {
+                expect(canary::ScalarTraits<T>::value(a) == canary::ScalarTraits<T>::value(b));
+                if constexpr (requires { a.dual(); }) { expect(a.dual() == b.dual()); }
+            };
+            std::array<T, n> y {};
+            for (const auto i : canary::species_indices(0, n)) {
+                const auto value = [&] {
+                    if constexpr (FiveSpecies) {
+                        return std::array<P, 5> {P(0.65),
+                                                 P(0.2),
+                                                 P(0.05),
+                                                 P(0.05),
+                                                 P(0.05)}[i.value()];
+                    } else {
+                        return P(reference_states[0].y[i.value()]);
+                    }
+                }();
+                const P derivative = i.value() == 0 ? P(1) : (i.value() == 1 ? P(-1) : P(0));
+                y[i.value()] = seed(value, derivative);
+            }
+            std::array<T, m_count> temperatures {};
+            for (const auto m : canary::mode_indices(0, m_count)) {
+                temperatures[m.value()] =
+                  seed(P(5000 + 1000 * m.value()), m.value() == 0 ? P(1) : P(0));
+            }
+            const auto reference_mix =
+              canary::mixture(model,
+                              canary::as_kind<canary::kind::mass_fraction>(
+                                Kokkos::mdspan<const T, Extents>(y.data(), n)));
+            const auto contiguous_modes = canary::as_kind<canary::kind::mode_temperature, si>(
+              Kokkos::mdspan<const T, Extents>(temperatures.data(), m_count));
+            const canary::Density<T, si> rho {T(P(0.001))};
+            const canary::Temperature<T, si> temp {T(P(10000))};
+            const auto reference =
+              canary::thermo_state(model, reference_mix, rho, temp, contiguous_modes);
+            expect(reference.status == canary::Status::Valid);
+
+            std::array<T, 3 * n + 8> y_storage;
+            std::array<T, 3 * m_count + 8> t_storage;
+            std::array<T, 3 * m_count + 8> e_storage;
+            y_storage.fill(T(P(-7)));
+            t_storage.fill(T(P(-11)));
+            e_storage.fill(T(P(-13)));
+            using Grid = Kokkos::mdspan<T, Kokkos::dextents<std::size_t, 2>, Layout>;
+            using OtherLayout = std::conditional_t<std::same_as<Layout, Kokkos::layout_left>,
+                                                   Kokkos::layout_right,
+                                                   Kokkos::layout_left>;
+            const Grid y_grid(y_storage.data() + 2, 3, n);
+            const Grid t_grid(t_storage.data() + 3, 3, m_count);
+            const Kokkos::mdspan<T, Kokkos::dextents<std::size_t, 2>, OtherLayout> e_grid(
+              e_storage.data() + 4,
+              3,
+              m_count);
+            for (const auto i : canary::species_indices(0, n)) {
+                y_storage[2 + y_grid.mapping()(1, i.value())] = y[i.value()];
+            }
+            for (const auto m : canary::mode_indices(0, m_count)) {
+                t_storage[3 + t_grid.mapping()(1, m.value())] = temperatures[m.value()];
+                e_storage[4 + e_grid.mapping()(1, m.value())] =
+                  reference.state.mode_e[m.value()].value();
+            }
+            const auto slice = [](auto& storage, const auto& grid, std::size_t offset) {
+                using Raw = Kokkos::
+                  mdspan<Element, Extents, Kokkos::layout_stride, StateOffsetAccessor<Element>>;
+                return Raw(storage.data() + 1 + grid.mapping()(1, 0),
+                           typename Raw::mapping_type(Extents(grid.extent(1)),
+                                                      std::array<std::size_t, 1> {grid.stride(1)}),
+                           StateOffsetAccessor<Element> {offset});
+            };
+            const auto y_before = y_storage;
+            const auto t_before = t_storage;
+            const auto e_before = e_storage;
+            const auto mix = canary::mixture(
+              model,
+              canary::as_kind<canary::kind::mass_fraction>(slice(y_storage, y_grid, 1)));
+            const auto mode_temp = canary::as_indexed<canary::ModeIndex>(
+              canary::as_kind<canary::kind::mode_temperature, si>(slice(t_storage, t_grid, 2)));
+            const auto mode_e = canary::as_indexed<canary::ModeIndex>(
+              canary::as_kind<canary::kind::specific_energy, si>(slice(e_storage, e_grid, 3)));
+            const auto closed = canary::thermo_state(model, mix, rho, temp, mode_temp);
+            expect(closed.status == canary::Status::Valid);
+            equal(closed.state.e.value(), reference.state.e.value());
+            equal(closed.state.p.value(), reference.state.p.value());
+            const canary::MultiTemperatureStateView<T, si, decltype(mode_e), decltype(mode_temp)>
+              state {closed.state.rho,
+                     closed.state.e,
+                     closed.state.p,
+                     closed.state.temp,
+                     mode_e,
+                     mode_temp};
+            const auto compare_modes = [&](const auto& a, const auto& b) {
+                for (const auto m : canary::mode_indices(0, m_count)) {
+                    equal(a[m.value()].value(), b[m.value()].value());
+                }
+            };
+            compare_modes(closed.state.mode_e, reference.state.mode_e);
+            compare_modes(closed.state.mode_temp, reference.state.mode_temp);
+            for (const auto m : canary::mode_indices(0, m_count)) {
+                equal(state.mode_e[m].value(), reference.state.mode_e[m.value()].value());
+            }
+            const auto rates =
+              canary::rates_of_progress(mechanism, model, mix, rho, temp, mode_temp);
+            const auto reference_rates = canary::rates_of_progress(mechanism,
+                                                                   model,
+                                                                   reference_mix,
+                                                                   rho,
+                                                                   temp,
+                                                                   reference.state.mode_temp);
+            for (std::size_t r = 0; r < rates.forward.size(); ++r) {
+                equal(rates.forward[r].value(), reference_rates.forward[r].value());
+                equal(rates.backward[r].value(), reference_rates.backward[r].value());
+            }
+            compare_modes(canary::vibration_translation_source(exchanges, model, mix, state),
+                          canary::vibration_translation_source(exchanges,
+                                                               model,
+                                                               reference_mix,
+                                                               reference.state));
+            compare_modes(canary::chemistry_vibration_source(exchanges, mechanism, rates, state),
+                          canary::chemistry_vibration_source(exchanges,
+                                                             mechanism,
+                                                             reference_rates,
+                                                             reference.state));
+            compare_modes(
+              canary::electron_translation_source(exchanges, mix, state),
+              canary::electron_translation_source(exchanges, reference_mix, reference.state));
+            compare_modes(
+              canary::vibration_electron_source(exchanges, model, mix, state),
+              canary::vibration_electron_source(exchanges, model, reference_mix, reference.state));
+            const auto sources =
+              canary::multi_temperature_sources(mechanism, exchanges, model, mix, state);
+            const auto expected = canary::multi_temperature_sources(mechanism,
+                                                                    exchanges,
+                                                                    model,
+                                                                    reference_mix,
+                                                                    reference.state);
+            compare_modes(sources.modes, expected.modes);
+            for (const auto i : canary::species_indices(0, n)) {
+                equal(sources.species[i.value()].value(), expected.species[i.value()].value());
+            }
+            const auto unchanged = [&](const auto& after, const auto& before) {
+                for (std::size_t i = 0; i < after.size(); ++i) { equal(after[i], before[i]); }
+            };
+            unchanged(y_storage, y_before);
+            unchanged(t_storage, t_before);
+            unchanged(e_storage, e_before);
+        };
+        run.template operator()<double, Kokkos::layout_left, true, true>();
+        run.template operator()<double, Kokkos::layout_right, false, true>();
+        run.template operator()<D, Kokkos::layout_left, false, true>();
+        run.template operator()<D, Kokkos::layout_right, true, true>();
+        run.template operator()<double, Kokkos::layout_left, false, false>();
+        run.template operator()<double, Kokkos::layout_right, true, false>();
+        run.template operator()<D, Kokkos::layout_left, true, false>();
+        run.template operator()<D, Kokkos::layout_right, false, false>();
+    };
 
     "borrowed states preserve all multi-temperature sources"_test = [&] {
         const auto run = []<typename T, typename Layout, bool Const>() {
