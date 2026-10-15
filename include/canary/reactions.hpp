@@ -249,6 +249,16 @@ std::array<int, N> stoichiometric_coefficients(const SpeciesCoefficients<K>& lis
     return out;
 }
 
+// Check the finite storage range before narrowing dimensionless rate parameters.
+template <std::floating_point P>
+P stored_reaction_parameter(std::common_type_t<double, P> value, std::string_view name)
+{
+    if (!std::isfinite(value) || std::abs(value) > std::numeric_limits<P>::max()) {
+        throw ParameterError(std::format("{} is outside the finite parameter range", name));
+    }
+    return static_cast<P>(value);
+}
+
 // Third-body efficiencies per species: 1 unless listed. Each listed value
 // must be finite and non-negative.
 template <std::floating_point P, std::size_t N, std::size_t K>
@@ -267,7 +277,8 @@ std::array<P, N> third_body_efficiencies(const SpeciesCoefficients<K>& list,
                           list.entries[e].name,
                           eff));
         }
-        out[index[e].value()] = static_cast<P>(eff);
+        out[index[e].value()] = stored_reaction_parameter<P>(
+          eff, std::format("third-body efficiency of \"{}\"", list.entries[e].name));
     }
     return out;
 }
@@ -336,23 +347,34 @@ ArrheniusRate<P, U> arrhenius_rate(const ArrheniusInput& input,
                       role,
                       s_t));
     }
+    const P n = stored_reaction_parameter<P>(input.n, std::format("{} rate: n", role));
+    const P exponent = stored_reaction_parameter<P>(
+      s_t, std::format("{} rate: translational exponent", role));
+    const auto theta_name = std::format("{} rate: activation temperature", role);
+    const auto theta = thermodynamic_parameter<P>(
+      convert<U>(Temperature<W, si> {static_cast<W>(input.activation_temperature)}, scales),
+      theta_name.c_str());
     const auto& s = scales;
     const Dimension dimension = rate_dimension(order, role);
     const auto tau = scale_factor<kind::temperature>(s);
     const auto per_particle =
       input.A / std::pow(constants::avogadro<double>, static_cast<W>(order - 1));
-    const auto a =
-      static_cast<P>(per_particle * std::pow(tau, input.n) / scale_factor(dimension, s));
-    if (!std::isfinite(a) || !(a > P(0))) {
+    const W converted_a = per_particle * std::pow(tau, input.n) / scale_factor(dimension, s);
+    if (!std::isfinite(converted_a) || !(converted_a > W(0)) ||
+        converted_a > std::numeric_limits<P>::max()) {
+        throw ParameterError(
+          std::format("{} rate: A = {} is not representable in the model's units", role, input.A));
+    }
+    const P a = static_cast<P>(converted_a);
+    if (!(a > P(0))) {
         throw ParameterError(
           std::format("{} rate: A = {} is not representable in the model's units", role, input.A));
     }
     return {
       .A = a,
-      .n = static_cast<P>(input.n),
-      .activation_temperature =
-        Temperature<P, U> {static_cast<P>(input.activation_temperature / tau)},
-      .translational_exponent = static_cast<P>(s_t),
+      .n = n,
+      .activation_temperature = theta,
+      .translational_exponent = exponent,
       .other_mode = ModeIndex {0},
     };
 }
@@ -433,6 +455,11 @@ ReactionMechanism<P, U, N, R> build_mechanism(const MechanismInput<R, K>& input,
         if (species_index(names, names[i.value()]) != OptionalSpeciesIndex {i}) {
             throw ParameterError(std::format("species \"{}\" is named twice", names[i.value()]));
         }
+        const auto mass = species.mass[i.value()];
+        if (!std::isfinite(mass.value()) || !(mass.value() > P(0))) {
+            throw ParameterError(std::format("species \"{}\": particle mass must be finite and positive",
+                                             names[i.value()]));
+        }
     }
     const double lower = input.temperature_lower;
     const double upper = input.temperature_upper;
@@ -460,8 +487,14 @@ ReactionMechanism<P, U, N, R> build_mechanism(const MechanismInput<R, K>& input,
         }
     }
     mech.mass = species.mass;
-    mech.temperature_lower = convert<U>(Temperature<P, si> {static_cast<P>(lower)}, scales);
-    mech.temperature_upper = convert<U>(Temperature<P, si> {static_cast<P>(upper)}, scales);
+    using W = std::common_type_t<double, P>;
+    mech.temperature_lower = positive_thermodynamic_parameter<P>(
+      convert<U>(Temperature<W, si> {static_cast<W>(lower)}, scales), "temperature lower limit");
+    mech.temperature_upper = positive_thermodynamic_parameter<P>(
+      convert<U>(Temperature<W, si> {static_cast<W>(upper)}, scales), "temperature upper limit");
+    if (!(mech.temperature_lower < mech.temperature_upper)) {
+        throw ParameterError("temperature limits must remain ordered after conversion");
+    }
     mech.standard_pressure = standard_pressure;
     mech.boltzmann = boltzmann_constant(scales);
     return mech;
@@ -475,9 +508,11 @@ ReactionMechanism<P, U, N, R> build_mechanism(const MechanismInput<R, K>& input,
 // scales, with standard pressure p0. Rate constants are converted to
 // per-particle model units, activation temperatures and the temperature
 // limits to the temperature unit of U. Throws ParameterError when:
-// - species.n is not N, or a name is listed twice;
-// - the temperature limits are not finite with 0 < lower < upper, or p0 is
+// - species.n is not N, a name is listed twice, or a stored particle mass is
 //   not finite and positive;
+// - the temperature limits are not finite with 0 < lower < upper, or p0 is
+//   not finite and positive; converted temperature limits must also remain
+//   finite, positive and strictly ordered;
 // and, with the reaction index and equation in the message, when:
 // - the reactants or products are empty, name an unknown species or one
 //   species twice, or a coefficient is not a positive integer;
@@ -487,6 +522,8 @@ ReactionMechanism<P, U, N, R> build_mechanism(const MechanismInput<R, K>& input,
 //   not finite, an activation temperature is negative or not finite, or a
 //   translational exponent is not finite or outside [0, 1] (the backward
 //   rate is checked only with BackwardRateModel::arrhenius).
+// Stored efficiencies, n, activation temperatures and translational exponents
+// must remain finite after conversion to the parameter type.
 // names, species and the thermodynamic model used during rate evaluation
 // must use the same species order. Construction checks names and counts,
 // but SpeciesData carries no names to verify this ordering.

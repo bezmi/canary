@@ -512,6 +512,138 @@ void test_reactions()
         }
     };
 
+    "stored reaction parameters reject narrowing overflow"_test = [] {
+        const canary::UnitScales<float, si> scales;
+        canary::SpeciesData<float, si, 1> species {};
+        species.n = 1;
+        species.mass[0] = canary::ParticleMass<float, si> {1.0F};
+        const std::array<std::string_view, 1> names {"N"};
+        canary::MechanismInput<1, 1> base {};
+        base.temperature_lower = 300;
+        base.temperature_upper = 30000;
+        auto& reaction = base.reactions[0];
+        reaction.equation = "N <=> N";
+        reaction.reactants = {.count = 1, .entries = {{{"N", 1.0}}}};
+        reaction.products = reaction.reactants;
+        reaction.forward = {.A = 1.0, .n = 0.0, .activation_temperature = 0.0,
+                            .translational_exponent = 1.0};
+        const auto build = [&](const auto& input) {
+            return canary::make_reaction_mechanism(input, names, species, scales);
+        };
+        const double large = 2.0 * std::numeric_limits<float>::max();
+        for (const bool backward : {false, true}) {
+            const std::string role = backward ? "backward" : "forward";
+            const std::array parameters {
+              std::pair {&canary::ArrheniusInput::A, "A ="},
+              std::pair {&canary::ArrheniusInput::n, "n is"},
+              std::pair {&canary::ArrheniusInput::activation_temperature, "activation temperature"}};
+            for (const auto& [parameter, diagnostic] : parameters) {
+                auto input = base;
+                input.reactions[0].backward_model = canary::BackwardRateModel::arrhenius;
+                input.reactions[0].backward = input.reactions[0].forward;
+                auto& rate = backward ? input.reactions[0].backward : input.reactions[0].forward;
+                rate.*parameter = large;
+                const auto message = error_message([&] { (void)build(input); });
+                expect(message.starts_with("reaction 0 (N <=> N): " + role + " rate:")) << message;
+                expect(message.find(diagnostic) != std::string::npos) << message;
+            }
+        }
+        auto input = base;
+        input.reactions[0].third_body = true;
+        input.reactions[0].forward.A = canary::constants::avogadro<double>;
+        input.reactions[0].efficiencies = {.count = 1, .entries = {{{"N", large}}}};
+        expect(error_message([&] { (void)build(input); }).starts_with(
+          "reaction 0 (N <=> N): third-body efficiency of \"N\""));
+        input.reactions[0].efficiencies.entries[0].value = 0.0;
+        const auto zero = build(input);
+        expect(zero.reactions[0].efficiencies[0] == 0.0F);
+        expect(zero.reactions[0].forward.activation_temperature.value() == 0.0F);
+        for (const double a : {1.0e-100, std::numeric_limits<double>::max()}) {
+            input = base;
+            input.reactions[0].forward.A = a;
+            expect(error_message([&] { (void)build(input); }).find("A =") != std::string::npos);
+        }
+        input = base;
+        input.temperature_upper = std::nextafter(input.temperature_lower,
+                                                std::numeric_limits<double>::infinity());
+        expect(error_message([&] { (void)build(input); }).find("remain ordered") != std::string::npos);
+        input = base;
+        input.temperature_lower = 1.0e-100;
+        expect(error_message([&] { (void)build(input); }).starts_with("temperature lower limit"));
+        input = base;
+        input.temperature_upper = large;
+        expect(error_message([&] { (void)build(input); }).starts_with("temperature upper limit"));
+    };
+
+    "stored reaction temperatures are converted before narrowing"_test = [] {
+        const std::array<std::string_view, 1> names {"N"};
+        const auto check = [&]<typename P>(P temperature_scale, double lower) {
+            const canary::UnitScales<P, scaled> scales {{
+              .mass = P(1), .density = P(1), .temperature = temperature_scale, .length = P(1)}};
+            canary::SpeciesData<P, scaled, 1> species {};
+            species.n = 1;
+            species.mass[0] = canary::ParticleMass<P, scaled> {P(1)};
+            canary::MechanismInput<1, 1> input {};
+            input.temperature_lower = lower;
+            input.temperature_upper = 2 * lower;
+            auto& reaction = input.reactions[0];
+            reaction.equation = "N <=> N";
+            reaction.reactants = {.count = 1, .entries = {{{"N", 1.0}}}};
+            reaction.products = reaction.reactants;
+            reaction.forward = {.A = 1.0, .n = 0.0, .activation_temperature = lower,
+                                .translational_exponent = 1.0};
+            const auto result = canary::make_reaction_mechanism(
+              input, names, species, scales, canary::Pressure<P, scaled> {P(1)});
+            const P expected = static_cast<P>(lower / static_cast<double>(temperature_scale));
+            expect(std::isfinite(result.temperature_lower.value()));
+            expect(result.temperature_lower.value() > P(0));
+            expect(result.temperature_lower.value() == expected);
+            expect(result.temperature_upper.value() == P(2) * expected);
+            expect(result.reactions[0].forward.activation_temperature.value() == expected);
+            input.reactions[0].forward.activation_temperature = std::numeric_limits<double>::max();
+            expect(error_message([&] {
+                       (void)canary::make_reaction_mechanism(
+                         input, names, species, scales, canary::Pressure<P, scaled> {P(1)});
+                   }).starts_with("reaction 0 (N <=> N): forward rate: activation temperature"));
+        };
+        check(1.0e10F, 1.0e40);
+        check(1.0e-10F, 1.0e-46);
+        check(1.0e-10, 300.0);
+    };
+
+    "stored reaction masses must remain finite and positive"_test = [] {
+        const auto check = []<typename P, typename U>(const canary::UnitScales<P, U>& scales) {
+            canary::SpeciesData<P, U, 1> species {};
+            species.n = 1;
+            canary::MechanismInput<1, 1> input {};
+            input.temperature_lower = 300;
+            input.temperature_upper = 30000;
+            auto& reaction = input.reactions[0];
+            reaction.equation = "N <=> N";
+            reaction.reactants = {.count = 1, .entries = {{{"N", 1.0}}}};
+            reaction.products = reaction.reactants;
+            reaction.forward = {.A = 1.0, .n = 0.0, .activation_temperature = 0.0,
+                                .translational_exponent = 1.0};
+            const std::array<std::string_view, 1> names {"N"};
+            for (const P mass : {P(0), P(-1), std::numeric_limits<P>::infinity(),
+                                 std::numeric_limits<P>::quiet_NaN()}) {
+                species.mass[0] = canary::ParticleMass<P, U> {mass};
+                expect(error_message([&] {
+                           (void)canary::make_reaction_mechanism(input, names, species, scales);
+                       }).starts_with("species \"N\": particle mass"));
+            }
+            species.mass[0] = canary::ParticleMass<P, U> {P(1)};
+            const auto result = canary::make_reaction_mechanism(input, names, species, scales);
+            expect(result.mass[0] == species.mass[0]);
+        };
+        check(canary::UnitScales<float, si> {});
+        check(canary::UnitScales<double, si> {});
+        check(canary::UnitScales<float, scaled> {{
+          .mass = 1, .density = 1, .temperature = 1000, .length = 1}});
+        check(canary::UnitScales<double, scaled> {{
+          .mass = 1, .density = 1, .temperature = 1000, .length = 1}});
+    };
+
     "reaction orders and dimension exponents are checked before narrowing"_test = [&] {
         const std::intmax_t maximum = std::numeric_limits<int>::max();
         expect(canary::detail::reaction_order(std::array {std::numeric_limits<int>::max(), 1},
