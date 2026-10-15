@@ -696,7 +696,8 @@ CANARY_HOST_DEVICE std::array<T, N> mole_fractions(const std::array<ParticleMass
         x[i.value()] = T(mix.fractions[i.value()].value() / mass[i.value()].value());
         sum = sum + x[i.value()];
     }
-    for (const SpeciesIndex i : species_indices(0, N)) { x[i.value()] = x[i.value()] / sum; }
+    const T inv_sum = T(V(1)) / sum;
+    for (const SpeciesIndex i : species_indices(0, N)) { x[i.value()] = x[i.value()] * inv_sum; }
     return x;
 }
 
@@ -771,6 +772,28 @@ CANARY_HOST_DEVICE ViscosityAndConductivity<T>
     return {.viscosity = mu_mix, .conductivity = k_mix};
 }
 
+// Omega_D of a WilkeTransport pair (Neufeld, Janzen and Aziz) at t, with
+// ln_t = ln t.
+template <Scalar T, std::floating_point P, UnitSystem U>
+    requires ScalarWith<T, P> && HasExp<T>
+CANARY_HOST_DEVICE T wilke_omega(const BinaryDiffusionPair<P, U>& pair, T t, T ln_t)
+{
+    using V = ScalarTraits<T>::value_type;
+    const V a = V(1.06036);
+    const V b = V(0.15610);
+    const V c = V(0.19300);
+    const V d = V(0.47635);
+    const V e = V(1.03587);
+    const V f = V(1.52996);
+    const V g = V(1.76474);
+    const V h = V(3.89411);
+    const T t_star = T(t / pair.well_depth.value());
+    const T ln_t_star = T(ln_t - pair.log_well_depth);
+    // The exponentials of -D T* etc. underflow to zero at large T*.
+    return T(T(T(a * math::exp(T(-(b * ln_t_star)))) + T(c * math::exp(T(-(d * t_star))))) +
+             T(T(e * math::exp(T(-(f * t_star)))) + T(g * math::exp(T(-(h * t_star))))));
+}
+
 // D_ij of WilkeTransport for j >= i (j > i without Diagonal), mirrored to
 // j < i; with Diagonal false, D_ii is zero.
 template <bool Diagonal,
@@ -783,16 +806,6 @@ template <bool Diagonal,
 CANARY_HOST_DEVICE std::array<std::array<T, N>, N> wilke_binary_diffusion(
   const WilkeTransport<P, U, N, S>& model, Temperature<T, U> temp, Pressure<T, U> p)
 {
-    using V = ScalarTraits<T>::value_type;
-    // Constants of Omega_D (Neufeld, Janzen and Aziz).
-    const V a = V(1.06036);
-    const V b = V(0.15610);
-    const V c = V(0.19300);
-    const V d = V(0.47635);
-    const V e = V(1.03587);
-    const V f = V(1.52996);
-    const V g = V(1.76474);
-    const V h = V(3.89411);
     const T t = temp.value();
     const T ln_t = math::log(t);
     // T^(3/2) / p.
@@ -801,13 +814,28 @@ CANARY_HOST_DEVICE std::array<std::array<T, N>, N> wilke_binary_diffusion(
     for (const SpeciesIndex i : species_indices(0, N)) {
         for (const SpeciesIndex j : species_indices(Diagonal ? i.value() : i.value() + 1, N)) {
             const BinaryDiffusionPair<P, U>& pair = model.diffusion[i.value()][j.value()];
-            const T t_star = T(t / pair.well_depth.value());
-            const T ln_t_star = T(ln_t - pair.log_well_depth);
-            // The exponentials of -D T* etc. underflow to zero at large T*.
-            const T omega =
-              T(T(T(a * math::exp(T(-(b * ln_t_star)))) + T(c * math::exp(T(-(d * t_star))))) +
-                T(T(e * math::exp(T(-(f * t_star)))) + T(g * math::exp(T(-(h * t_star))))));
-            out[i.value()][j.value()] = T(T(pair.factor * t_over_p) / omega);
+            out[i.value()][j.value()] = T(T(pair.factor * t_over_p) / wilke_omega(pair, t, ln_t));
+            out[j.value()][i.value()] = out[i.value()][j.value()];
+        }
+    }
+    return out;
+}
+
+// 1 / D_ij of WilkeTransport for j != i, mirrored; the diagonal is zero.
+template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
+    requires ScalarWith<T, P> && HasLog<T> && HasExp<T> && HasSqrt<T>
+CANARY_HOST_DEVICE std::array<std::array<T, N>, N> wilke_inverse_binary_diffusion(
+  const WilkeTransport<P, U, N, S>& model, Temperature<T, U> temp, Pressure<T, U> p)
+{
+    const T t = temp.value();
+    const T ln_t = math::log(t);
+    // T^(3/2) / p.
+    const T t_over_p = T(T(t * math::sqrt(t)) / p.value());
+    std::array<std::array<T, N>, N> out {};
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        for (const SpeciesIndex j : species_indices(i.value() + 1, N)) {
+            const BinaryDiffusionPair<P, U>& pair = model.diffusion[i.value()][j.value()];
+            out[i.value()][j.value()] = T(wilke_omega(pair, t, ln_t) / T(pair.factor * t_over_p));
             out[j.value()][i.value()] = out[i.value()][j.value()];
         }
     }
@@ -906,6 +934,23 @@ CANARY_HOST_DEVICE GuptaYosValues<T> gupta_yos_values(const GuptaYosTransport<P,
     };
 }
 
+// 1 / D_ij = p Delta(1)_ij / (k_B T) of GuptaYosTransport, i = j included.
+template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N>
+    requires ScalarWith<T, P> && HasLog<T> && HasExp<T>
+CANARY_HOST_DEVICE std::array<std::array<T, N>, N> gupta_yos_inverse_binary_diffusion(
+  const GuptaYosTransport<P, U, N>& model, Temperature<T, U> temp, Pressure<T, U> p)
+{
+    const CollisionTermValues<T, N> delta = collision_term_values<false>(model, temp);
+    const T p_over_kt = T(p.value() / T(model.boltzmann.value() * temp.value()));
+    std::array<std::array<T, N>, N> out {};
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        for (const SpeciesIndex j : species_indices(0, N)) {
+            out[i.value()][j.value()] = T(delta.delta_1[i.value()][j.value()] * p_over_kt);
+        }
+    }
+    return out;
+}
+
 // D_ij = k_B T / (p Delta(1)_ij) of GuptaYosTransport, i = j included.
 template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N>
     requires ScalarWith<T, P> && HasLog<T> && HasExp<T>
@@ -923,11 +968,11 @@ CANARY_HOST_DEVICE std::array<std::array<T, N>, N> gupta_yos_binary_diffusion(
     return out;
 }
 
-// D_i = sum_{j != i} x_j / sum_{j != i} x_j / D_ij; 0 when the second sum is
-// zero.
+// D_i = sum_{j != i} x_j / sum_{j != i} x_j / D_ij, from inv_d_ij = 1 / D_ij;
+// 0 when the second sum is zero.
 template <Scalar T, UnitSystem U, std::size_t N>
 CANARY_HOST_DEVICE std::array<DiffusionCoefficient<T, U>, N>
-  mixture_diffusion(const std::array<T, N>& x, const std::array<std::array<T, N>, N>& d)
+  mixture_diffusion(const std::array<T, N>& x, const std::array<std::array<T, N>, N>& inv_d)
 {
     using V = ScalarTraits<T>::value_type;
     std::array<DiffusionCoefficient<T, U>, N> out {};
@@ -937,7 +982,7 @@ CANARY_HOST_DEVICE std::array<DiffusionCoefficient<T, U>, N>
         for (const SpeciesIndex j : species_indices(0, N)) {
             if (j.value() == i.value()) { continue; }
             others = others + x[j.value()];
-            sum = sum + T(x[j.value()] / d[i.value()][j.value()]);
+            sum = sum + T(x[j.value()] * inv_d[i.value()][j.value()]);
         }
         out[i.value()] = DiffusionCoefficient<T, U> {
           ScalarTraits<T>::value(sum) == V(0) ? T(V(0)) : T(others / sum),
@@ -1099,7 +1144,7 @@ CANARY_HOST_DEVICE std::array<DiffusionCoefficient<T, U>, N>
 {
     return detail::mixture_diffusion<T, U>(
       detail::mole_fractions(model.mass, mix),
-      detail::wilke_binary_diffusion<false>(model, state.temp, state.p));
+      detail::wilke_inverse_binary_diffusion(model, state.temp, state.p));
 }
 
 // Binary diffusion coefficients D_ij = k_B T / (p Delta(1)_ij) of
@@ -1141,7 +1186,7 @@ CANARY_HOST_DEVICE std::array<DiffusionCoefficient<T, U>, N>
 {
     return detail::mixture_diffusion<T, U>(
       detail::mole_fractions(model.mass, mix),
-      detail::gupta_yos_binary_diffusion(model, state.temp, state.p));
+      detail::gupta_yos_inverse_binary_diffusion(model, state.temp, state.p));
 }
 
 namespace detail
