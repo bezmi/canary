@@ -1,4 +1,5 @@
 #include "dual.hpp"
+#include "oscillator_reference.hpp"
 #include "test_suites.hpp"
 
 #include <algorithm>
@@ -214,37 +215,6 @@ Values evaluate(const M& mech,
     return out;
 }
 
-// G(x) / k_B in long double (64-bit significand): the definition with expm1
-// for |theta_d x| >= 1e-3, where the cancellation between the two terms
-// costs at most 4 of the 19 digits; below, the series
-// (theta_d - theta_v) / 2 + sum_k B_2k / (2k)! (theta_v^2k - theta_d^2k) x^(2k - 1)
-// to k = 4, whose first omitted term is below 1e-30 of the result.
-long double precise_g(long double theta_v, long double theta_d, long double x)
-{
-    if (std::abs(theta_d * x) >= 1.0e-3L) {
-        return (theta_v / std::expm1(theta_v * x)) - (theta_d / std::expm1(theta_d * x));
-    }
-    const std::array<long double, 4> b {
-      1.0L / 12.0L,
-      -1.0L / 720.0L,
-      1.0L / 30240.0L,
-      -1.0L / 1209600.0L,
-    };
-    long double sum = (theta_d - theta_v) / 2.0L;
-    long double power_v = theta_v;
-    long double power_d = theta_d;
-    long double power_x = 1.0L;
-    for (const long double c : b) {
-        power_v *= theta_v;
-        power_d *= theta_d;
-        sum += c * (power_v - power_d) * power_x * x;
-        power_v *= theta_v;
-        power_d *= theta_d;
-        power_x *= x * x;
-    }
-    return sum;
-}
-
 template <typename F> std::string error_message(const F& f)
 {
     try {
@@ -257,7 +227,6 @@ template <typename F> std::string error_message(const F& f)
 
 }  // namespace
 
-static_assert(std::numeric_limits<long double>::digits >= 64);
 static_assert(canary::HasSpeciesProperties<Air, double, 5>);
 static_assert(canary::HasSpeciesProperties<Air, D, 5>);
 static_assert(canary::ReactingModel<Air, double, double, 5>);
@@ -768,28 +737,20 @@ void test_energy_exchange()
     };
 
     "energy exchange: G is accurate for every x"_test = [&] {
-        std::array<double, 60> xs {};
-        std::size_t count = 0;
-        xs[count++] = 0.0;
-        for (const double sign : {1.0, -1.0}) {
-            xs[count++] = sign * 1.0e-300;
-            for (int e = -12; e <= -2; ++e) { xs[count++] = sign * std::pow(10.0, e); }
-        }
-        for (const auto& coupling : exchange.chemistry_vibration) {
+        const auto& references = canary::test::oscillator_references;
+        expect(references.size() == exchange.chemistry_vibration.size());
+        for (std::size_t i = 0; i < references.size(); ++i) {
+            const auto& coupling = exchange.chemistry_vibration.at(i);
+            const auto& reference = references[i];
             const double theta_v = coupling.vibrational_temperature.value();
             const double theta_d = coupling.dissociation_temperature.value();
-            std::size_t total = count;
-            for (const double sign : {1.0, -1.0}) {
-                for (const double w :
-                     {0.1, 0.4999, 0.5, 0.5001, 1.0, 3.0, 10.0, 100.0, 1000.0, 1.0e4}) {
-                    xs[total++] = sign * w / theta_d;
-                }
-            }
-            for (std::size_t j = 0; j < total; ++j) {
-                const double x = xs[j];
+            expect(theta_v == reference.vibrational_temperature);
+            expect(theta_d == reference.dissociation_temperature);
+            for (const auto& sample : reference.samples) {
+                const double x = sample.inverse_temperature;
                 const double g =
                   canary::detail::truncated_oscillator_energy(theta_v, theta_d, x).value;
-                const auto precise = static_cast<double>(precise_g(theta_v, theta_d, x));
+                const double precise = sample.energy_over_boltzmann;
                 expect(relative(g, precise, 1.0e-12)) << theta_d << x << g << precise;
             }
             const auto g0 = canary::detail::truncated_oscillator_energy(theta_v, theta_d, 0.0);
