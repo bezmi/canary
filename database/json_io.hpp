@@ -5,13 +5,12 @@
 // species, reactions, energy-exchange and collision-integral files.
 // Private to the database library.
 
+#include "file_io.hpp"
+
 #include <canary/database.hpp>
 #include <filesystem>
 #include <format>
-#include <fstream>
 #include <glaze/glaze.hpp>
-#include <ios>
-#include <iterator>
 #include <string>
 #include <string_view>
 
@@ -27,24 +26,6 @@ inline constexpr glz::opts read_options {
 inline constexpr glz::opts write_options {.prettify = true};
 // The schema marks a key required exactly when reading requires it.
 inline constexpr glz::opts schema_options {.prettify = true, .error_on_missing_keys = true};
-
-// Contents of the file at path. Throws DatabaseError naming the kind of file
-// when it cannot be opened.
-inline std::string read_text(const std::filesystem::path& path, std::string_view kind)
-{
-    std::ifstream in(path, std::ios::binary);
-    if (!in) { throw DatabaseError(std::format("cannot open {} file {}", kind, path.string())); }
-    return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
-}
-
-// Writes text to path. Throws DatabaseError when it cannot.
-inline void write_text(const std::filesystem::path& path, const std::string& text)
-{
-    std::ofstream out(path, std::ios::binary);
-    if (!out) { throw DatabaseError(std::format("cannot open {} for writing", path.string())); }
-    out << text;
-    if (!out) { throw DatabaseError(std::format("cannot write {}", path.string())); }
-}
 
 template <typename File, typename Validate>
 File parse_json(std::string_view json, std::string_view kind, Validate validate)

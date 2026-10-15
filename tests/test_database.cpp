@@ -5,6 +5,9 @@
 // mechanism, Park energy exchange, species transport data, collision
 // integrals and electronic levels against their files.
 
+#include "../database/file_io.hpp"
+
+#include <algorithm>
 #include <array>
 #include <boost/ut.hpp>
 #include <canary/build.hpp>
@@ -33,6 +36,8 @@
 #include <map>
 #include <optional>
 #include <random>
+#include <sstream>
+#include <streambuf>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -522,6 +527,107 @@ int main()
         check(db::read_energy_exchange_file(exchange_path()), db::write_energy_exchange_file);
         check(db::read_collision_integrals_file(collision_path()),
               db::write_collision_integrals_file);
+    };
+
+    "database reads require completion and preserve binary contents"_test = [] {
+        for (const std::size_t size : {0U, 1U, 16383U, 16384U, 16385U, 32768U}) {
+            std::string contents(size, 'x');
+            if (size > 3) { contents[3] = '\0'; }
+            std::istringstream input(contents);
+            expect(db::detail::read_contents(input, "sample.json", "species") == contents);
+        }
+        class FailedRead : public std::streambuf {
+            std::streamsize xsgetn(char* output, std::streamsize count) override
+            {
+                if (read_once_) { throw std::ios_base::failure("injected read failure"); }
+                read_once_ = true;
+                std::fill_n(output, count, 'x');
+                return count;
+            }
+            bool read_once_ = false;
+        } buffer;
+        std::istream input(&buffer);
+        try {
+            static_cast<void>(db::detail::read_contents(input, "sample.json", "species"));
+            expect(false) << "partial contents were accepted after a read failure";
+        } catch (const db::DatabaseError& error) {
+            expect(std::string_view(error.what()) == "cannot read species file sample.json");
+        }
+    };
+
+    "database writers replace complete files and preserve permissions"_test = [] {
+        const TemporaryDirectory directory;
+        const auto destination = directory.path() / "output.json";
+        const auto retained = directory.path() / "retained.json";
+        const auto permissions = std::filesystem::perms::owner_read |
+                                 std::filesystem::perms::owner_write |
+                                 std::filesystem::perms::group_read;
+        const auto check = [&](const auto& file, auto write, auto serialize) {
+            const auto expected = serialize(file);
+            write(destination, file);
+            expect(read_text(destination) == expected);
+            std::filesystem::remove(destination);
+            {
+                std::ofstream old(destination);
+                old << "previous contents";
+            }
+            std::filesystem::permissions(destination, permissions);
+            std::filesystem::create_hard_link(destination, retained);
+            write(destination, file);
+            expect(read_text(destination) == expected);
+            expect(read_text(retained) == "previous contents");
+            expect(!std::filesystem::equivalent(destination, retained));
+            expect(std::filesystem::status(destination).permissions() == permissions);
+            std::filesystem::remove(destination);
+            std::filesystem::remove(retained);
+            expect(std::filesystem::is_empty(directory.path()));
+        };
+        check(db::read_species_file(air5_path()), db::write_species_file, db::write_species);
+        check(db::read_reactions_file(kim_jo_path()), db::write_reactions_file, db::write_reactions);
+        check(db::read_energy_exchange_file(exchange_path()), db::write_energy_exchange_file,
+              db::write_energy_exchange);
+        check(db::read_collision_integrals_file(collision_path()), db::write_collision_integrals_file,
+              db::write_collision_integrals);
+    };
+
+    "database writers reject existing and dangling destination symlinks"_test = [] {
+        const TemporaryDirectory directory;
+        const auto target = directory.path() / "target.json";
+        const auto link = directory.path() / "output.json";
+        const auto check = [&](const auto& file, auto write) {
+            for (const bool exists : {true, false}) {
+                if (exists) {
+                    std::ofstream output(target);
+                    output << "retained contents";
+                }
+                std::filesystem::create_symlink(target, link);
+                expect(throws_database_error([&] { write(link, file); }));
+                expect(std::filesystem::is_symlink(link));
+                expect(std::filesystem::exists(target) == exists);
+                if (exists) { expect(read_text(target) == "retained contents"); }
+                std::filesystem::remove(link);
+                std::filesystem::remove(target);
+                expect(std::filesystem::is_empty(directory.path()));
+            }
+        };
+        check(db::read_species_file(air5_path()), db::write_species_file);
+        check(db::read_reactions_file(kim_jo_path()), db::write_reactions_file);
+        check(db::read_energy_exchange_file(exchange_path()), db::write_energy_exchange_file);
+        check(db::read_collision_integrals_file(collision_path()), db::write_collision_integrals_file);
+    };
+
+    "database serialization failure preserves the destination"_test = [] {
+        const TemporaryDirectory directory;
+        const auto path = directory.path() / "output.json";
+        const auto file = db::read_species_file(air5_path());
+        db::write_species_file(path, file);
+        const auto original = read_text(path);
+        auto invalid = file;
+        invalid.format = "unsupported";
+        expect(throws_database_error([&] { db::write_species_file(path, invalid); }));
+        expect(read_text(path) == original);
+        std::filesystem::remove(path);
+        expect(std::filesystem::is_empty(directory.path()));
     };
 
     "database parse diagnostics retain file kind and source path"_test = [] {

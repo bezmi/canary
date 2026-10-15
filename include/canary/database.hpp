@@ -580,8 +580,10 @@ SpeciesFile read_species_file(const std::filesystem::path& path);
 // DatabaseError for invalid metadata or serialization errors.
 std::string write_species(const SpeciesFile& file);
 
-// Writes file as indented JSON to path. Validates and serializes before opening
-// the destination. Throws DatabaseError for invalid metadata or write failures.
+// Serializes file and atomically replaces path after checked write/flush/close.
+// Rejects symlink/non-regular destinations and preserves existing permission bits.
+// Throws DatabaseError for invalid metadata or I/O failures; before replacement,
+// failures preserve the destination. Atomic visibility does not imply crash durability.
 void write_species_file(const std::filesystem::path& path, const SpeciesFile& file);
 
 // Structural JSON Schema of species files: required/unknown properties, value
@@ -599,8 +601,8 @@ ReactionsFile read_reactions_file(const std::filesystem::path& path);
 // file as indented JSON.
 std::string write_reactions(const ReactionsFile& file);
 
-// Writes file as indented JSON to path. Throws DatabaseError when the file
-// cannot be written.
+// Atomically replaces path with serialized JSON; see write_species_file for
+// destination restrictions and failure guarantees. Throws DatabaseError on I/O failure.
 void write_reactions_file(const std::filesystem::path& path, const ReactionsFile& file);
 
 // Structural JSON Schema of reactions files; the validation scope is
@@ -616,8 +618,8 @@ EnergyExchangeFile read_energy_exchange_file(const std::filesystem::path& path);
 // file as indented JSON.
 std::string write_energy_exchange(const EnergyExchangeFile& file);
 
-// Writes file as indented JSON to path. Throws DatabaseError when the file
-// cannot be written.
+// Atomically replaces path with serialized JSON; see write_species_file for
+// destination restrictions and failure guarantees. Throws DatabaseError on I/O failure.
 void write_energy_exchange_file(const std::filesystem::path& path, const EnergyExchangeFile& file);
 
 // Structural JSON Schema of energy-exchange files; the validation scope is
@@ -633,8 +635,8 @@ CollisionIntegralsFile read_collision_integrals_file(const std::filesystem::path
 // file as indented JSON.
 std::string write_collision_integrals(const CollisionIntegralsFile& file);
 
-// Writes file as indented JSON to path. Throws DatabaseError when the file
-// cannot be written.
+// Atomically replaces path with serialized JSON; see write_species_file for
+// destination restrictions and failure guarantees. Throws DatabaseError on I/O failure.
 void write_collision_integrals_file(const std::filesystem::path& path,
                                     const CollisionIntegralsFile& file);
 

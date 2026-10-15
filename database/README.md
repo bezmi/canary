@@ -60,3 +60,24 @@ The schemas are generated from the C++ database record definitions. The
 `canary.database` C++ test compares generated and shipped schema text. Update
 the record definitions and generation together; do not maintain an independent
 set of physical rules by hand in the generated JSON files.
+
+## File replacement
+
+The C++ file writers serialize before creating a temporary file beside the
+requested destination. They check writing, flushing and closing before renaming
+that file over the destination. An existing destination must be a regular file;
+symlinks, including dangling symlinks, are rejected. Existing permission bits
+are copied to the replacement. New files use the process's normal file-creation
+permissions. Parent directories must already exist.
+
+A failure before replacement leaves the destination untouched and attempts to
+remove the temporary file. Errors report `DatabaseError` with the destination
+path and failed operation. Reads report I/O failures instead of returning partial
+contents. Hard links to an old destination retain its previous contents because
+replacement changes the destination's directory entry.
+
+Atomic replacement prevents readers from seeing a partially written document.
+It does not provide power-loss durability: the writers do not synchronize files
+or directories to persistent storage. Callers must coordinate concurrent changes
+to the destination and its parent directories; inspection and replacement do
+not constitute a filesystem transaction.
