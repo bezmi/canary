@@ -2,6 +2,7 @@
 #define CANARY_DETAIL_NASA9_INTEGRALS_HPP
 
 #include <array>
+#include <cmath>
 #include <canary/config.hpp>
 #include <canary/scalar.hpp>
 #include <limits>
@@ -77,18 +78,41 @@ CANARY_HOST_DEVICE T nasa9_integral(const std::array<P, 9>& lower,
     const T y = T(d * inv);
     const T s = T(start * inv);
     T a4(V(0));
-    if (ScalarTraits<T>::value(y) <= V(0.5)) {
-        // A4=sum(y^k/(k+4)). The omitted tail is bounded by
-        // y^(N+1)/((N+5)*(1-y)); N=digits+8 also bounds its derivative
-        // below working precision on this branch.
+    const V y_value = ScalarTraits<T>::value(y);
+    if (y_value <= V(0.5)) {
+        // A4=sum(y^k/(k+4)) to k=N. The omitted tail is bounded by
+        // y^(N+1)/((N+5)*(1-y)). With y <= 2^-m, m*N >= digits+8 bounds it
+        // and its derivative below working precision, so N follows the
+        // binary exponent of y: N=digits+8 for y in [1/4, 1/2], fewer terms
+        // for smaller y, and the first terms only for y = 0. N+1 is rounded
+        // up to a multiple of four. The terms are positive: those from k=4
+        // are summed in four independent chains in y^4 (k mod 4 = 0..3), and
+        // the first four by Horner's rule, which keeps the rounding of y^2
+        // and y^4 out of the leading terms.
+        constexpr int bits = std::numeric_limits<V>::digits + 8;
+        constexpr std::size_t groups_max = (bits + 4) / 4;
         constexpr auto coefficients = [] {
-            std::array<V, std::numeric_limits<V>::digits + 9> out {};
+            std::array<V, 4 * groups_max> out {};
             for (std::size_t k = 0; k < out.size(); ++k) { out[k] = V(1) / V(k + 4); }
             return out;
         }();
-        for (std::size_t k = coefficients.size(); k > 0; --k) {
-            a4 = T(a4 * y + coefficients[k - 1]);
+        std::size_t groups = groups_max;
+        if (y_value > V(0)) {
+            const int m = -std::ilogb(y_value) - 1;
+            if (m > 1) { groups = (static_cast<std::size_t>((bits + m - 1) / m) + 4) / 4; }
+        } else {
+            groups = 1;
         }
+        const T y2 = y * y;
+        const T y4 = y2 * y2;
+        std::array<T, 4> chain {T(V(0)), T(V(0)), T(V(0)), T(V(0))};
+        for (std::size_t j = groups; j > 1; --j) {
+            for (std::size_t r = 0; r < 4; ++r) {
+                chain[r] = T(chain[r] * y4 + coefficients[(4 * (j - 1)) + r]);
+            }
+        }
+        a4 = T((chain[0] + y * chain[1]) + y2 * (chain[2] + y * chain[3]));
+        for (std::size_t k = 4; k > 0; --k) { a4 = T(a4 * y + coefficients[k - 1]); }
     } else {
         const T y2 = y * y;
         a4 = T((math::log(T(t / start)) - y - y2 / V(2) - y2 * y / V(3)) / (y2 * y2));
