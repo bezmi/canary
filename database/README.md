@@ -79,8 +79,17 @@ matching electronic degeneracy/temperature counts, and sufficient positive
 array capacities. Schema checks reject fractional or out-of-int32 electronic
 degeneracies before integer emission. Missing or null electronic levels still
 produce zero active levels. Collision records require exactly two species names;
-the collision converter shares this validation. These input checks do not
-establish temperature-dependent physical validity or replace numerical builders.
+the collision converter shares this validation. Species thermodynamic inputs
+require positive finite molar mass and finite charge. NASA9 and CEA boundaries
+must be finite, positive and strictly increasing, with finite coefficients.
+NASA9 blend widths must be finite and positive; blend regions must lie within
+the fit without overlap (touching regions are allowed). Electronic degeneracies
+must be positive, level temperatures finite and nonnegative, and the ground
+level temperature zero; no ordering of excited levels is required. Lennard-Jones
+sigma and epsilon must be finite and positive. Collision-fit coefficients must
+be finite. These input checks do not establish temperature-dependent physical
+validity or representability after conversion, and do not replace numerical
+builders.
 
 ## Tests and schema maintenance
 

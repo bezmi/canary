@@ -212,6 +212,132 @@ class SpeciesValidationTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(self.output.read_bytes(), original)
 
+    def test_thermodynamic_mass_charge_and_boundaries(self):
+        original = copy.deepcopy(self.data)
+        for field, values in (("molar_mass", (0.0, -1.0, float("nan"), float("inf"))),
+                              ("charge", (float("nan"), float("inf")))):
+            for value in values:
+                with self.subTest(field=field, value=value):
+                    self.data = copy.deepcopy(original)
+                    self.data["species"]["N2"][field] = value
+                    with self.assertRaises(SystemExit) as caught:
+                        self.validate("thermo")
+                    self.assertIn(str(self.source), str(caught.exception))
+                    self.assertIn(field, str(caught.exception))
+        for kind in ("thermo", "transport"):
+            for values in ([0.0, 1000.0, 6000.0, 20000.0], [200.0, 200.0, 6000.0, 20000.0],
+                           [200.0, 100.0, 6000.0, 20000.0], [200.0, float("nan"), 6000.0, 20000.0]):
+                with self.subTest(kind=kind, values=values):
+                    self.data = copy.deepcopy(original)
+                    record = self.data["species"]["N2"]
+                    curve = record["thermo"] if kind == "thermo" else record["transport"]["viscosity"]
+                    self.assertEqual(len(curve["temperature_ranges"]), len(values))
+                    curve["temperature_ranges"] = values
+                    with self.assertRaises(SystemExit) as caught:
+                        self.validate(kind)
+                    self.assertIn(str(self.source), str(caught.exception))
+                    self.assertIn("boundary", str(caught.exception))
+
+    def test_nasa9_blend_geometry(self):
+        original = copy.deepcopy(self.data)
+        for widths in ([0.0, 100.0], [-1.0, 100.0], [float("nan"), 100.0], [250.0, 10.0], [120.0, 120.0]):
+            with self.subTest(widths=widths):
+                self.data = copy.deepcopy(original)
+                thermo = self.data["species"]["N2"]["thermo"]
+                thermo["temperature_ranges"] = [100.0, 200.0, 300.0, 400.0]
+                thermo["blend_widths"] = widths
+                with self.assertRaises(SystemExit) as caught:
+                    self.validate("thermo")
+                self.assertIn("blend", str(caught.exception))
+        self.data = copy.deepcopy(original)
+        thermo = self.data["species"]["N2"]["thermo"]
+        thermo["temperature_ranges"] = [100.0, 200.0, 1000.0, 1100.0]
+        thermo["blend_widths"] = [20.0, 300.0]
+        with self.assertRaisesRegex(SystemExit, "final blend region"):
+            self.validate("thermo")
+        thermo["temperature_ranges"] = [100.0, 200.0, 300.0, 400.0]
+        thermo["blend_widths"] = [100.0, 100.0]
+        self.validate("thermo")
+        # A single interval requires no blend.
+        thermo["coefficients"] = thermo["coefficients"][:1]
+        thermo["temperature_ranges"] = [100.0, 400.0]
+        thermo["blend_widths"] = []
+        self.validate("thermo")
+
+    def test_electronic_level_domains_without_excited_level_ordering(self):
+        original = copy.deepcopy(self.data)
+        for field, index, value in (("degeneracies", 0, 0), ("degeneracies", 1, -1),
+                                    ("temperatures", 0, 1.0), ("temperatures", 1, -1.0),
+                                    ("temperatures", 1, float("nan"))):
+            with self.subTest(field=field, index=index, value=value):
+                self.data = copy.deepcopy(original)
+                self.data["species"]["N2"]["electronic_levels"][field][index] = value
+                with self.assertRaises(SystemExit) as caught:
+                    self.validate("electronic", 8)
+                self.assertIn(str(self.source), str(caught.exception))
+                self.assertIn("level", str(caught.exception))
+        self.data = copy.deepcopy(original)
+        self.data["species"]["N2"]["electronic_levels"] = {
+            "degeneracies": [1, 2, 3, 4], "temperatures": [-0.0, 300.0, 200.0, 200.0]}
+        self.validate("electronic", 8)
+
+    def test_lennard_jones_and_fit_coefficients(self):
+        original = copy.deepcopy(self.data)
+        for field in ("sigma", "epsilon"):
+            for value in (0.0, -1.0, float("nan"), float("inf")):
+                with self.subTest(field=field, value=value):
+                    self.data = copy.deepcopy(original)
+                    self.data["species"]["N2"]["transport"]["lennard_jones"][field] = value
+                    with self.assertRaises(SystemExit) as caught:
+                        self.validate("transport")
+                    self.assertIn(str(self.source), str(caught.exception))
+        for kind in ("thermo", "transport"):
+            self.data = copy.deepcopy(original)
+            record = self.data["species"]["N2"]
+            curve = record["thermo"] if kind == "thermo" else record["transport"]["thermal_conductivity"]
+            curve["coefficients"][0][0] = float("nan")
+            with self.assertRaisesRegex(SystemExit, "coefficient 0 of row 0 must be finite"):
+                self.validate(kind)
+        for fit in ("pi_omega_11", "pi_omega_22"):
+            for field in "ABCD":
+                pairs = copy.deepcopy(self.pairs)
+                pairs["pairs"][0][fit][field] = float("nan")
+                with self.assertRaises(SystemExit) as caught:
+                    collision_json.validate(pairs, self.collisions)
+                self.assertIn(f"{fit} coefficient {field} must be finite", str(caught.exception))
+
+    def test_invalid_input_domains_preserve_header_output(self):
+        original = copy.deepcopy(self.data)
+        for case in ("mass", "ground", "degeneracy", "lennard_jones", "boundaries", "blend"):
+            for existing in (False, True):
+                with self.subTest(case=case, existing=existing):
+                    self.data = copy.deepcopy(original)
+                    record = self.data["species"]["N2"]
+                    if case == "mass":
+                        record["molar_mass"] = 0.0
+                    elif case == "ground":
+                        record["electronic_levels"]["temperatures"][0] = 1.0
+                    elif case == "degeneracy":
+                        record["electronic_levels"]["degeneracies"][0] = 0
+                    elif case == "lennard_jones":
+                        record["transport"]["lennard_jones"]["sigma"] = 0.0
+                    elif case == "boundaries":
+                        record["transport"]["viscosity"]["temperature_ranges"][1] = 200.0
+                    else:
+                        record["thermo"]["blend_widths"][0] = 2000.0
+                    if existing:
+                        self.output.write_bytes(b"original\n")
+                    elif self.output.exists():
+                        self.output.unlink()
+                    result = self.generate(transport=case in ("lennard_jones", "boundaries"))
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(str(self.source), result.stderr)
+                    self.assertNotIn("Traceback", result.stderr)
+                    if existing:
+                        self.assertEqual(self.output.read_bytes(), b"original\n")
+                    else:
+                        self.assertFalse(self.output.exists())
+
     def test_valid_inputs_preserve_data(self):
         self.write_species()
         self.assertEqual(species_json.load_validated(self.source), self.data)

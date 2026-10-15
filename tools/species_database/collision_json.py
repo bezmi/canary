@@ -1,5 +1,7 @@
 """Structural and conversion checks for collision-integral JSON tools."""
 
+import math
+
 from _schema_validation import validate_structure
 import species_json
 
@@ -14,6 +16,10 @@ def validate(data, source):
     for index, pair in enumerate(data["pairs"]):
         if len(pair["species"]) != 2:
             raise SystemExit(f"{source}: pair {index}: requires exactly two species names")
+        for fit in ("pi_omega_11", "pi_omega_22"):
+            for field in ("A", "B", "C", "D"):
+                if not math.isfinite(pair[fit][field]):
+                    raise SystemExit(f"{source}: pair {index}: {fit} coefficient {field} must be finite")
 
 
 def load(path):

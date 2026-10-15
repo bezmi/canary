@@ -7,6 +7,7 @@ rounding, so that "28.0134" g/mol and "28.0134e-3" kg/mol give the same double.
 """
 
 import json
+import math
 import os
 import secrets
 import stat
@@ -161,8 +162,28 @@ def validate_selection(species, names, source):
             raise SystemExit(f"{source}: species {name!r} is not in the file")
 
 
+def _validate_boundaries(values, context):
+    # The C++ host input stores boundaries as double, including integer literals.
+    boundaries = [float(value) for value in values]
+    for index, value in enumerate(boundaries):
+        if not math.isfinite(value) or value <= 0 or (index and value <= boundaries[index - 1]):
+            raise SystemExit(f"{context}: temperature boundary {index} must be finite, positive and increasing")
+    return boundaries
+
+
+def _validate_coefficients(rows, context):
+    for row_index, row in enumerate(rows):
+        for column, value in enumerate(row):
+            if not math.isfinite(value):
+                raise SystemExit(f"{context}: coefficient {column} of row {row_index} must be finite")
+
+
 def validate_nasa9(record, context, segments):
-    """Validate conversion dimensions before padding a fixed-capacity input."""
+    """Validate species SI inputs and NASA9 dimensions, boundaries and blends."""
+    if not math.isfinite(record["molar_mass"]) or record["molar_mass"] <= 0:
+        raise SystemExit(f"{context}: molar_mass must be finite and positive")
+    if not math.isfinite(record["charge"]):
+        raise SystemExit(f"{context}: charge must be finite")
     thermo = record["thermo"]
     if thermo["model"] != "nasa9":
         raise SystemExit(f"{context}: thermo model must be nasa9")
@@ -172,10 +193,23 @@ def validate_nasa9(record, context, segments):
         raise SystemExit(f"{context}: {error}") from None
     if not 1 <= len(thermo["coefficients"]) <= segments:
         raise SystemExit(f"{context}: NASA9 segments must fit capacity {segments}")
+    boundaries = _validate_boundaries(thermo["temperature_ranges"], f"{context}: NASA9")
+    previous_end = boundaries[0]
+    for index, source_width in enumerate(thermo["blend_widths"]):
+        width = float(source_width)
+        if not math.isfinite(width) or width <= 0:
+            raise SystemExit(f"{context}: blend width {index} must be finite and positive")
+        boundary = boundaries[index + 1]
+        if boundary - 0.5 * width < previous_end:
+            raise SystemExit(f"{context}: blend region {index} starts before the preceding region or fit boundary")
+        previous_end = boundary + 0.5 * width
+    if previous_end > boundaries[-1]:
+        raise SystemExit(f"{context}: final blend region extends beyond the fit boundary")
+    _validate_coefficients(thermo["coefficients"], f"{context}: NASA9")
 
 
 def validate_electronic_levels(record, context, levels):
-    """Validate level-array dimensions after schema validation of integers."""
+    """Validate electronic level dimensions and SI domains after schema checks."""
     data = record.get("electronic_levels")
     if data is None:
         return
@@ -183,14 +217,25 @@ def validate_electronic_levels(record, context, levels):
         raise SystemExit(f"{context}: electronic degeneracies and temperatures must have equal lengths")
     if len(data["degeneracies"]) > levels:
         raise SystemExit(f"{context}: electronic levels exceed capacity {levels}")
+    for index, (degeneracy, theta) in enumerate(zip(data["degeneracies"], data["temperatures"])):
+        if degeneracy <= 0:
+            raise SystemExit(f"{context}: electronic level {index}: degeneracy must be positive")
+        if not math.isfinite(theta) or theta < 0:
+            raise SystemExit(f"{context}: electronic level {index}: temperature must be finite and non-negative")
+        if index == 0 and theta != 0:
+            raise SystemExit(f"{context}: electronic level 0: ground temperature must be zero")
 
 
 def validate_transport(record, context, segments):
-    """Validate required transport records and exact CEA conversion dimensions."""
+    """Validate required transport records, CEA dimensions and SI input domains."""
     transport = record.get("transport")
     fields = ("viscosity", "thermal_conductivity", "lennard_jones")
     if transport is None or any(transport.get(field) is None for field in fields):
         raise SystemExit(f"{context}: needs viscosity, thermal_conductivity and lennard_jones transport data")
+    for field in ("sigma", "epsilon"):
+        value = transport["lennard_jones"][field]
+        if not math.isfinite(value) or value <= 0:
+            raise SystemExit(f"{context}: Lennard-Jones {field} must be finite and positive")
     for field in ("viscosity", "thermal_conductivity"):
         curve = transport[field]
         location = f"{context}: {field}"
@@ -204,6 +249,8 @@ def validate_transport(record, context, segments):
         for index, row in enumerate(rows):
             if len(row) != 4:
                 raise SystemExit(f"{location}: coefficient row {index} requires exactly four values")
+        _validate_boundaries(curve["temperature_ranges"], location)
+        _validate_coefficients(rows, location)
 
 
 def species_file(species, reference=None, notes=None):
