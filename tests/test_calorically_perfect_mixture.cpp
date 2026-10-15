@@ -228,13 +228,14 @@ void test_calorically_perfect_mixture()
         const Rho rho {2.0};
         // Valid, and outside the tolerance (CompositionViolation).
         for (const std::array rho_i : {std::array {0.5, 1.0, 0.5}, std::array {0.5, 1.0, 0.5001}}) {
-            const auto status = canary::composition_status(partial_densities(rho_i), rho);
+            const auto check = canary::check_composition(partial_densities(rho_i), rho);
             const auto computed = mixture(built.model, partial_densities(rho_i), rho);
             const auto view = partial_densities(rho_i);
-            static_assert(noexcept(mixture(built.model, view, rho, status)));
-            const auto given = mixture(built.model, partial_densities(rho_i), rho, status);
+            static_assert(noexcept(mixture(built.model, view, rho, check)));
+            const auto given = mixture(built.model, partial_densities(rho_i), rho, check);
             expect(given.gas_constant == computed.gas_constant && given.cv == computed.cv &&
                    given.cp == computed.cp && given.status == computed.status);
+            expect(given.reason == computed.reason && given.reason == check.reason);
         }
     };
 

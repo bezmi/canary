@@ -183,6 +183,24 @@ struct SpeciesData {
     std::array<Charge<P, U>, Capacity> charge;
 };
 
+// The first failed composition check in validation order. Weight range and sum
+// errors permit clamped normalization; all other failures make it invalid.
+enum class CompositionReason : unsigned char {
+    None,
+    SpeciesCountOverflow,
+    NonfiniteTotal,
+    NonpositiveTotal,
+    NonfiniteWeight,
+    NoPositiveWeight,
+    WeightOutOfRange,
+    SumMismatch,
+};
+
+struct CompositionCheck {
+    Status status;
+    CompositionReason reason;
+};
+
 namespace detail
 {
 
@@ -422,13 +440,20 @@ OptionalSpeciesIndex species_index(const std::array<std::string_view, N>& names,
 }
 
 template <SpeciesRange V, Scalar T>
-CANARY_HOST_DEVICE constexpr Status composition_status(const V& weights, T total)
+CANARY_HOST_DEVICE constexpr CompositionCheck check_composition(const V& weights, T total)
 {
     using Value = ScalarTraits<T>::value_type;
     const auto n = static_cast<std::size_t>(weights.extent(0));
-    if (n > std::numeric_limits<std::uint32_t>::max()) { return Status::Invalid; }
+    if (n > std::numeric_limits<std::uint32_t>::max()) {
+        return {Status::Invalid, CompositionReason::SpeciesCountOverflow};
+    }
     const Value total_value = ScalarTraits<T>::value(total);
-    if (!std::isfinite(total_value) || !(total_value > Value(0))) { return Status::Invalid; }
+    if (!std::isfinite(total_value)) {
+        return {Status::Invalid, CompositionReason::NonfiniteTotal};
+    }
+    if (!(total_value > Value(0))) {
+        return {Status::Invalid, CompositionReason::NonpositiveTotal};
+    }
     const Value bound =
       Value(128) * std::numeric_limits<Value>::epsilon() * static_cast<Value>(n) * total_value;
     Value sum = 0;
@@ -442,9 +467,15 @@ CANARY_HOST_DEVICE constexpr Status composition_status(const V& weights, T total
         sum += w;
         clamped_sum += std::clamp(w, Value(0), total_value);
     }
-    if (!finite || !(clamped_sum > Value(0))) { return Status::Invalid; }
-    if (!bounded || std::abs(sum - total_value) > bound) { return Status::CompositionViolation; }
-    return Status::Valid;
+    if (!finite) { return {Status::Invalid, CompositionReason::NonfiniteWeight}; }
+    if (!(clamped_sum > Value(0))) {
+        return {Status::Invalid, CompositionReason::NoPositiveWeight};
+    }
+    if (!bounded) { return {Status::CompositionViolation, CompositionReason::WeightOutOfRange}; }
+    if (std::abs(sum - total_value) > bound) {
+        return {Status::CompositionViolation, CompositionReason::SumMismatch};
+    }
+    return {Status::Valid, CompositionReason::None};
 }
 
 }  // namespace detail
@@ -453,7 +484,7 @@ CANARY_HOST_DEVICE constexpr Status composition_status(const V& weights, T total
 // clamped to [0, total] (total 1 for mass fractions, rho for partial
 // densities). Normalising by the sum of the clamped weights keeps the
 // result a weighted mean when the weights do not sum to the total. Check
-// composition_status(fractions) before calling and reject Status::Invalid.
+// check_composition(fractions).status before calling and reject Status::Invalid.
 // For example, all-zero fractions or a nonfinite fraction are Invalid and
 // must not reach this division. The arithmetic does not report a status.
 template <std::floating_point P, UnitSystem U, std::size_t Capacity, typename V>
@@ -468,7 +499,7 @@ CANARY_HOST_DEVICE constexpr auto mean_particle_mass(const SpeciesData<P, U, Cap
     return ParticleMass<std::remove_const_t<decltype(m)>, U> {m};
 }
 
-// Check composition_status(partial_densities, rho) before calling and reject
+// Check check_composition(partial_densities, rho).status before calling and reject
 // Status::Invalid, including zero total density and all-zero partial densities.
 template <std::floating_point P, UnitSystem U, std::size_t Capacity, typename V, Scalar T>
     requires SpeciesWeights<V, kind::density, U, P> &&
@@ -483,7 +514,7 @@ CANARY_HOST_DEVICE constexpr auto mean_particle_mass(const SpeciesData<P, U, Cap
 }
 
 // Mean particle charge, sum((w / m_i) q_i) / sum(w / m_i), with the same
-// clamped weights. Check composition_status(fractions) before calling and
+// clamped weights. Check check_composition(fractions).status before calling and
 // reject Status::Invalid. All-zero or nonfinite fractions must not reach
 // this division. The arithmetic does not report a status.
 template <std::floating_point P, UnitSystem U, std::size_t Capacity, typename V>
@@ -498,7 +529,7 @@ CANARY_HOST_DEVICE constexpr auto mean_charge(const SpeciesData<P, U, Capacity>&
     return Charge<std::remove_const_t<decltype(q)>, U> {q};
 }
 
-// Check composition_status(partial_densities, rho) before calling and reject
+// Check check_composition(partial_densities, rho).status before calling and reject
 // Status::Invalid, including zero total density and all-zero partial densities.
 template <std::floating_point P, UnitSystem U, std::size_t Capacity, typename V, Scalar T>
     requires SpeciesWeights<V, kind::density, U, P> &&
@@ -518,22 +549,25 @@ CANARY_HOST_DEVICE constexpr auto mean_charge(const SpeciesData<P, U, Capacity>&
 // - CompositionViolation: a weight lies outside [-b, total + b], or the
 //   weights sum to the total only within more than b, where
 //   b = 128 * epsilon * n * total.
-// - Valid otherwise.
+// - Valid otherwise, with reason None.
+// Reasons follow this order: count, total finiteness, total positivity, weight
+// finiteness, positive clamped sum, weight bounds, sum agreement. A precomputed
+// result may be reused only for the same unchanged weights and total.
 template <typename V>
     requires SpeciesRangeOf<V, kind::mass_fraction>
-CANARY_HOST_DEVICE constexpr Status composition_status(const V& fractions)
+CANARY_HOST_DEVICE constexpr CompositionCheck check_composition(const V& fractions)
 {
     using T = range_quantity_t<V>::value_type;
-    return detail::composition_status(fractions, T(typename ScalarTraits<T>::value_type(1)));
+    return detail::check_composition(fractions, T(typename ScalarTraits<T>::value_type(1)));
 }
 
 template <typename V, Scalar T, UnitSystem U>
     requires SpeciesRangeOf<V, kind::density> &&
              std::same_as<typename range_quantity_t<V>::value_type, T> &&
              std::same_as<typename range_quantity_t<V>::units, U>
-CANARY_HOST_DEVICE constexpr Status composition_status(const V& partial_densities,
+CANARY_HOST_DEVICE constexpr CompositionCheck check_composition(const V& partial_densities,
                                                        Density<T, U> rho)
-{ return detail::composition_status(partial_densities, rho.value()); }
+{ return detail::check_composition(partial_densities, rho.value()); }
 
 namespace detail
 {

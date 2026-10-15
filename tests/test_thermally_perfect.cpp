@@ -440,12 +440,13 @@ void test_thermally_perfect()
             rho_i[0] += excess;
             const auto view = canary::as_kind<canary::kind::density, si>(
               Kokkos::mdspan<const double, Extents>(rho_i.data(), rho_i.size()));
-            const auto status = canary::composition_status(view, rho);
-            expect(status == (excess == 0.0 ? Status::Valid : Status::CompositionViolation));
+            const auto check = canary::check_composition(view, rho);
+            expect(check.status == (excess == 0.0 ? Status::Valid : Status::CompositionViolation));
             const auto computed = mixture(gas, view, rho);
-            static_assert(noexcept(mixture(gas, view, rho, status)));
-            const auto given = mixture(gas, view, rho, status);
+            static_assert(noexcept(mixture(gas, view, rho, check)));
+            const auto given = mixture(gas, view, rho, check);
             expect(given.gas_constant == computed.gas_constant && given.status == computed.status);
+            expect(given.reason == computed.reason && given.reason == check.reason);
             for (const auto i : canary::species_indices(0, rho_i.size())) {
                 expect(given.fractions[i.value()] == computed.fractions[i.value()]) << i.value();
             }

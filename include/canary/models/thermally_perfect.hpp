@@ -47,6 +47,7 @@ struct NormalisedComposition {
     std::array<MassFraction<T>, N> fractions;
     SpecificGasConstant<T, U> gas_constant;
     Status status;
+    CompositionReason reason;
 };
 
 // Ideal gas mixture of N species at one temperature, with the heat capacity
@@ -234,7 +235,7 @@ template <std::floating_point P,
           Scalar T>
     requires ScalarWith<T, P>
 CANARY_HOST_DEVICE NormalisedComposition<T, U, N> normalise(
-  const ThermallyPerfectMixture<P, U, N, S>& gas, const V& weights, T total, Status status)
+  const ThermallyPerfectMixture<P, U, N, S>& gas, const V& weights, T total, CompositionCheck check)
 {
     // NOLINTNEXTLINE(misc-static-assert): run-time extent
     CANARY_ASSERT(static_cast<std::size_t>(weights.extent(0)) == N);
@@ -246,7 +247,8 @@ CANARY_HOST_DEVICE NormalisedComposition<T, U, N> normalise(
     }
     NormalisedComposition<T, U, N> mix {};
     mix.n = gas.n;
-    mix.status = status;
+    mix.status = check.status;
+    mix.reason = check.reason;
     for (const SpeciesIndex i : species_indices(0, N)) {
         mix.fractions[i.value()] = MassFraction<T> {w[i.value()] / sum};
     }
@@ -473,7 +475,7 @@ CANARY_HOST_DEVICE auto mixture(const ThermallyPerfectMixture<P, U, N, S>& gas, 
     return detail::normalise(gas,
                              fractions,
                              T(typename ScalarTraits<T>::value_type(1)),
-                             composition_status(fractions));
+                             check_composition(fractions));
 }
 
 // Per-cell composition from partial densities and the density.
@@ -487,21 +489,22 @@ CANARY_HOST_DEVICE auto mixture(const ThermallyPerfectMixture<P, U, N, S>& gas,
     return detail::normalise(gas,
                              partial_densities,
                              rho.value(),
-                             composition_status(partial_densities, rho));
+                             check_composition(partial_densities, rho));
 }
 
-// Per-cell composition from partial densities and a previously computed status.
-// status must equal composition_status(partial_densities, rho) for these inputs
-// and must not be Invalid. Normalisation divides by the sum of clamped weights.
+// Per-cell composition from partial densities and a previously computed composition check.
+// check must be from check_composition(partial_densities, rho) for the same,
+// unchanged inputs, with status other than Invalid. Normalisation divides by
+// the sum of clamped weights.
 template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t S, typename V, Scalar T>
     requires SpeciesWeights<V, kind::density, U, P> &&
              std::same_as<typename range_quantity_t<V>::value_type, T> && ScalarWith<T, P>
 CANARY_HOST_DEVICE auto mixture(const ThermallyPerfectMixture<P, U, N, S>& gas,
                                 const V& partial_densities,
                                 Density<T, U> rho,
-                                Status status) noexcept
+                                CompositionCheck check) noexcept
 {
-    return detail::normalise(gas, partial_densities, rho.value(), status);
+    return detail::normalise(gas, partial_densities, rho.value(), check);
 }
 
 // Closure from density and energy per unit mass, with the default initial

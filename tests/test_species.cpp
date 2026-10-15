@@ -146,7 +146,7 @@ static_assert([] {
 void test_species()
 {
     using namespace boost::ut;
-    using canary::composition_status;
+    using canary::check_composition;
     using canary::mean_charge;
     using canary::mean_particle_mass;
 
@@ -157,7 +157,9 @@ void test_species()
             const GeneratedFractions weights {
               std::size_t(std::numeric_limits<std::uint32_t>::max()) + 1,
               &reads};
-            expect(canary::composition_status(weights) == Status::Invalid);
+            const auto check = canary::check_composition(weights);
+            expect(check.status == Status::Invalid);
+            expect(check.reason == canary::CompositionReason::SpeciesCountOverflow);
             expect(reads == 0_ul);
         }
     };
@@ -218,29 +220,67 @@ void test_species()
         expect(y.data_handle() == values.data());
     };
 
+    "composition checks retain causes for strided scalar and Dual inputs"_test = [] {
+        const auto run = []<canary::Scalar T, canary::UnitSystem U>() {
+            using V = canary::ScalarTraits<T>::value_type;
+            using Reason = canary::CompositionReason;
+            using Layout = Kokkos::layout_stride;
+            const Layout::mapping<Extents> mapping(Extents(2), std::array<std::size_t, 1> {2});
+            const auto check = [&](V first, V second, V total, Status status, Reason reason) {
+                const std::array<T, 5> storage {T(V(99)), T(first), T(V(99)), T(second), T(V(99))};
+                const auto view = canary::as_kind<kind::density, U>(
+                  Kokkos::mdspan<const T, Extents, Layout>(storage.data() + 1, mapping));
+                const auto result = canary::check_composition(view, canary::Density<T, U> {T(total)});
+                expect(result.status == status && result.reason == reason);
+            };
+            const V nan = std::numeric_limits<V>::quiet_NaN();
+            const V inf = std::numeric_limits<V>::infinity();
+            check(V(0.25), V(0.75), V(1), Status::Valid, Reason::None);
+            check(V(0.25), V(0.5), V(1), Status::CompositionViolation, Reason::SumMismatch);
+            check(V(-0.25), V(1.25), V(1), Status::CompositionViolation, Reason::WeightOutOfRange);
+            check(V(0), V(0), V(1), Status::Invalid, Reason::NoPositiveWeight);
+            check(V(-1), V(-1), V(1), Status::Invalid, Reason::NoPositiveWeight);
+            check(V(0.25), V(0.75), V(0), Status::Invalid, Reason::NonpositiveTotal);
+            check(V(0.25), V(0.75), V(-1), Status::Invalid, Reason::NonpositiveTotal);
+            for (const V value : {nan, inf, -inf}) {
+                check(value, V(0), V(1), Status::Invalid, Reason::NonfiniteWeight);
+                check(V(-1), value, V(1), Status::Invalid, Reason::NonfiniteWeight);
+                check(value, V(-1), value, Status::Invalid, Reason::NonfiniteTotal);
+            }
+        };
+        run.template operator()<float, canary::si>();
+        run.template operator()<double, canary::si>();
+        run.template operator()<float, scaled>();
+        run.template operator()<double, scaled>();
+        run.template operator()<canary::test::Dual<float>, scaled>();
+        run.template operator()<canary::test::Dual<double>, canary::si>();
+        static_assert(!std::is_convertible_v<canary::CompositionCheck, Status>);
+        static_assert(std::is_trivially_copyable_v<canary::CompositionCheck>);
+    };
+
     "composition status of mass fractions"_test = [] {
         const std::array valid {0.25, 0.75};
         const std::array over {0.25, 0.75 + 1.0e-10};
         const std::array negative {-1.0e-10, 1.0 + 1.0e-10};
         const std::array not_finite {std::numeric_limits<double>::quiet_NaN(), 1.0};
         const std::array all_zero {0.0, 0.0};
-        expect(composition_status(fractions(view_of(valid))) == Status::Valid);
-        expect(composition_status(fractions(view_of(over))) == Status::CompositionViolation);
-        expect(composition_status(fractions(view_of(negative))) == Status::CompositionViolation);
-        expect(composition_status(fractions(view_of(not_finite))) == Status::Invalid);
-        expect(composition_status(fractions(view_of(all_zero))) == Status::Invalid);
+        expect(check_composition(fractions(view_of(valid))).status == Status::Valid);
+        expect(check_composition(fractions(view_of(over))).status == Status::CompositionViolation);
+        expect(check_composition(fractions(view_of(negative))).status == Status::CompositionViolation);
+        expect(check_composition(fractions(view_of(not_finite))).status == Status::Invalid);
+        expect(check_composition(fractions(view_of(all_zero))).status == Status::Invalid);
     };
 
     "composition status of partial densities scales the tolerance with the density"_test = [] {
         const std::array valid {0.5, 1.5};
         const std::array over {0.5, 1.5 + 1.0e-9};
-        expect(composition_status(densities(view_of(valid)),
-                                  canary::Density<double, scaled> {2.0}) == Status::Valid);
+        expect(check_composition(densities(view_of(valid)),
+                                  canary::Density<double, scaled> {2.0}).status == Status::Valid);
         expect(
-          composition_status(densities(view_of(over)), canary::Density<double, scaled> {2.0}) ==
+          check_composition(densities(view_of(over)), canary::Density<double, scaled> {2.0}).status ==
           Status::CompositionViolation);
-        expect(composition_status(densities(view_of(valid)),
-                                  canary::Density<double, scaled> {0.0}) == Status::Invalid);
+        expect(check_composition(densities(view_of(valid)),
+                                  canary::Density<double, scaled> {0.0}).status == Status::Invalid);
     };
 
     "mean mass and charge follow the number-weighted definitions"_test = [] {
@@ -330,7 +370,7 @@ void test_species()
                mean_particle_mass(two_species, fractions(view_of(y))).value());
         expect(mean_charge(two_species, ys).value() ==
                mean_charge(two_species, fractions(view_of(y))).value());
-        expect(composition_status(ys) == Status::Valid);
+        expect(check_composition(ys).status == Status::Valid);
     };
 
     "dual-number fractions carry the derivative of the mean mass"_test = [] {
