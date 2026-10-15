@@ -16,8 +16,7 @@ import argparse
 import json
 from pathlib import Path
 
-FORMAT = "canary-reactions-1"
-UNITS = {"quantity": "mol", "length": "m", "time": "s", "temperature": "K"}
+import reaction_json
 
 
 def number(value):
@@ -97,18 +96,10 @@ def main():
     parser.add_argument("-o", "--output", required=True)
     args = parser.parse_args()
 
-    data = json.loads(Path(args.reactions).read_text(encoding="utf-8"))
-    if data["format"] != FORMAT or data["units"] != UNITS:
-        raise SystemExit(f"{args.reactions}: not a {FORMAT} file in SI units")
+    data = reaction_json.load(args.reactions)
     reactions = data["reactions"]
-    for record in reactions:
-        for rate in (record["forward"], record["backward"]):
-            if rate["model"] == "arrhenius" and not {"A", "n", "activation_temperature"} <= rate.keys():
-                raise SystemExit(f"{record['equation']}: incomplete Arrhenius rate")
-        if record["forward"]["model"] != "arrhenius":
-            raise SystemExit(f"{record['equation']}: the forward rate must be Arrhenius")
     capacity = max(max(len(r["reactants"]), len(r["products"]),
-                       len(r.get("third_body", {}).get("efficiencies", {}))) for r in reactions)
+                       len((r.get("third_body") or {}).get("efficiencies", {}))) for r in reactions)
     count = len(reactions)
     guard = f"CANARY_DATA_{args.name.upper()}_HPP"
     reference = data.get("reference", "")

@@ -25,6 +25,7 @@ import argparse
 import re
 from decimal import Decimal
 
+import reaction_json
 import species_json
 
 FORMAT = "canary-reactions-1"
@@ -170,6 +171,7 @@ def main():
         "reactions": [convert_reaction(body) for body in entries(text, "Reaction")],
         "reference": args.source,
     }
+    reaction_json.validate(out, args.mechanism)
     species_json.dump(out, args.output)
 
 

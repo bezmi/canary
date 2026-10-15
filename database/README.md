@@ -41,6 +41,18 @@ substitute for construction. Individual schemas may contain additional
 constraints, including those on elemental composition; inspect the shipped
 schema when integrating an editor or an external validator.
 
+The reaction JSON converter and reaction header generator require Python's
+`jsonschema` package. They share structural validation against
+`reactions.schema.json`, format/unit checks and the Arrhenius/equilibrium rules
+of `mechanism_input`. The forward rate must be Arrhenius; a backward rate must
+be Arrhenius or equilibrium. Arrhenius requires `A`, `n` and
+`activation_temperature`; equilibrium forbids those values and
+`translational_exponent`. An optional `null` value is unset, as in the C++ file
+reader. `other_temperature` remains optional for either model. Errors identify
+the source and the reaction or structural field before output is written.
+The header generator also rejects duplicate JSON keys. Numerical domains and
+species-dependent checks still belong to model construction.
+
 ## Tests and schema maintenance
 
 With a configured build that enables the database and Python validation:

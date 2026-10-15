@@ -118,6 +118,8 @@ if(TARGET canary_database)
       set(species_tools ${PROJECT_SOURCE_DIR}/tools/species_database)
       add_test(NAME canary.database.converters
                COMMAND ${Python3_EXECUTABLE} ${species_tools}/test_converters.py ${PROJECT_SOURCE_DIR})
+      add_test(NAME canary.database.reaction_validation
+               COMMAND ${Python3_EXECUTABLE} ${species_tools}/test_reaction_json.py)
       add_test(NAME canary.database.schema_rejection
                COMMAND ${Python3_EXECUTABLE} ${species_tools}/test_schemas.py ${PROJECT_SOURCE_DIR})
       add_test(NAME canary.database.schema
