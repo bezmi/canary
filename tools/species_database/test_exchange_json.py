@@ -70,7 +70,9 @@ class ExchangeJsonTests(unittest.TestCase):
                         changed = copy.deepcopy(data)
                         self.correction(changed)[field] = value
                         required = model == required_model
-                        if (value is not None) == required:
+                        if required and field == "reference_temperature" and value == 0.0:
+                            self.assert_rejected(changed, "vibration_translation 0", "reference_temperature must be positive")
+                        elif (value is not None) == required:
                             exchange_json.validate(changed, self.source)
                         else:
                             self.assert_rejected(changed, "vibration_translation 0", f"{'requires' if required else 'forbids'} {field}")
@@ -89,7 +91,9 @@ class ExchangeJsonTests(unittest.TestCase):
                         del section[field]
                     else:
                         section[field] = None if state == "null" else 0.0
-                    if state == "zero":
+                    if state == "zero" and field == "maximum_temperature":
+                        self.assert_rejected(data, "electron_translation 0", "maximum_temperature must be positive")
+                    elif state == "zero":
                         exchange_json.validate(data, self.source)
                     else:
                         self.assert_rejected(data, "electron_translation 0", f"requires {field}")
@@ -205,6 +209,120 @@ class ExchangeJsonTests(unittest.TestCase):
         self.assertIn(str(self.species_source), result.stderr)
         self.assertIn("SI units", result.stderr)
         self.assertEqual(self.output.read_bytes(), previous)
+
+    def test_finite_relaxation_and_cross_section_parameters(self):
+        paths = [
+            ("vibration_translation", ("relaxation_time",), ("a", "b")),
+            ("vibration_translation", ("relaxation_time", "high_temperature_correction"), ("exponent",)),
+            ("electron_translation", ("cross_section",), ("a", "b", "c")),
+            ("vibration_electron", ("relaxation_time",),
+             ("a_low", "b_low", "c_low", "a_high", "b_high", "c_high", "blend_lower", "blend_upper")),
+        ]
+        for name, path, fields in paths:
+            for field in fields:
+                for value in (float("nan"), float("inf"), -float("inf")):
+                    with self.subTest(name=name, field=field, value=value):
+                        data = copy.deepcopy(self.data)
+                        record = data[name][0]
+                        for key in path:
+                            record = record[key]
+                        record[field] = value
+                        self.assert_rejected(data, name, field)
+
+    def test_positive_exchange_parameters(self):
+        for model in ("park_1985", "park_1993", "kim_2021"):
+            for field in ("cross_section", "reference_temperature") if model == "park_1993" else ("cross_section",):
+                for value in (0.0, -1.0, float("nan"), float("inf")):
+                    with self.subTest(model=model, field=field, value=value):
+                        data = copy.deepcopy(self.data)
+                        correction = {"model": model, "cross_section": 1e-20}
+                        if model == "park_1993":
+                            correction["reference_temperature"] = 50000.0
+                        elif model == "kim_2021":
+                            correction["exponent"] = 0.0
+                        correction[field] = value
+                        data["vibration_translation"][0]["relaxation_time"]["high_temperature_correction"] = correction
+                        self.assert_rejected(data, "vibration_translation", field)
+        for name, field in (("chemistry_vibration", "dissociation_energy"),
+                            ("chemistry_vibration", "vibrational_temperature"),
+                            ("electron_translation", "maximum_temperature")):
+            for value in (0.0, -1.0, float("nan"), float("inf")):
+                with self.subTest(name=name, field=field, value=value):
+                    data = copy.deepcopy(self.data)
+                    record = data[name][0]
+                    if name == "electron_translation":
+                        record = record["cross_section"]
+                    record[field] = value
+                    self.assert_rejected(data, name, field)
+
+    def test_candler_bounds_match_double_input_ordering(self):
+        for lower, upper in ((1.0, 1.0), (2.0, 1.0), (2**53, 2**53 + 1)):
+            with self.subTest(lower=lower, upper=upper):
+                data = copy.deepcopy(self.data)
+                data["vibration_electron"][0]["relaxation_time"].update(blend_lower=lower, blend_upper=upper)
+                self.assert_rejected(data, "vibration_electron 0", "lower < upper")
+        for lower, upper in ((-2.0, -1.0), (0.0, 1.0), (1.0, 2.0)):
+            data = copy.deepcopy(self.data)
+            data["vibration_electron"][0]["relaxation_time"].update(blend_lower=lower, blend_upper=upper)
+            exchange_json.validate(data, self.source)
+        time = self.data["vibration_translation"][0]["relaxation_time"]
+        time.update(a=0.0, b=-1.0)
+        self.correction(self.data)["exponent"] = -1.0
+        self.data["electron_translation"][0]["cross_section"].update(a=0.0, b=0.0, c=0.0)
+        exchange_json.validate(self.data, self.source)
+
+    def test_invalid_domains_preserve_header_output(self):
+        original = copy.deepcopy(self.data)
+        for case in ("correction", "dissociation", "cross_section", "candler"):
+            for existing in (False, True):
+                with self.subTest(case=case, existing=existing):
+                    self.data = copy.deepcopy(original)
+                    if case == "correction":
+                        self.correction(self.data)["cross_section"] = 0.0
+                    elif case == "dissociation":
+                        self.data["chemistry_vibration"][0]["dissociation_energy"] = -1.0
+                    elif case == "cross_section":
+                        self.data["electron_translation"][0]["cross_section"]["maximum_temperature"] = 0.0
+                    else:
+                        time = self.data["vibration_electron"][0]["relaxation_time"]
+                        time["blend_upper"] = time["blend_lower"]
+                    if existing:
+                        self.output.write_bytes(b"original\n")
+                    elif self.output.exists():
+                        self.output.unlink()
+                    result = self.generate()
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(str(self.source), result.stderr)
+                    self.assertNotIn("Traceback", result.stderr)
+                    if existing:
+                        self.assertEqual(self.output.read_bytes(), b"original\n")
+                    else:
+                        self.assertFalse(self.output.exists())
+
+    def test_invalid_correction_preserves_json_output(self):
+        source = self.directory / "exchange.lua"
+        source.write_text("""mechanism[1] = {
+    type = 'V-T', p = 'N2', q = 'N', rate = 'Landau-Teller',
+    relaxation_time = {model = 'ParkHTC', sigma = 0.0,
+        submodel = {model = 'Millikan-White', a = 180.0, b = 0.0262}}
+}
+""")
+        output = self.directory / "converted.json"
+        for existing in (False, True):
+            with self.subTest(existing=existing):
+                if existing:
+                    output.write_bytes(b"original\n")
+                result = subprocess.run([sys.executable, str(TOOLS / "gdtk_exchange_to_json.py"), str(source),
+                                         "--source", "test", "-o", str(output)],
+                                        capture_output=True, text=True, timeout=30)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(str(source), result.stderr)
+                self.assertIn("cross_section must be positive", result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+                if existing:
+                    self.assertEqual(output.read_bytes(), b"original\n")
+                else:
+                    self.assertFalse(output.exists())
 
     def test_shipped_files_pass_without_mutation(self):
         for name in ("air5_park_exchange", "air11_kim_jo_exchange"):

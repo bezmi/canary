@@ -69,8 +69,15 @@ An absent or null correction means no correction; an explicit correction record
 must name a supported physical model. The shipped schema rejects fractional
 reaction indices before C++ generation. The optional species file supplying
 ionisation energies is checked for structure, format, units and duplicate keys.
-Mechanism-relative index bounds, charge conservation and numerical domains
-still require model-construction checks.
+Millikan-White coefficients and Kim exponents must be finite. Correction
+cross-sections, Park reference temperatures, dissociation energies and
+vibrational temperatures must be finite and positive. Neutral cross-section
+coefficients must be finite and their maximum temperature positive and finite.
+Candler coefficients and blend bounds must be finite, with `lower < upper`;
+these checks do not impose positivity on the bounds. Mechanism-relative index
+bounds, charge conservation, oscillator ordering, cross-section validity over
+its interval and representability after conversion still require
+model-construction checks.
 
 Species and transport header generators also validate the shipped schemas,
 file formats, SI units and selected species before output. They require exact
