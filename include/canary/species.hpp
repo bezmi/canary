@@ -382,12 +382,18 @@ namespace detail
 // Value of weight i clamped to [0, total]. The weights are mass fractions
 // or partial densities; only their ratios to the sum of the clamped weights
 // are used, so their value parts enter the mixing rules directly.
+// At either bound, retain the weight and its derivatives from inside the
+// admissible interval. Outside it, use the corresponding bound.
 template <SpeciesRange V, Scalar T>
     requires std::same_as<typename range_quantity_t<V>::value_type, T> && HasMin<T> && HasMax<T>
 CANARY_HOST_DEVICE constexpr T clamped_weight(const V& weights, SpeciesIndex index, T total)
 {
     using Value = ScalarTraits<T>::value_type;
-    return math::min(math::max(weights[index.value()].value(), T(Value(0))), total);
+    const T weight = weights[index.value()].value();
+    const Value value = ScalarTraits<T>::value(weight);
+    if (value < Value(0)) { return T(Value(0)); }
+    if (ScalarTraits<T>::value(total) < value) { return total; }
+    return weight;
 }
 
 // Sums over the species of the clamped weights w, of w / m and of

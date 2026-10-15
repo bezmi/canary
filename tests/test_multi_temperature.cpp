@@ -1432,6 +1432,33 @@ void test_multi_temperature()
         expect(evaluated.state.mode_e[2].value().dual() == inverse.state.mode_e[2].value().dual());
     };
 
+    "absent mode inversion retains derivatives from raw composition boundaries"_test = [&] {
+        const std::array<D, 5> y {D(0.767, -1), D(0.233), D(0), D(0), D(0, 1)};
+        const auto mix = mixture(air4, fractions(y));
+        expect(mix.fractions[4].value().dual() == 1.0);
+        const canary::Density<D, si> rho {D(1)};
+        const canary::Temperature<D, si> temp {D(4000)};
+        const std::array<D, 3> temperatures {D(4000), D(4000), D(4000)};
+        const auto forward =
+          thermo_state(air4, mix, rho, temp, mode_temperatures<si>(temperatures));
+        expect(fatal(forward.status == Status::Valid));
+        expect(forward.state.mode_e[2].value().real() == 0.0);
+        expect(std::abs(forward.state.mode_e[2].value().dual()) > 0.0);
+        const std::array<D, 3> energies {forward.state.mode_e[0].value(),
+                                         forward.state.mode_e[1].value(),
+                                         forward.state.mode_e[2].value()};
+        const auto inverse =
+          thermo_state(air4, mix, rho, temp, mode_energy_densities<si>(energies));
+        expect(inverse.status == Status::Valid &&
+               inverse.diagnostic.reason == canary::ClosureReason::None);
+        expect(inverse.state.mode_e[2].value().dual() == forward.state.mode_e[2].value().dual());
+        const std::array<D, 3> recovered {inverse.state.mode_temp[0].value(),
+                                          inverse.state.mode_temp[1].value(),
+                                          inverse.state.mode_temp[2].value()};
+        const auto evaluated = thermo_state(air4, mix, rho, temp, mode_temperatures<si>(recovered));
+        expect(evaluated.state.mode_e[2].value().dual() == inverse.state.mode_e[2].value().dual());
+    };
+
     "closure diagnostics retain mode solve causes and select the highest severity"_test = [&] {
         using Reason = canary::ClosureReason;
         const auto mix = mixture(air4, fractions(air5_air));

@@ -258,6 +258,46 @@ void test_species()
         static_assert(std::is_trivially_copyable_v<canary::CompositionCheck>);
     };
 
+    "composition clamps retain interior derivatives at exact bounds"_test = [] {
+        const auto run = []<std::floating_point P, canary::UnitSystem U>() {
+            using D = canary::test::Dual<P>;
+            using Layout = Kokkos::layout_stride;
+            const Layout::mapping<Extents> mapping(Extents(2), std::array<std::size_t, 1> {2});
+            const auto check = [&](D weight, D expected) {
+                const std::array<D, 5> storage {D(99), weight, D(99), D(0), D(99)};
+                const auto view = canary::as_kind<kind::density, U>(
+                  Kokkos::mdspan<const D, Extents, Layout>(storage.data() + 1, mapping));
+                const auto result =
+                  canary::detail::clamped_weight(view, canary::SpeciesIndex {0}, D(2, 3));
+                expect(result.real() == expected.real());
+                expect(result.dual() == expected.dual());
+            };
+            check(D(-1, 7), D(0));
+            check(D(0, 7), D(0, 7));
+            check(D(-P(0), 7), D(-P(0), 7));
+            check(D(1, 7), D(1, 7));
+            check(D(2, 7), D(2, 7));
+            check(D(3, 7), D(2, 3));
+
+            const canary::SpeciesData<P, U, 2> species {
+              .n = 2,
+              .mass = {canary::ParticleMass<P, U> {P(1)}, canary::ParticleMass<P, U> {P(16)}},
+              .charge = {canary::Charge<P, U> {P(1)}, canary::Charge<P, U> {P(-1)}},
+            };
+            // A transfer into the absent second species keeps sum(Y) = 1.
+            const std::array<D, 2> y {D(1, -1), D(0, 1)};
+            const auto view = canary::as_kind<kind::mass_fraction>(
+              Kokkos::mdspan<const D, Extents>(y.data(), y.size()));
+            const auto mass = mean_particle_mass(species, view).value();
+            expect(mass.real() == P(1));
+            expect(mass.dual() == P(15) / P(16));
+        };
+        run.template operator()<float, canary::si>();
+        run.template operator()<double, canary::si>();
+        run.template operator()<float, scaled>();
+        run.template operator()<double, scaled>();
+    };
+
     "composition status of mass fractions"_test = [] {
         const std::array valid {0.25, 0.75};
         const std::array over {0.25, 0.75 + 1.0e-10};
