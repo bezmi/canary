@@ -156,19 +156,16 @@ CANARY_HOST_DEVICE Closure<T, U>
     return {.state = state, .status = state_status(k, state, rho_e)};
 }
 
-// rho_e = p / (gamma - 1), T = p / (rho R).
+// T = p / (rho R), e = cv T.
 template <Scalar T, Scalar C, UnitSystem U>
     requires ScalarPair<T, C>
 CANARY_HOST_DEVICE Closure<T, U>
   perfect_from_rho_p(const PerfectCoefficients<C, U>& k, Density<T, U> rho, Pressure<T, U> p)
 {
-    const EnergyDensity<T, U> rho_e {energy_density(k.gamma, p)};
     const Temperature<T, U> temp {temperature(p, rho, k.gas_constant)};
-    const ThermoState<T, U> state {.rho = rho,
-                                   .e = specific_energy(rho_e, rho),
-                                   .p = p,
-                                   .temp = temp};
-    return {.state = state, .status = state_status(k, state, rho_e)};
+    const SpecificEnergy<T, U> e {specific_energy(k.cv, temp)};
+    const ThermoState<T, U> state {.rho = rho, .e = e, .p = p, .temp = temp};
+    return {.state = state, .status = state_status(k, state, energy_density(rho, e))};
 }
 
 // p = rho R T, e = cv T.
