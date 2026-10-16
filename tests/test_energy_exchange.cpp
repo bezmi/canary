@@ -170,7 +170,10 @@ const std::array<ReferenceState, 8> reference_states {
 
 // Change of the coefficient of species i in reaction k.
 int coefficient_change(const Mechanism& mech, std::size_t k, std::size_t i)
-{ return mech.reactions[k].products[i] - mech.reactions[k].reactants[i]; }
+{
+    return mech.reactions()[canary::ReactionIndex {k}].products()[canary::SpeciesIndex {i}] -
+           mech.reactions()[canary::ReactionIndex {k}].reactants()[canary::SpeciesIndex {i}];
+}
 
 // Rates of progress, mass production rates and energy sources of canary in
 // one cell, as plain values.
@@ -201,9 +204,9 @@ Values evaluate(const M& mech,
     const auto sources =
       canary::two_temperature_sources(mech, exchange, gas, mix, rho_q, temp_q, t_ve_q);
     Values out {};
-    for (std::size_t k = 0; k < reaction_count; ++k) {
-        out.forward[k] = q.forward[k].value();
-        out.backward[k] = q.backward[k].value();
+    for (const auto k : canary::reaction_indices(0, reaction_count)) {
+        out.forward[k.value()] = q.forward()[k].value();
+        out.backward[k.value()] = q.backward()[k].value();
     }
     for (std::size_t i = 0; i < species_count; ++i) {
         out.production[i] = sources.species[i].value();
@@ -259,12 +262,14 @@ void test_energy_exchange()
     const double ru = canary::constants::universal_gas_constant<double>;
 
     "energy exchange: the generated mechanism and exchange hold their constants"_test = [&] {
-        expect(mech.reactions[0].forward.translational_exponent == 0.5_d);
-        expect(mech.reactions[2].forward.translational_exponent == 0.5_d);
-        expect(mech.reactions[3].forward.translational_exponent == 1.0_d);
-        expect(mech.reactions[4].forward.translational_exponent == 1.0_d);
+        expect(mech.reactions()[canary::ReactionIndex {0}].forward.translational_exponent == 0.5_d);
+        expect(mech.reactions()[canary::ReactionIndex {2}].forward.translational_exponent == 0.5_d);
+        expect(mech.reactions()[canary::ReactionIndex {3}].forward.translational_exponent == 1.0_d);
+        expect(mech.reactions()[canary::ReactionIndex {4}].forward.translational_exponent == 1.0_d);
         // N2 + M <=> N + N + M: order 2.
-        expect(relative(mech.reactions[0].forward.A, 7.0e15 / avogadro, 1.0e-15));
+        expect(relative(mech.reactions()[canary::ReactionIndex {0}].forward.A,
+                        7.0e15 / avogadro,
+                        1.0e-15));
         expect(mech.temperature_upper.value() == 50000.0_d);
 
         // Pair 2 is N2-N2 and pair 12 NO-N.
@@ -299,20 +304,20 @@ void test_energy_exchange()
             const Values got = evaluate(mech, exchange, gas, s.y, s.rho, s.temp, s.t_ve);
             PerReaction forward {};
             PerReaction backward {};
-            for (std::size_t k = 0; k < reaction_count; ++k) {
-                forward[k] = avogadro * s.forward[k];
-                backward[k] =
-                  avogadro * s.backward[k] * std::pow(r, mech.reactions[k].coefficient_change);
+            for (const auto k : canary::reaction_indices(0, reaction_count)) {
+                forward[k.value()] = avogadro * s.forward[k.value()];
+                backward[k.value()] = avogadro * s.backward[k.value()] *
+                                      std::pow(r, mech.reactions()[k].coefficient_change);
                 if (!s.rates_listed) { continue; }
                 // Forward rates contain no constant that differs between
                 // the implementations; backward rates contain R_u through
                 // the Gibbs energies, corrected above, and differ by
                 // rounding amplified by the exponent of K_c (up to about
                 // 50).
-                expect(relative(got.forward[k], forward[k], 1.0e-12))
-                  << s.temp << k << got.forward[k] << forward[k];
-                expect(relative(got.backward[k], backward[k], 1.0e-10))
-                  << s.temp << k << got.backward[k] << backward[k];
+                expect(relative(got.forward[k.value()], forward[k.value()], 1.0e-12))
+                  << s.temp << k.value() << got.forward[k.value()] << forward[k.value()];
+                expect(relative(got.backward[k.value()], backward[k.value()], 1.0e-10))
+                  << s.temp << k.value() << got.backward[k.value()] << backward[k.value()];
             }
             for (std::size_t i = 0; i < species_count; ++i) {
                 // The bound is relative to the sum of the magnitudes of the
@@ -363,21 +368,23 @@ void test_energy_exchange()
               for (std::size_t i = 0; i < species_count; ++i) {
                   n[i] = rho * mixed[i] / built.species.mass[i].value();
               }
-              for (std::size_t k = 0; k < 3; ++k) {
-                  const auto& rate = mech.reactions[k].forward;
+              for (const auto k : canary::reaction_indices(0, 3)) {
+                  const auto rate_records = mech.reactions();
+                  const auto& rate = rate_records[k].forward;
                   double third_body = 0;
                   for (std::size_t i = 0; i < species_count; ++i) {
-                      third_body += mech.reactions[k].efficiencies[i] * n[i];
+                      third_body +=
+                        mech.reactions()[k].efficiencies()[canary::SpeciesIndex {i}] * n[i];
                   }
                   // Reactions 0 to 2 dissociate species 0, 1 and 4.
-                  const std::size_t molecule = k == 2 ? 4 : k;
+                  const std::size_t molecule = k.value() == 2 ? 4 : k.value();
                   const double expected = rate.A * std::pow(t_c, rate.n) *
                                           std::exp(-rate.activation_temperature.value() / t_c) *
                                           third_body * n[molecule];
                   // The exponent theta / T_c is at most about 410 here, so a
                   // few ulp in T_c give up to about 2e-13 in k_f.
-                  expect(relative(q.forward[k].value(), expected, 1.0e-12))
-                    << temp << t_ve << k << q.forward[k].value() << expected;
+                  expect(relative(q.forward()[k].value(), expected, 1.0e-12))
+                    << temp << t_ve << k.value() << q.forward()[k].value() << expected;
               }
           }
       };
@@ -393,9 +400,10 @@ void test_energy_exchange()
               canary::production_rates(mech, gas, mix, Rho {s.rho}, Temp {s.temp});
             const auto omega_two =
               canary::production_rates(mech, gas, mix, Rho {s.rho}, Temp {s.temp}, Temp {s.temp});
-            for (std::size_t k = 0; k < reaction_count; ++k) {
-                expect(one.forward[k] == two.forward[k] && one.backward[k] == two.backward[k])
-                  << s.temp << k;
+            for (const auto k : canary::reaction_indices(0, reaction_count)) {
+                expect(one.forward()[k] == two.forward()[k] &&
+                       one.backward()[k] == two.backward()[k])
+                  << s.temp << k.value();
             }
             for (std::size_t i = 0; i < species_count; ++i) {
                 expect(omega_one[i] == omega_two[i]) << s.temp << i;
@@ -412,11 +420,16 @@ void test_energy_exchange()
                 canary::rates_of_progress(mech, gas, mix, rho, Temp {temp}, Temp {1000.0});
               const auto b =
                 canary::rates_of_progress(mech, gas, mix, rho, Temp {temp}, Temp {9000.0});
-              for (std::size_t k = 0; k < reaction_count; ++k) {
-                  expect(a.backward[k] == b.backward[k]) << temp << k;
+              for (const auto k : canary::reaction_indices(0, reaction_count)) {
+                  expect(a.backward()[k] == b.backward()[k]) << temp << k.value();
               }
-              expect(a.forward[3] == b.forward[3] && a.forward[4] == b.forward[4]) << temp;
-              expect(!(a.forward[0] == b.forward[0])) << temp;
+              expect(
+                a.forward()[canary::ReactionIndex {3}] == b.forward()[canary::ReactionIndex {3}] &&
+                a.forward()[canary::ReactionIndex {4}] == b.forward()[canary::ReactionIndex {4}])
+                << temp;
+              expect(
+                !(a.forward()[canary::ReactionIndex {0}] == b.forward()[canary::ReactionIndex {0}]))
+                << temp;
               // Derivatives with respect to T_ve.
               const std::array<D, species_count> y_d {0.3, 0.1, 0.3, 0.25, 0.05};
               const auto q = canary::rates_of_progress(mech,
@@ -425,11 +438,12 @@ void test_energy_exchange()
                                                        canary::Density<D, si> {D(0.01)},
                                                        canary::Temperature<D, si> {D(temp)},
                                                        canary::Temperature<D, si> {D(3000.0, 1.0)});
-              for (std::size_t k = 0; k < reaction_count; ++k) {
-                  expect(q.backward[k].value().dual() == 0.0) << temp << k;
+              for (const auto k : canary::reaction_indices(0, reaction_count)) {
+                  expect(q.backward()[k].value().dual() == 0.0) << temp << k.value();
               }
-              expect(q.forward[3].value().dual() == 0.0 && q.forward[4].value().dual() == 0.0);
-              expect(q.forward[0].value().dual() > 0.0);
+              expect(q.forward()[canary::ReactionIndex {3}].value().dual() == 0.0 &&
+                     q.forward()[canary::ReactionIndex {4}].value().dual() == 0.0);
+              expect(q.forward()[canary::ReactionIndex {0}].value().dual() > 0.0);
           }
       };
 
@@ -441,17 +455,18 @@ void test_energy_exchange()
               canary::rates_of_progress(mech, gas, mix, rho, Temp {250.0}, Temp {t_ve});
             const auto limit =
               canary::rates_of_progress(mech, gas, mix, rho, Temp {300.0}, Temp {t_ve});
-            for (std::size_t k = 0; k < reaction_count; ++k) {
-                expect(below.forward[k] == limit.forward[k] &&
-                       below.backward[k] == limit.backward[k])
-                  << t_ve << k;
+            for (const auto k : canary::reaction_indices(0, reaction_count)) {
+                expect(below.forward()[k] == limit.forward()[k] &&
+                       below.backward()[k] == limit.backward()[k])
+                  << t_ve << k.value();
             }
         }
         const auto clamped =
           canary::rates_of_progress(mech, gas, mix, rho, Temp {250.0}, Temp {300.0});
         const auto unclamped =
           canary::rates_of_progress(mech, gas, mix, rho, Temp {250.0}, Temp {250.0});
-        expect(unclamped.forward[0].value() < clamped.forward[0].value());
+        expect(unclamped.forward()[canary::ReactionIndex {0}].value() <
+               clamped.forward()[canary::ReactionIndex {0}].value());
     };
 
     "energy exchange: two-temperature production rates conserve mass"_test = [&] {
@@ -781,14 +796,10 @@ void test_energy_exchange()
                     (c.dissociation_temperature.value() - c.vibrational_temperature.value()) / 2.0;
                   const double dnu =
                     coefficient_change(mech, c.reaction.value(), c.species.value());
-                  expected += dnu *
-                              (q.forward[c.reaction.value()].value() -
-                               q.backward[c.reaction.value()].value()) *
-                              g;
+                  expected +=
+                    dnu * (q.forward()[c.reaction].value() - q.backward()[c.reaction].value()) * g;
                   scale += std::abs(dnu) *
-                           (q.forward[c.reaction.value()].value() +
-                            q.backward[c.reaction.value()].value()) *
-                           g;
+                           (q.forward()[c.reaction].value() + q.backward()[c.reaction].value()) * g;
               }
               expect(std::abs(cv - expected) <= 1.0e-14 * scale) << s.temp << cv << expected;
           }
@@ -800,7 +811,8 @@ void test_energy_exchange()
                }) {
               const auto q =
                 canary::rates_of_progress(mech, gas, mix, Rho {0.1}, Temp {temp}, Temp {t_ve});
-              expect(q.backward[0].value() == 0.0 && q.backward[1].value() == 0.0);
+              expect(q.backward()[canary::ReactionIndex {0}].value() == 0.0 &&
+                     q.backward()[canary::ReactionIndex {1}].value() == 0.0);
               const double cv =
                 canary::chemistry_vibration_source(exchange, mech, q, Temp {temp}, Temp {t_ve})
                   .value();
@@ -830,17 +842,19 @@ void test_energy_exchange()
             // As for one temperature: the Gibbs energies of the scaled thermo
             // model differ from the SI ones by up to 6e-13 relative, times
             // m / (k_B T) in K_c.
-            for (std::size_t k = 0; k < reaction_count; ++k) {
-                const double f = canary::convert<si>(q_s.forward[k], reference_scales).value();
-                const double b = canary::convert<si>(q_s.backward[k], reference_scales).value();
-                expect(relative(f, q.forward[k].value(), 1.0e-12)) << s.temp << k;
-                expect(relative(b, q.backward[k].value(), 1.0e-10)) << s.temp << k;
+            for (const auto k : canary::reaction_indices(0, reaction_count)) {
+                const double f = canary::convert<si>(q_s.forward()[k], reference_scales).value();
+                const double b = canary::convert<si>(q_s.backward()[k], reference_scales).value();
+                expect(relative(f, q.forward()[k].value(), 1.0e-12)) << s.temp << k.value();
+                expect(relative(b, q.backward()[k].value(), 1.0e-10)) << s.temp << k.value();
             }
             // The SI rates converted, so that only the exchange is compared.
             canary::RatesOfProgress<double, scaled, reaction_count> q_converted {};
-            for (std::size_t k = 0; k < reaction_count; ++k) {
-                q_converted.forward[k] = canary::convert<scaled>(q.forward[k], reference_scales);
-                q_converted.backward[k] = canary::convert<scaled>(q.backward[k], reference_scales);
+            for (const auto k : canary::reaction_indices(0, reaction_count)) {
+                q_converted.forward()[k] =
+                  canary::convert<scaled>(q.forward()[k], reference_scales);
+                q_converted.backward()[k] =
+                  canary::convert<scaled>(q.backward()[k], reference_scales);
             }
             const double cv =
               canary::chemistry_vibration_source(exchange, mech, q, temp, t_ve).value();
@@ -889,12 +903,13 @@ void test_energy_exchange()
                 out[species_count + 1] =
                   canary::chemistry_vibration_source(exchange, mech, q, t, tv).value();
                 const std::size_t scales = species_count + 2;
-                for (std::size_t k = 0; k < reaction_count; ++k) {
-                    const T both = q.forward[k].value() + q.backward[k].value();
+                for (const auto k : canary::reaction_indices(0, reaction_count)) {
+                    const T both = q.forward()[k].value() + q.backward()[k].value();
                     for (std::size_t i = 0; i < species_count; ++i) {
                         const double m = built.species.mass[i].value();
                         out[scales + i] =
-                          out[scales + i] + T(m * std::abs(coefficient_change(mech, k, i)) * both);
+                          out[scales + i] +
+                          T(m * std::abs(coefficient_change(mech, k.value(), i)) * both);
                     }
                 }
                 out[scales + species_count] =
@@ -903,8 +918,8 @@ void test_energy_exchange()
                     out[scales + species_count + 1] =
                       out[scales + species_count + 1] +
                       T(boltzmann * coupling.dissociation_temperature.value() *
-                        (q.forward[coupling.reaction.value()].value() +
-                         q.backward[coupling.reaction.value()].value()));
+                        (q.forward()[coupling.reaction].value() +
+                         q.backward()[coupling.reaction].value()));
                 }
                 return out;
             };

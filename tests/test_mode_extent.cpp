@@ -1,5 +1,6 @@
 #include <cstdlib>
 #include <string_view>
+#include <type_traits>
 
 namespace
 {
@@ -69,9 +70,10 @@ int main(int argc, char** argv)
             if (operation == "state_vt") {
                 (void)canary::vibration_translation_source(exchange, gas, mix, state);
             } else if (operation == "state_cv") {
-                const canary::RatesOfProgress<double,
-                                              canary::si,
-                                              std::tuple_size_v<decltype(mechanism.reactions)>>
+                const canary::RatesOfProgress<
+                  double,
+                  canary::si,
+                  std::remove_cvref_t<decltype(mechanism)>::reaction_count>
                   rates {};
                 (void)canary::chemistry_vibration_source(exchange, mechanism, rates, state);
             } else if (operation == "state_et") {

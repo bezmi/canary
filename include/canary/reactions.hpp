@@ -38,6 +38,7 @@
 #include <array>
 #include <canary/build.hpp>
 #include <canary/config.hpp>
+#include <canary/indexed_view.hpp>
 #include <canary/models/thermally_perfect.hpp>
 #include <canary/quantity.hpp>
 #include <canary/reaction_species.hpp>
@@ -53,6 +54,7 @@
 #include <iterator>
 #include <limits>
 #include <map>
+#include <mdspan/mdspan.hpp>
 #include <string_view>
 #include <type_traits>
 
@@ -246,16 +248,80 @@ template <std::floating_point P, UnitSystem U> struct ArrheniusRate {
 template <std::floating_point P, UnitSystem U, std::size_t N>
     requires(N > 0)
 struct Reaction {
-    std::array<int, N> reactants;
-    std::array<int, N> products;
+  private:
+    std::array<int, N> reactants_;
+    std::array<int, N> products_;
+
+  public:
     int coefficient_change;
     ArrheniusRate<P, U> forward;
     BackwardRateModel backward_model;
     ArrheniusRate<P, U> backward;
     bool equilibrium_at_other_temperature;
     bool third_body;
-    std::array<P, N> efficiencies;
+
+  private:
+    std::array<P, N> efficiencies_;
+
+  public:
+    // Views borrow this record. Reacquire them after moving or replacing the owner.
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr auto reactants() & noexcept
+    {
+        return as_indexed<SpeciesIndex>(
+          Kokkos::mdspan<int, Kokkos::extents<std::size_t, N>>(reactants_.data()));
+    }
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr auto reactants() const& noexcept
+    {
+        return as_indexed<SpeciesIndex>(
+          Kokkos::mdspan<const int, Kokkos::extents<std::size_t, N>>(reactants_.data()));
+    }
+    auto reactants() && = delete;
+    auto reactants() const&& = delete;
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr auto products() & noexcept
+    {
+        return as_indexed<SpeciesIndex>(
+          Kokkos::mdspan<int, Kokkos::extents<std::size_t, N>>(products_.data()));
+    }
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr auto products() const& noexcept
+    {
+        return as_indexed<SpeciesIndex>(
+          Kokkos::mdspan<const int, Kokkos::extents<std::size_t, N>>(products_.data()));
+    }
+    auto products() && = delete;
+    auto products() const&& = delete;
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr auto efficiencies() & noexcept
+    {
+        return as_indexed<SpeciesIndex>(
+          Kokkos::mdspan<P, Kokkos::extents<std::size_t, N>>(efficiencies_.data()));
+    }
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr auto efficiencies() const& noexcept
+    {
+        return as_indexed<SpeciesIndex>(
+          Kokkos::mdspan<const P, Kokkos::extents<std::size_t, N>>(efficiencies_.data()));
+    }
+    auto efficiencies() && = delete;
+    auto efficiencies() const&& = delete;
 };
+
+template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t R>
+    requires(N > 0 && R > 0)
+struct ReactionMechanism;
+
+namespace detail
+{
+template <std::floating_point P,
+          UnitSystem U,
+          std::size_t N,
+          std::size_t R,
+          std::size_t K,
+          typename Source,
+          typename OtherMode>
+ReactionMechanism<P, U, N, R> build_mechanism(const MechanismInput<R, K>& input,
+                                              const ReactionSpeciesView<Source, N>& species,
+                                              const UnitScales<P, U>& scales,
+                                              Pressure<P, U> standard_pressure,
+                                              const OtherMode& other_mode);
+}  // namespace detail
 
 // R reactions over the N species of a thermo model, in unit system U, as
 // derived by make_reaction_mechanism: the reactions, the particle mass of
@@ -268,12 +334,49 @@ struct ReactionMechanism {
     using parameter_type = P;
     using units = U;
 
-    std::array<Reaction<P, U, N>, R> reactions;
-    std::array<ParticleMass<P, U>, N> mass;
+  private:
+    std::array<Reaction<P, U, N>, R> reactions_;
+    std::array<ParticleMass<P, U>, N> mass_;
+
+  public:
     Temperature<P, U> temperature_lower;
     Temperature<P, U> temperature_upper;
     Pressure<P, U> standard_pressure;
     BoltzmannConstant<P, U> boltzmann;
+
+    // Mechanism data are read-only through borrowed views. Reacquire views after
+    // moving or replacing the owner; construction validates all stored reactions.
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr auto reactions() const& noexcept
+    {
+        return as_indexed<ReactionIndex>(
+          Kokkos::mdspan<const Reaction<P, U, N>, Kokkos::extents<std::size_t, R>>(
+            reactions_.data()));
+    }
+    auto reactions() && = delete;
+    auto reactions() const&& = delete;
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr auto mass() const& noexcept
+    {
+        return as_indexed<SpeciesIndex>(
+          Kokkos::mdspan<const ParticleMass<P, U>, Kokkos::extents<std::size_t, N>>(mass_.data()));
+    }
+    auto mass() && = delete;
+    auto mass() const&& = delete;
+
+  private:
+    ReactionMechanism() = default;
+    template <std::floating_point Q,
+              UnitSystem V,
+              std::size_t Ns,
+              std::size_t Rs,
+              std::size_t K,
+              typename Source,
+              typename OtherMode>
+    friend ReactionMechanism<Q, V, Ns, Rs>
+      detail::build_mechanism(const MechanismInput<Rs, K>& input,
+                              const ReactionSpeciesView<Source, Ns>& species,
+                              const UnitScales<Q, V>& scales,
+                              Pressure<Q, V> standard_pressure,
+                              const OtherMode& other_mode);
 };
 
 namespace detail
@@ -489,16 +592,23 @@ Reaction<P, U, N> make_reaction(const ReactionInput<K>& input,
                                 const OtherMode& other_mode)
 {
     Reaction<P, U, N> r {};
-    r.reactants = stoichiometric_coefficients(input.reactants, names, "reactants");
-    r.products = stoichiometric_coefficients(input.products, names, "products");
+    const auto reactants = stoichiometric_coefficients(input.reactants, names, "reactants");
+    const auto products = stoichiometric_coefficients(input.products, names, "products");
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        r.reactants()[i] = reactants[i.value()];
+        r.products()[i] = products[i.value()];
+    }
     r.third_body = input.third_body;
     if (input.third_body) {
-        r.efficiencies = third_body_efficiencies<P>(input.efficiencies, names);
+        const auto efficiencies = third_body_efficiencies<P>(input.efficiencies, names);
+        for (const SpeciesIndex i : species_indices(0, N)) {
+            r.efficiencies()[i] = efficiencies[i.value()];
+        }
     } else if (input.efficiencies.count != 0) {
         throw ParameterError("third-body efficiencies are given without a third body");
     }
-    const std::intmax_t reactant_order = reaction_order(r.reactants, input.third_body, "reactant");
-    const std::intmax_t product_order = reaction_order(r.products, input.third_body, "product");
+    const std::intmax_t reactant_order = reaction_order(reactants, input.third_body, "reactant");
+    const std::intmax_t product_order = reaction_order(products, input.third_body, "product");
     const std::intmax_t change = product_order - reactant_order;
     if (change < std::numeric_limits<int>::min() || change > std::numeric_limits<int>::max()) {
         throw ParameterError(
@@ -542,8 +652,8 @@ void check_reaction_conservation(const Reaction<P, U, N>& reaction,
     std::int64_t charge_balance = 0;
     std::map<std::string_view, std::int64_t> element_balance;
     for (const SpeciesIndex i : species_indices(0, N)) {
-        const int reactant = reaction.reactants[i.value()];
-        const int product = reaction.products[i.value()];
+        const int reactant = reaction.reactants()[i];
+        const int product = reaction.products()[i];
         if (reactant == 0 && product == 0) { continue; }
         const ChargeNumber charge = species.charge_number(i);
         const auto metadata = species.metadata(i);
@@ -617,19 +727,19 @@ ReactionMechanism<P, U, N, R> build_mechanism(const MechanismInput<R, K>& input,
           std::format("standard pressure must be finite and positive, got {}", p0));
     }
     ReactionMechanism<P, U, N, R> mech {};
-    for (std::size_t k = 0; k < R; ++k) {
-        const ReactionInput<K>& reaction = input.reactions[k];
+    for (const ReactionIndex k : reaction_indices(0, R)) {
+        const ReactionInput<K>& reaction = input.reactions[k.value()];
         try {
-            mech.reactions[k] = make_reaction(reaction, names, scales, other_mode);
-            check_reaction_conservation(mech.reactions[k], species);
+            mech.reactions_[k.value()] = make_reaction(reaction, names, scales, other_mode);
+            check_reaction_conservation(mech.reactions_[k.value()], species);
         } catch (const ParameterError& error) {
             throw ParameterError(std::format("reaction {} ({}): {}",
-                                             k,
+                                             k.value(),
                                              reaction.equation != nullptr ? reaction.equation : "",
                                              error.what()));
         }
     }
-    mech.mass = mass;
+    mech.mass_ = mass;
     using W = std::common_type_t<double, P>;
     mech.temperature_lower = positive_thermodynamic_parameter<P>(
       convert<U>(Temperature<W, si> {static_cast<W>(lower)}, scales), "temperature lower limit");
@@ -865,8 +975,41 @@ template <Scalar T, UnitSystem U, std::size_t R>
     requires(R > 0)
 struct RatesOfProgress {
     static constexpr std::size_t reaction_count = R;
-    std::array<NumberRateDensity<T, U>, R> forward;
-    std::array<NumberRateDensity<T, U>, R> backward;
+
+  private:
+    std::array<NumberRateDensity<T, U>, R> forward_;
+    std::array<NumberRateDensity<T, U>, R> backward_;
+
+  public:
+    // Views borrow this output. Reacquire them after moving or replacing the owner.
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr auto forward() & noexcept
+    {
+        return as_indexed<ReactionIndex>(
+          Kokkos::mdspan<NumberRateDensity<T, U>, Kokkos::extents<std::size_t, R>>(
+            forward_.data()));
+    }
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr auto forward() const& noexcept
+    {
+        return as_indexed<ReactionIndex>(
+          Kokkos::mdspan<const NumberRateDensity<T, U>, Kokkos::extents<std::size_t, R>>(
+            forward_.data()));
+    }
+    auto forward() && = delete;
+    auto forward() const&& = delete;
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr auto backward() & noexcept
+    {
+        return as_indexed<ReactionIndex>(
+          Kokkos::mdspan<NumberRateDensity<T, U>, Kokkos::extents<std::size_t, R>>(
+            backward_.data()));
+    }
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr auto backward() const& noexcept
+    {
+        return as_indexed<ReactionIndex>(
+          Kokkos::mdspan<const NumberRateDensity<T, U>, Kokkos::extents<std::size_t, R>>(
+            backward_.data()));
+    }
+    auto backward() && = delete;
+    auto backward() const&& = delete;
 };
 
 // A thermo model and value type for which rates_of_progress and
@@ -968,7 +1111,7 @@ CANARY_HOST_DEVICE EquilibriumTerms<T, N>
     out.ln_n0 = math::log(T(mech.standard_pressure.value() * inv_kt));
     for (const SpeciesIndex i : species_indices(0, N)) {
         out.g[i.value()] =
-          T(props.gibbs_energy[i.value()].value() * mech.mass[i.value()].value() * inv_kt);
+          T(props.gibbs_energy[i.value()].value() * mech.mass()[i].value() * inv_kt);
     }
     return out;
 }
@@ -985,7 +1128,7 @@ CANARY_HOST_DEVICE T equilibrium_exponent(const Reaction<P, U, N>& r,
     using V = ScalarTraits<T>::value_type;
     T exponent = forward_exponent - T(V(r.coefficient_change) * terms.ln_n0);
     for (const SpeciesIndex i : species_indices(0, N)) {
-        const int dnu = r.products[i.value()] - r.reactants[i.value()];
+        const int dnu = r.products()[i] - r.reactants()[i];
         if (dnu != 0) { exponent = exponent + T(V(dnu) * terms.g[i.value()]); }
     }
     return exponent;
@@ -1014,6 +1157,7 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
                        const std::array<T, M>& other)
 {
     using V = ScalarTraits<T>::value_type;
+    const auto records = mech.reactions();
     const T ln_t = math::log(t);
     const T inv_t = T(V(1)) / t;
     const EquilibriumTerms<T, N> at_t = equilibrium_terms(mech, gas, t);
@@ -1021,8 +1165,7 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
     // Number densities n_i.
     std::array<T, N> n {};
     for (const SpeciesIndex i : species_indices(0, N)) {
-        n[i.value()] =
-          T(rho.value() * mix.fractions[i.value()].value() / mech.mass[i.value()].value());
+        n[i.value()] = T(rho.value() * mix.fractions[i.value()].value() / mech.mass()[i].value());
     }
 
     // ln(T_o / T_l) of every other temperature and, at each other
@@ -1034,7 +1177,8 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
     std::array<EquilibriumTerms<T, N>, M> at_other {};
     if constexpr (M > 0) {
         std::array<bool, M> used {};
-        for (const Reaction<P, U, N>& r : mech.reactions) {
+        for (const ReactionIndex k : reaction_indices(0, R)) {
+            const auto& r = records[k];
             if (r.backward_model == BackwardRateModel::equilibrium &&
                 r.equilibrium_at_other_temperature) {
                 used[other_index<M>(r.backward.other_mode).value()] = true;
@@ -1051,7 +1195,7 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
 
     RatesOfProgress<T, U, R> out {};
     for (const ReactionIndex k : reaction_indices(0, R)) {
-        const Reaction<P, U, N>& r = mech.reactions[k.value()];
+        const Reaction<P, U, N>& r = records[k];
         // ln(k_f / A) at T_l, and at the rate-controlling temperature.
         const T forward_exponent = arrhenius_exponent(r.forward, ln_t, inv_t);
         T controlled_exponent = forward_exponent;
@@ -1086,19 +1230,19 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
         T q_f = k_f;
         T q_b = k_b;
         if (r.third_body) {
-            T m = T(r.efficiencies[0] * n[0]);
+            T m = T(r.efficiencies()[SpeciesIndex {0}] * n[0]);
             for (const SpeciesIndex i : species_indices(1, N)) {
-                m = m + T(r.efficiencies[i.value()] * n[i.value()]);
+                m = m + T(r.efficiencies()[i] * n[i.value()]);
             }
             q_f = q_f * m;
             q_b = q_b * m;
         }
         for (const SpeciesIndex i : species_indices(0, N)) {
-            for (int c = 0; c < r.reactants[i.value()]; ++c) { q_f = q_f * n[i.value()]; }
-            for (int c = 0; c < r.products[i.value()]; ++c) { q_b = q_b * n[i.value()]; }
+            for (int c = 0; c < r.reactants()[i]; ++c) { q_f = q_f * n[i.value()]; }
+            for (int c = 0; c < r.products()[i]; ++c) { q_b = q_b * n[i.value()]; }
         }
-        out.forward[k.value()] = NumberRateDensity<T, U> {q_f};
-        out.backward[k.value()] = NumberRateDensity<T, U> {q_b};
+        out.forward()[k] = NumberRateDensity<T, U> {q_f};
+        out.backward()[k] = NumberRateDensity<T, U> {q_b};
     }
     return out;
 }
@@ -1107,25 +1251,25 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
 // progress q of mech.
 template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::size_t R>
     requires ScalarWith<T, P>
-CANARY_HOST_DEVICE std::array<MassProductionRate<T, U>, N>
+CANARY_HOST_DEVICE CANARY_FORCE_INLINE std::array<MassProductionRate<T, U>, N>
   mass_production_rates(const ReactionMechanism<P, U, N, R>& mech,
                         const RatesOfProgress<T, U, R>& q)
 {
     using V = ScalarTraits<T>::value_type;
+    const auto records = mech.reactions();
     std::array<T, N> net {};
     net.fill(T(V(0)));
     for (const ReactionIndex k : reaction_indices(0, R)) {
-        const Reaction<P, U, N>& r = mech.reactions[k.value()];
-        const T rate = q.forward[k.value()].value() - q.backward[k.value()].value();
+        const Reaction<P, U, N>& r = records[k];
+        const T rate = q.forward()[k].value() - q.backward()[k].value();
         for (const SpeciesIndex i : species_indices(0, N)) {
-            const int dnu = r.products[i.value()] - r.reactants[i.value()];
+            const int dnu = r.products()[i] - r.reactants()[i];
             if (dnu != 0) { net[i.value()] = net[i.value()] + T(V(dnu) * rate); }
         }
     }
     std::array<MassProductionRate<T, U>, N> out {};
     for (const SpeciesIndex i : species_indices(0, N)) {
-        out[i.value()] =
-          MassProductionRate<T, U> {T(mech.mass[i.value()].value() * net[i.value()])};
+        out[i.value()] = MassProductionRate<T, U> {T(mech.mass()[i].value() * net[i.value()])};
     }
     return out;
 }

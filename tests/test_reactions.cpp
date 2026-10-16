@@ -15,6 +15,7 @@
 #include <canary/species.hpp>
 #include <canary/units.hpp>
 #include <cmath>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -115,7 +116,10 @@ const std::array<ReferenceState, 5> reference_states {
 
 // Change of the coefficient of species i in reaction k.
 int coefficient_change(const Mechanism& mech, std::size_t k, std::size_t i)
-{ return mech.reactions[k].products[i] - mech.reactions[k].reactants[i]; }
+{
+    return mech.reactions()[canary::ReactionIndex {k}].products()[canary::SpeciesIndex {i}] -
+           mech.reactions()[canary::ReactionIndex {k}].reactants()[canary::SpeciesIndex {i}];
+}
 
 struct Rates {
     PerReaction forward;
@@ -133,9 +137,9 @@ Rates evaluate(const M& mech, const G& gas, const Fractions& y, double rho, doub
     const auto q = canary::rates_of_progress(mech, gas, mix, rho_q, temp_q);
     const auto omega = canary::production_rates(mech, gas, mix, rho_q, temp_q);
     Rates out {};
-    for (std::size_t k = 0; k < reaction_count; ++k) {
-        out.forward[k] = q.forward[k].value();
-        out.backward[k] = q.backward[k].value();
+    for (const auto k : canary::reaction_indices(0, reaction_count)) {
+        out.forward[k.value()] = q.forward()[k].value();
+        out.backward[k.value()] = q.backward()[k].value();
     }
     for (std::size_t i = 0; i < species_count; ++i) { out.production[i] = omega[i].value(); }
     return out;
@@ -152,7 +156,8 @@ double
     int change = 0;
     for (std::size_t i = 0; i < species_count; ++i) {
         const int dnu = coefficient_change(mech, k, i);
-        exponent -= dnu * sp.gibbs_energy[i].value() * mech.mass[i].value() / (kb * temp);
+        exponent -= dnu * sp.gibbs_energy[i].value() *
+                    mech.mass()[canary::SpeciesIndex {i}].value() / (kb * temp);
         change += dnu;
     }
     return std::exp(exponent) * std::pow(p0 / (kb * temp), change);
@@ -209,6 +214,110 @@ static_assert(noexcept(++std::declval<canary::ReactionIndexRange::iterator&>()))
 static_assert(canary::reaction_indices(4, 4).size() == 0);
 static_assert(canary::reaction_indices(4, 7).size() == 3);
 
+namespace
+{
+template <typename Owner>
+concept BorrowsReactions = requires(Owner&& owner) { std::forward<Owner>(owner).reactions(); };
+template <typename Owner>
+concept BorrowsReactionMass = requires(Owner&& owner) { std::forward<Owner>(owner).mass(); };
+template <typename Owner>
+concept BorrowsReactants = requires(Owner&& owner) { std::forward<Owner>(owner).reactants(); };
+template <typename Owner>
+concept BorrowsProducts = requires(Owner&& owner) { std::forward<Owner>(owner).products(); };
+template <typename Owner>
+concept BorrowsEfficiencies =
+  requires(Owner&& owner) { std::forward<Owner>(owner).efficiencies(); };
+template <typename Owner>
+concept BorrowsForward = requires(Owner&& owner) { std::forward<Owner>(owner).forward(); };
+template <typename Owner>
+concept BorrowsBackward = requires(Owner&& owner) { std::forward<Owner>(owner).backward(); };
+template <typename View, typename Index>
+concept ReadsReactionView = requires(View v, Index i) { v[i]; };
+
+template <std::floating_point P, canary::UnitSystem U, typename T>
+consteval bool reaction_view_contracts()
+{
+    using Record = canary::Reaction<P, U, 5>;
+    using Model = canary::ReactionMechanism<P, U, 5, 13>;
+    using Output = canary::RatesOfProgress<T, U, 13>;
+    static_assert(std::is_trivially_copyable_v<Record> && std::is_trivially_copyable_v<Model> &&
+                  std::is_trivially_copyable_v<Output>);
+    static_assert(std::is_copy_assignable_v<Model> && std::is_move_assignable_v<Model>);
+    static_assert(!std::is_aggregate_v<Model> && !std::is_default_constructible_v<Model>);
+    static_assert(BorrowsReactions<Model&> && BorrowsReactions<const Model&>);
+    static_assert(!BorrowsReactions<Model> && !BorrowsReactions<const Model>);
+    static_assert(BorrowsReactionMass<Model&> && BorrowsReactionMass<const Model&>);
+    static_assert(!BorrowsReactionMass<Model> && !BorrowsReactionMass<const Model>);
+    static_assert(BorrowsReactants<Record&> && BorrowsReactants<const Record&>);
+    static_assert(!BorrowsReactants<Record> && !BorrowsReactants<const Record>);
+    static_assert(BorrowsProducts<Record&> && BorrowsProducts<const Record&>);
+    static_assert(!BorrowsProducts<Record> && !BorrowsProducts<const Record>);
+    static_assert(BorrowsEfficiencies<Record&> && BorrowsEfficiencies<const Record&>);
+    static_assert(!BorrowsEfficiencies<Record> && !BorrowsEfficiencies<const Record>);
+    static_assert(BorrowsForward<Output&> && BorrowsForward<const Output&>);
+    static_assert(!BorrowsForward<Output> && !BorrowsForward<const Output>);
+    static_assert(BorrowsBackward<Output&> && BorrowsBackward<const Output&>);
+    static_assert(!BorrowsBackward<Output> && !BorrowsBackward<const Output>);
+    using Records = decltype(std::declval<Model&>().reactions());
+    using Masses = decltype(std::declval<Model&>().mass());
+    using Reactants = decltype(std::declval<Record&>().reactants());
+    using Products = decltype(std::declval<Record&>().products());
+    using Efficiencies = decltype(std::declval<Record&>().efficiencies());
+    using Forward = decltype(std::declval<Output&>().forward());
+    using Backward = decltype(std::declval<Output&>().backward());
+    static_assert(std::same_as<typename Records::element_type, const Record>);
+    static_assert(std::same_as<typename Masses::element_type, const canary::ParticleMass<P, U>>);
+    static_assert(std::same_as<typename Reactants::element_type, int> &&
+                  std::same_as<typename Products::element_type, int>);
+    static_assert(std::same_as<typename Efficiencies::element_type, P>);
+    static_assert(std::same_as<typename Forward::element_type, canary::NumberRateDensity<T, U>>);
+    static_assert(std::same_as<typename Backward::element_type, canary::NumberRateDensity<T, U>>);
+    static_assert(
+      std::is_const_v<typename decltype(std::declval<const Record&>().reactants())::element_type>);
+    static_assert(
+      std::is_const_v<typename decltype(std::declval<const Record&>().products())::element_type>);
+    static_assert(std::is_const_v<
+                  typename decltype(std::declval<const Record&>().efficiencies())::element_type>);
+    static_assert(
+      std::is_const_v<typename decltype(std::declval<const Output&>().forward())::element_type>);
+    static_assert(
+      std::is_const_v<typename decltype(std::declval<const Output&>().backward())::element_type>);
+    static_assert(Records::extents_type::static_extent(0) == 13 &&
+                  Forward::extents_type::static_extent(0) == 13 &&
+                  Backward::extents_type::static_extent(0) == 13);
+    static_assert(Masses::extents_type::static_extent(0) == 5 &&
+                  Reactants::extents_type::static_extent(0) == 5 &&
+                  Products::extents_type::static_extent(0) == 5 &&
+                  Efficiencies::extents_type::static_extent(0) == 5);
+    static_assert(ReadsReactionView<Records, canary::ReactionIndex>);
+    static_assert(!ReadsReactionView<Records, canary::SpeciesIndex> &&
+                  !ReadsReactionView<Records, canary::ModeIndex> &&
+                  !ReadsReactionView<Records, std::size_t>);
+    static_assert(!ReadsReactionView<Masses, canary::ReactionIndex> &&
+                  !ReadsReactionView<Reactants, canary::ReactionIndex> &&
+                  !ReadsReactionView<Products, canary::ModeIndex> &&
+                  !ReadsReactionView<Efficiencies, std::size_t>);
+    static_assert(!ReadsReactionView<Forward, canary::SpeciesIndex> &&
+                  !ReadsReactionView<Backward, canary::ModeIndex>);
+    static_assert(noexcept(std::declval<const Model&>().reactions()) &&
+                  noexcept(std::declval<const Model&>().mass()) &&
+                  noexcept(std::declval<Record&>().reactants()) &&
+                  noexcept(std::declval<const Record&>().reactants()) &&
+                  noexcept(std::declval<Record&>().products()) &&
+                  noexcept(std::declval<const Record&>().products()) &&
+                  noexcept(std::declval<Record&>().efficiencies()) &&
+                  noexcept(std::declval<const Record&>().efficiencies()) &&
+                  noexcept(std::declval<Output&>().forward()) &&
+                  noexcept(std::declval<const Output&>().forward()) &&
+                  noexcept(std::declval<Output&>().backward()) &&
+                  noexcept(std::declval<const Output&>().backward()));
+    return true;
+}
+static_assert(reaction_view_contracts<double, si, double>());
+static_assert(reaction_view_contracts<float, scaled, float>());
+static_assert(reaction_view_contracts<double, scaled, D>());
+}  // namespace
+
 void test_reactions()
 {
     using namespace boost::ut;
@@ -217,6 +326,81 @@ void test_reactions()
     const Air& gas = built.model;
     const Mechanism mech =
       canary::make_air5_kim_jo(si_scales, canary::Pressure<double, si> {atmosphere});
+
+    "reaction views retain ownership across copies and assignments"_test = [&] {
+        auto copied = mech;
+        const auto original_records = mech.reactions();
+        const auto copied_records = copied.reactions();
+        expect(original_records.base().data_handle() != copied_records.base().data_handle());
+        expect(mech.mass().base().data_handle() != copied.mass().base().data_handle());
+        for (const auto k : canary::reaction_indices(0, Mechanism::reaction_count)) {
+            expect(&copied_records[k] == &copied_records.base()[k.value()]);
+            for (const auto i : canary::species_indices(0, species_count)) {
+                expect(copied_records[k].reactants()[i] == original_records[k].reactants()[i]);
+                expect(copied_records[k].products()[i] == original_records[k].products()[i]);
+                expect(copied_records[k].efficiencies()[i] ==
+                       original_records[k].efficiencies()[i]);
+            }
+        }
+        const canary::ReactionIndex first {0};
+        const canary::SpeciesIndex nitrogen {0};
+        auto detached = copied_records[first];
+        const auto reactants = detached.reactants();
+        const auto products = detached.products();
+        const auto efficiencies = detached.efficiencies();
+        reactants[nitrogen] = 7;
+        products[nitrogen] = 8;
+        efficiencies[nitrogen] = 9;
+        expect(detached.reactants()[nitrogen] == 7);
+        expect(detached.products()[nitrogen] == 8);
+        expect(detached.efficiencies()[nitrogen] == 9.0);
+        expect(copied_records[first].reactants()[nitrogen] ==
+               original_records[first].reactants()[nitrogen]);
+        auto moved = std::move(copied);
+        copied = canary::make_air5_kim_jo(si_scales);
+        expect(copied.standard_pressure.value() == 100000.0);
+        expect(moved.standard_pressure == mech.standard_pressure);
+        expect(moved.reactions().base().data_handle() != copied.reactions().base().data_handle());
+        copied = moved;
+        expect(copied.standard_pressure == mech.standard_pressure);
+        expect(copied.reactions()[first].reactants()[nitrogen] ==
+               original_records[first].reactants()[nitrogen]);
+    };
+
+    "rate views alias their owner and preserve copied outputs"_test = [] {
+        const auto check = []<canary::Scalar T, canary::UnitSystem U>() {
+            using Rate = canary::NumberRateDensity<T, U>;
+            canary::RatesOfProgress<T, U, 3> rates {};
+            const auto forward = rates.forward();
+            const auto backward = rates.backward();
+            for (const auto k : canary::reaction_indices(0, rates.reaction_count)) {
+                expect(canary::ScalarTraits<T>::value(forward[k].value()) == 0);
+                expect(canary::ScalarTraits<T>::value(backward[k].value()) == 0);
+                forward[k] = Rate {T(k.value() + 1)};
+                backward[k] = Rate {T(k.value() + 4)};
+                expect(&forward[k] == &forward.base()[k.value()]);
+                expect(&backward[k] == &backward.base()[k.value()]);
+            }
+            auto copied = rates;
+            const canary::ReactionIndex last {2};
+            copied.forward()[last] = Rate {T(10)};
+            copied.backward()[last] = Rate {T(20)};
+            expect(canary::ScalarTraits<T>::value(rates.forward()[last].value()) == 3);
+            expect(canary::ScalarTraits<T>::value(rates.backward()[last].value()) == 6);
+            auto moved = std::move(copied);
+            rates = moved;
+            expect(canary::ScalarTraits<T>::value(rates.forward()[last].value()) == 10);
+            expect(canary::ScalarTraits<T>::value(rates.backward()[last].value()) == 20);
+            const auto& read_only = rates;
+            expect(read_only.forward().base().data_handle() ==
+                   rates.forward().base().data_handle());
+            expect(read_only.backward().base().data_handle() ==
+                   rates.backward().base().data_handle());
+        };
+        check.template operator()<double, si>();
+        check.template operator()<float, scaled>();
+        check.template operator()<D, si>();
+    };
 
     "reaction indices preserve identity and half-open endpoints"_test = [] {
         std::size_t expected = 3;
@@ -236,16 +420,27 @@ void test_reactions()
 
     "the builder converts rate constants to per-particle units"_test = [&] {
         // N2 + N2 <=> N + N + N2: order 2. NO + M <=> N + O + M: order 2.
-        expect(relative(mech.reactions[0].forward.A, 1.216e14 / avogadro, 1.0e-15));
-        expect(mech.reactions[0].reactants[0] == 2_i && mech.reactions[0].products[2] == 2_i);
-        expect(mech.reactions[0].coefficient_change == 1_i);
-        expect(mech.reactions[10].third_body);
-        expect(relative(mech.reactions[10].forward.A, 1.45e9 / avogadro, 1.0e-15));
-        expect(mech.reactions[10].efficiencies[0] == 1.0_d);
-        expect(mech.reactions[10].efficiencies[4] == 0.664827586_d);
-        expect(mech.reactions[11].coefficient_change == 0_i);
+        expect(relative(mech.reactions()[canary::ReactionIndex {0}].forward.A,
+                        1.216e14 / avogadro,
+                        1.0e-15));
+        expect(mech.reactions()[canary::ReactionIndex {0}].reactants()[canary::SpeciesIndex {0}] ==
+                 2_i &&
+               mech.reactions()[canary::ReactionIndex {0}].products()[canary::SpeciesIndex {2}] ==
+                 2_i);
+        expect(mech.reactions()[canary::ReactionIndex {0}].coefficient_change == 1_i);
+        expect(mech.reactions()[canary::ReactionIndex {10}].third_body);
+        expect(relative(mech.reactions()[canary::ReactionIndex {10}].forward.A,
+                        1.45e9 / avogadro,
+                        1.0e-15));
+        expect(
+          mech.reactions()[canary::ReactionIndex {10}].efficiencies()[canary::SpeciesIndex {0}] ==
+          1.0_d);
+        expect(
+          mech.reactions()[canary::ReactionIndex {10}].efficiencies()[canary::SpeciesIndex {4}] ==
+          0.664827586_d);
+        expect(mech.reactions()[canary::ReactionIndex {11}].coefficient_change == 0_i);
         // The translational exponent defaults to 1.
-        expect(mech.reactions[0].forward.translational_exponent == 1.0_d);
+        expect(mech.reactions()[canary::ReactionIndex {0}].forward.translational_exponent == 1.0_d);
         expect(mech.temperature_lower.value() == 300.0_d);
         expect(mech.temperature_upper.value() == 30000.0_d);
         expect(mech.standard_pressure.value() == atmosphere);
@@ -271,14 +466,14 @@ void test_reactions()
             const Rates got = evaluate(reference_mech, gas, s.y, s.rho, s.temp);
             PerReaction forward {};
             PerReaction backward {};
-            for (std::size_t k = 0; k < reaction_count; ++k) {
-                forward[k] = avogadro * s.forward[k];
-                backward[k] =
-                  avogadro * s.backward[k] * std::pow(r, mech.reactions[k].coefficient_change);
-                expect(relative(got.forward[k], forward[k], 1.0e-12))
-                  << s.temp << k << got.forward[k] << forward[k];
-                expect(relative(got.backward[k], backward[k], 1.0e-10))
-                  << s.temp << k << got.backward[k] << backward[k];
+            for (const auto k : canary::reaction_indices(0, reaction_count)) {
+                forward[k.value()] = avogadro * s.forward[k.value()];
+                backward[k.value()] = avogadro * s.backward[k.value()] *
+                                      std::pow(r, mech.reactions()[k].coefficient_change);
+                expect(relative(got.forward[k.value()], forward[k.value()], 1.0e-12))
+                  << s.temp << k.value() << got.forward[k.value()] << forward[k.value()];
+                expect(relative(got.backward[k.value()], backward[k.value()], 1.0e-10))
+                  << s.temp << k.value() << got.backward[k.value()] << backward[k.value()];
             }
             for (std::size_t i = 0; i < species_count; ++i) {
                 double expected = 0;
@@ -367,13 +562,13 @@ void test_reactions()
         const ReferenceState& s = reference_states[1];
         const Rates a = evaluate(bar, gas, s.y, s.rho, s.temp);
         const Rates b = evaluate(mech, gas, s.y, s.rho, s.temp);
-        for (std::size_t k = 0; k < reaction_count; ++k) {
-            expect(a.forward[k] == b.forward[k]);
+        for (const auto k : canary::reaction_indices(0, reaction_count)) {
+            expect(a.forward[k.value()] == b.forward[k.value()]);
             // K_c(1 bar) / K_c(1 atm) = (q_f / q_b)(1 bar) / (q_f / q_b)(1 atm).
-            const double ratio = b.backward[k] / a.backward[k];
+            const double ratio = b.backward[k.value()] / a.backward[k.value()];
             const double expected =
-              std::pow(1.0e5 / atmosphere, bar.reactions[k].coefficient_change);
-            expect(relative(ratio, expected, 1.0e-13)) << k << ratio << expected;
+              std::pow(1.0e5 / atmosphere, bar.reactions()[k].coefficient_change);
+            expect(relative(ratio, expected, 1.0e-13)) << k.value() << ratio << expected;
         }
     };
 
@@ -400,9 +595,10 @@ void test_reactions()
                                        mix_d,
                                        rho_d,
                                        canary::Temperature<D, si> {D(outside, 1.0)});
-            for (std::size_t k = 0; k < reaction_count; ++k) {
-                expect(q.forward[k].value().dual() == 0.0 && q.backward[k].value().dual() == 0.0);
-                expect(q.forward[k].value().real() == a.forward[k]);
+            for (const auto k : canary::reaction_indices(0, reaction_count)) {
+                expect(q.forward()[k].value().dual() == 0.0 &&
+                       q.backward()[k].value().dual() == 0.0);
+                expect(q.forward()[k].value().real() == a.forward[k.value()]);
             }
             for (std::size_t i = 0; i < species_count; ++i) {
                 expect(omega[i].value().dual() == 0.0);
@@ -477,11 +673,11 @@ void test_reactions()
             // The Gibbs energies of the scaled thermo model differ from the
             // SI ones by up to 6e-13 relative at 30000 K; in K_c they are
             // multiplied by m / (k_B T), about 40.
-            for (std::size_t k = 0; k < reaction_count; ++k) {
-                const double f = canary::convert<si>(q_s.forward[k], reference_scales).value();
-                const double b = canary::convert<si>(q_s.backward[k], reference_scales).value();
-                expect(relative(f, q.forward[k].value(), 1.0e-12)) << s.temp << k;
-                expect(relative(b, q.backward[k].value(), 1.0e-10)) << s.temp << k;
+            for (const auto k : canary::reaction_indices(0, reaction_count)) {
+                const double f = canary::convert<si>(q_s.forward()[k], reference_scales).value();
+                const double b = canary::convert<si>(q_s.backward()[k], reference_scales).value();
+                expect(relative(f, q.forward()[k].value(), 1.0e-12)) << s.temp << k.value();
+                expect(relative(b, q.backward()[k].value(), 1.0e-10)) << s.temp << k.value();
             }
             const auto omega = canary::production_rates(mech, gas, mix, rho, temp);
             const auto omega_s =
@@ -595,8 +791,11 @@ void test_reactions()
           "reaction 0 (N <=> N): third-body efficiency of \"N\""));
         input.reactions[0].efficiencies.entries[0].value = 0.0;
         const auto zero = build(input);
-        expect(zero.reactions[0].efficiencies[0] == 0.0F);
-        expect(zero.reactions[0].forward.activation_temperature.value() == 0.0F);
+        expect(
+          zero.reactions()[canary::ReactionIndex {0}].efficiencies()[canary::SpeciesIndex {0}] ==
+          0.0F);
+        expect(zero.reactions()[canary::ReactionIndex {0}].forward.activation_temperature.value() ==
+               0.0F);
         for (const double a : {1.0e-100, std::numeric_limits<double>::max()}) {
             input = base;
             input.reactions[0].forward.A = a;
@@ -637,7 +836,8 @@ void test_reactions()
             expect(result.temperature_lower.value() > P(0));
             expect(result.temperature_lower.value() == expected);
             expect(result.temperature_upper.value() == P(2) * expected);
-            expect(result.reactions[0].forward.activation_temperature.value() == expected);
+            expect(result.reactions()[canary::ReactionIndex {0}]
+                     .forward.activation_temperature.value() == expected);
             input.reactions[0].forward.activation_temperature = std::numeric_limits<double>::max();
             expect(error_message([&] {
                        (void)canary::make_reaction_mechanism(input,
@@ -675,9 +875,10 @@ void test_reactions()
             species[0].molar_mass = 0.014;
             const auto result =
               canary::make_reaction_mechanism(input, canary::reaction_species(species), scales);
-            expect(result.mass[0] == canary::detail::particle_mass_parameter(
-                                       canary::MolarMass<double> {species[0].molar_mass},
-                                       scales));
+            expect(result.mass()[canary::SpeciesIndex {0}] ==
+                   canary::detail::particle_mass_parameter(
+                     canary::MolarMass<double> {species[0].molar_mass},
+                     scales));
         };
         check(canary::UnitScales<float, si> {});
         check(canary::UnitScales<double, si> {});
@@ -939,7 +1140,8 @@ void test_reactions()
         input.reactions[0].forward.A = 1;
         const auto mechanism =
           canary::make_reaction_mechanism(input, canary::reaction_species(definitions), si_scales);
-        expect(mechanism.mass[0].value() == 2 * mechanism.mass[1].value());
+        expect(mechanism.mass()[canary::SpeciesIndex {0}].value() ==
+               2 * mechanism.mass()[canary::SpeciesIndex {1}].value());
         auto broken = input;
         broken.reactions[0].products.entries[0].value = 1;
         expect(error_message([&] {

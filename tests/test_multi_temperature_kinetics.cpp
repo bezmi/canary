@@ -228,7 +228,10 @@ constexpr Fractions enthalpy_offset {
 
 // Change of the coefficient of species i in reaction k.
 template <typename M> int coefficient_change(const M& mech, std::size_t k, std::size_t i)
-{ return mech.reactions[k].products[i] - mech.reactions[k].reactants[i]; }
+{
+    return mech.reactions()[canary::ReactionIndex {k}].products()[canary::SpeciesIndex {i}] -
+           mech.reactions()[canary::ReactionIndex {k}].reactants()[canary::SpeciesIndex {i}];
+}
 
 // The state of gas with density rho, translational temperature temp and
 // mode temperatures (t_v, t_e), and the composition of y.
@@ -258,14 +261,18 @@ template <typename S> Fractions number_densities(const S& species, const Fractio
 // the reactants (forward) or the products (backward).
 double concentration_product(const Mechanism& mech, std::size_t k, const Fractions& n, bool forward)
 {
-    const auto& r = mech.reactions[k];
+    const auto r_records = mech.reactions();
+    const auto& r = r_records[canary::ReactionIndex {k}];
     double out = 1.0;
     if (r.third_body) {
         out = 0.0;
-        for (std::size_t i = 0; i < species_count; ++i) { out += r.efficiencies[i] * n[i]; }
+        for (std::size_t i = 0; i < species_count; ++i) {
+            out += r.efficiencies()[canary::SpeciesIndex {i}] * n[i];
+        }
     }
     for (std::size_t i = 0; i < species_count; ++i) {
-        const int nu = forward ? r.reactants[i] : r.products[i];
+        const int nu = forward ? r.reactants()[canary::SpeciesIndex {i}]
+                               : r.products()[canary::SpeciesIndex {i}];
         for (int c = 0; c < nu; ++c) { out *= n[i]; }
     }
     return out;
@@ -275,7 +282,8 @@ double concentration_product(const Mechanism& mech, std::size_t k, const Fractio
 // formula A T_c^n exp(-theta / T_c).
 double forward_log_rate(const Mechanism& mech, std::size_t k, double t_c)
 {
-    const auto& f = mech.reactions[k].forward;
+    const auto f_records = mech.reactions();
+    const auto& f = f_records[canary::ReactionIndex {k}].forward;
     return std::log(f.A) + (f.n * std::log(t_c)) - (f.activation_temperature.value() / t_c);
 }
 
@@ -284,11 +292,11 @@ double forward_log_rate(const Mechanism& mech, std::size_t k, double t_c)
 double equilibrium_backward_rate(const Mechanism& mech, const Gas& gas, std::size_t k, double t_eq)
 {
     const auto props = canary::species_properties(gas, Temp {t_eq});
-    double ln_k_c =
-      mech.reactions[k].coefficient_change * std::log(atmosphere / (boltzmann * t_eq));
+    double ln_k_c = mech.reactions()[canary::ReactionIndex {k}].coefficient_change *
+                    std::log(atmosphere / (boltzmann * t_eq));
     for (std::size_t i = 0; i < species_count; ++i) {
         ln_k_c -= coefficient_change(mech, k, i) * props.gibbs_energy[i].value() *
-                  mech.mass[i].value() / (boltzmann * t_eq);
+                  mech.mass()[canary::SpeciesIndex {i}].value() / (boltzmann * t_eq);
     }
     return std::exp(forward_log_rate(mech, k, t_eq) - ln_k_c);
 }
@@ -325,9 +333,9 @@ Values evaluate(const M& mech, const X& exchange, const G& gas, const ReferenceS
     static_assert(
       std::same_as<typename decltype(sources.modes)::value_type, canary::PowerDensity<double, U>>);
     Values out {};
-    for (std::size_t k = 0; k < reaction_count; ++k) {
-        out.forward[k] = q.forward[k].value();
-        out.backward[k] = q.backward[k].value();
+    for (const auto k : canary::reaction_indices(0, reaction_count)) {
+        out.forward[k.value()] = q.forward()[k].value();
+        out.backward[k.value()] = q.backward()[k].value();
     }
     for (std::size_t i = 0; i < species_count; ++i) {
         out.production[i] = sources.species[i].value();
@@ -700,9 +708,9 @@ void test_multi_temperature_kinetics()
                                                                    rho,
                                                                    temp,
                                                                    reference.state.mode_temp);
-            for (std::size_t r = 0; r < rates.forward.size(); ++r) {
-                equal(rates.forward[r].value(), reference_rates.forward[r].value());
-                equal(rates.backward[r].value(), reference_rates.backward[r].value());
+            for (const auto r : canary::reaction_indices(0, rates.reaction_count)) {
+                equal(rates.forward()[r].value(), reference_rates.forward()[r].value());
+                equal(rates.backward()[r].value(), reference_rates.backward()[r].value());
             }
             compare_modes(canary::vibration_translation_source(exchanges, model, mix, state),
                           canary::vibration_translation_source(exchanges,
@@ -904,11 +912,11 @@ void test_multi_temperature_kinetics()
             const auto expected = canary::rates_of_progress(mech, gas, mix, rho, temp, modes);
             const auto typed = canary::rates_of_progress(mech, gas, mix, rho, temp, view);
             const auto untyped = canary::rates_of_progress(mech, gas, mix, rho, temp, quantities);
-            for (std::size_t k = 0; k < reaction_count; ++k) {
-                equal(typed.forward[k].value(), expected.forward[k].value());
-                equal(typed.backward[k].value(), expected.backward[k].value());
-                equal(untyped.forward[k].value(), expected.forward[k].value());
-                equal(untyped.backward[k].value(), expected.backward[k].value());
+            for (const auto k : canary::reaction_indices(0, reaction_count)) {
+                equal(typed.forward()[k].value(), expected.forward()[k].value());
+                equal(typed.backward()[k].value(), expected.backward()[k].value());
+                equal(untyped.forward()[k].value(), expected.forward()[k].value());
+                equal(untyped.backward()[k].value(), expected.backward()[k].value());
             }
             const auto omega = canary::production_rates(mech, gas, mix, rho, temp, view);
             const auto omega_expected = canary::production_rates(mech, gas, mix, rho, temp, modes);
@@ -983,16 +991,21 @@ void test_multi_temperature_kinetics()
     };
 
     "multi-temperature kinetics: the builders resolve modes and electrons"_test = [&] {
-        for (std::size_t k = 0; k < reaction_count; ++k) {
-            const auto& r = mech.reactions[k];
+        for (const auto k : canary::reaction_indices(0, reaction_count)) {
+            const auto r_records = mech.reactions();
+            const auto& r = r_records[k];
             const bool forward_electron = r.forward.translational_exponent != 1.0 &&
                                           r.forward.other_mode == canary::ModeIndex {1};
-            expect(forward_electron == contains(forward_at_electron, k)) << k;
+            expect(forward_electron == contains(forward_at_electron, k.value())) << k.value();
             const bool backward_electron = r.equilibrium_at_other_temperature;
-            expect(backward_electron == contains(backward_at_electron, k)) << k;
-            if (backward_electron) { expect(r.backward.other_mode == canary::ModeIndex {1}) << k; }
+            expect(backward_electron == contains(backward_at_electron, k.value())) << k.value();
+            if (backward_electron) {
+                expect(r.backward.other_mode == canary::ModeIndex {1}) << k.value();
+            }
             // Dissociations of N2, O2 and NO: their vibration mode.
-            if (k <= 20) { expect(r.forward.other_mode == canary::ModeIndex {0}) << k; }
+            if (k.value() <= 20) {
+                expect(r.forward.other_mode == canary::ModeIndex {0}) << k.value();
+            }
         }
         expect(exchange.electron == canary::OptionalSpeciesIndex {canary::SpeciesIndex {10}} &&
                exchange.electron_mode == canary::OptionalModeIndex {canary::ModeIndex {1}});
@@ -1043,28 +1056,28 @@ void test_multi_temperature_kinetics()
             // formulas at canary's temperatures.
             PerReaction forward {};
             PerReaction backward {};
-            for (std::size_t k = 0; k < reaction_count; ++k) {
-                const int dnu = mech.reactions[k].coefficient_change;
-                forward[k] = avogadro * s.forward[k];
+            for (const auto k : canary::reaction_indices(0, reaction_count)) {
+                const int dnu = mech.reactions()[k].coefficient_change;
+                forward[k.value()] = avogadro * s.forward[k.value()];
                 double offset = 0.0;
                 for (std::size_t i = 0; i < species_count; ++i) {
-                    offset += coefficient_change(mech, k, i) * enthalpy_offset[i];
+                    offset += coefficient_change(mech, k.value(), i) * enthalpy_offset[i];
                 }
-                backward[k] =
-                  avogadro * s.backward[k] * std::pow(r_u, dnu) * std::exp(offset / t_l);
+                backward[k.value()] =
+                  avogadro * s.backward[k.value()] * std::pow(r_u, dnu) * std::exp(offset / t_l);
                 // The reference evaluates these forward rates at T_v; the
                 // formula at T_c = T^s T_e^(1 - s).
-                if (contains(forward_at_electron, k)) {
-                    const double s_t = mech.reactions[k].forward.translational_exponent;
+                if (contains(forward_at_electron, k.value())) {
+                    const double s_t = mech.reactions()[k].forward.translational_exponent;
                     const double t_c = std::pow(t_l, s_t) * std::pow(s.t_e, 1.0 - s_t);
-                    forward[k] = std::exp(forward_log_rate(mech, k, t_c)) *
-                                 concentration_product(mech, k, n, true);
+                    forward[k.value()] = std::exp(forward_log_rate(mech, k.value(), t_c)) *
+                                         concentration_product(mech, k.value(), n, true);
                 }
                 // The reference evaluates these equilibrium backward rates at
                 // T; the formula at T_e.
-                if (contains(backward_at_electron, k)) {
-                    backward[k] = equilibrium_backward_rate(mech, gas, k, s.t_e) *
-                                  concentration_product(mech, k, n, false);
+                if (contains(backward_at_electron, k.value())) {
+                    backward[k.value()] = equilibrium_backward_rate(mech, gas, k.value(), s.t_e) *
+                                          concentration_product(mech, k.value(), n, false);
                 }
                 // Forward rates contain no constant that differs between the
                 // implementations, and the formulas compute the same
@@ -1073,12 +1086,12 @@ void test_multi_temperature_kinetics()
                 // rounding amplified by the exponent of K_c (up to about
                 // 100). The third-body efficiencies of reaction 20 in the
                 // reference differ in the eighth digit: 2e-8 in its rates.
-                const double bound_f = k == 20 ? 1.0e-7 : 1.0e-12;
-                const double bound_b = k == 20 ? 1.0e-7 : 1.0e-10;
-                expect(relative(got.forward[k], forward[k], bound_f))
-                  << s.name << k << got.forward[k] << forward[k];
-                expect(relative(got.backward[k], backward[k], bound_b))
-                  << s.name << k << got.backward[k] << backward[k];
+                const double bound_f = k.value() == 20 ? 1.0e-7 : 1.0e-12;
+                const double bound_b = k.value() == 20 ? 1.0e-7 : 1.0e-10;
+                expect(relative(got.forward[k.value()], forward[k.value()], bound_f))
+                  << s.name << k.value() << got.forward[k.value()] << forward[k.value()];
+                expect(relative(got.backward[k.value()], backward[k.value()], bound_b))
+                  << s.name << k.value() << got.backward[k.value()] << backward[k.value()];
             }
             for (std::size_t i = 0; i < species_count; ++i) {
                 // The bound is relative to the sum of the magnitudes of the
@@ -1152,11 +1165,11 @@ void test_multi_temperature_kinetics()
         static_assert(decltype(one.model)::mode_count == 1);
         const Mechanism with_gas = canary::make_air11_kim_jo(si_scales, p0, one.model);
         const Mechanism without = canary::make_air11_kim_jo(si_scales, p0);
-        for (std::size_t k = 0; k < reaction_count; ++k) {
-            expect(with_gas.reactions[k].forward.other_mode == canary::ModeIndex {0});
-            expect(with_gas.reactions[k].backward.other_mode == canary::ModeIndex {0});
-            expect(with_gas.reactions[k].equilibrium_at_other_temperature ==
-                   without.reactions[k].equilibrium_at_other_temperature);
+        for (const auto k : canary::reaction_indices(0, reaction_count)) {
+            expect(with_gas.reactions()[k].forward.other_mode == canary::ModeIndex {0});
+            expect(with_gas.reactions()[k].backward.other_mode == canary::ModeIndex {0});
+            expect(with_gas.reactions()[k].equilibrium_at_other_temperature ==
+                   without.reactions()[k].equilibrium_at_other_temperature);
         }
         for (const ReferenceState& s : reference_states) {
             const auto mix = canary::mixture(one.model, fractions(s.y));
@@ -1176,11 +1189,13 @@ void test_multi_temperature_kinetics()
             };
             const auto three =
               canary::rates_of_progress(mech, gas, mix, Rho {s.rho}, Temp {s.temp}, same);
-            for (std::size_t k = 0; k < reaction_count; ++k) {
-                expect(modes.forward[k] == two.forward[k] && modes.backward[k] == two.backward[k])
-                  << s.name << k;
-                expect(three.forward[k] == two.forward[k] && three.backward[k] == two.backward[k])
-                  << s.name << k;
+            for (const auto k : canary::reaction_indices(0, reaction_count)) {
+                expect(modes.forward()[k] == two.forward()[k] &&
+                       modes.backward()[k] == two.backward()[k])
+                  << s.name << k.value();
+                expect(three.forward()[k] == two.forward()[k] &&
+                       three.backward()[k] == two.backward()[k])
+                  << s.name << k.value();
             }
             const auto omega_modes =
               canary::production_rates(with_gas, one.model, mix, Rho {s.rho}, Temp {s.temp}, t_m);
@@ -1219,12 +1234,13 @@ void test_multi_temperature_kinetics()
               .temperature_upper = 30000.0,
               .reactions = {r},
             };
-            return canary::make_reaction_mechanism(input,
-                                                   canary::reaction_species(canary::air11_species),
-                                                   si_scales,
-                                                   p0,
-                                                   model)
-              .reactions[0];
+            const auto mechanism =
+              canary::make_reaction_mechanism(input,
+                                              canary::reaction_species(canary::air11_species),
+                                              si_scales,
+                                              p0,
+                                              model);
+            return mechanism.reactions()[canary::ReactionIndex {0}];
         };
         const auto o2 = [&](canary::ArrheniusInput f,
                             BackwardRateModel model = BackwardRateModel::equilibrium,
@@ -1367,12 +1383,13 @@ void test_multi_temperature_kinetics()
                            none),
                 },
             };
-            return canary::make_reaction_mechanism(input,
-                                                   canary::reaction_species(canary::air5_species),
-                                                   si_scales,
-                                                   p0,
-                                                   air5.model)
-              .reactions[0];
+            const auto mechanism =
+              canary::make_reaction_mechanism(input,
+                                              canary::reaction_species(canary::air5_species),
+                                              si_scales,
+                                              p0,
+                                              air5.model);
+            return mechanism.reactions()[canary::ReactionIndex {0}];
         };
         expect(build5(rate(0.5, "N")).forward.other_mode == canary::ModeIndex {0});
         expect(build5(rate(0.5, nullptr)).forward.other_mode == canary::ModeIndex {0});
@@ -1416,13 +1433,16 @@ void test_multi_temperature_kinetics()
              }) {
             const auto b = rates(temp, t_v, 8000.0);
             for (const std::size_t k : backward_at_electron) {
-                expect(a.backward[k] == b.backward[k]) << temp << t_v << k;
+                expect(a.backward()[canary::ReactionIndex {k}] ==
+                       b.backward()[canary::ReactionIndex {k}])
+                  << temp << t_v << k;
             }
         }
         // T_e is not clamped: 40000 K is above the upper limit 30000 K.
         const auto hot = rates(12000.0, 5000.0, 40000.0);
         const auto limit = rates(12000.0, 5000.0, 30000.0);
-        expect(!(hot.backward[38] == limit.backward[38]));
+        expect(!(hot.backward()[canary::ReactionIndex {38}] ==
+                 limit.backward()[canary::ReactionIndex {38}]));
         const std::array<D, species_count> y_d = [&] {
             std::array<D, species_count> y {};
             for (std::size_t i = 0; i < species_count; ++i) { y[i] = D(s.y[i]); }
@@ -1442,7 +1462,7 @@ void test_multi_temperature_kinetics()
               canary::Temperature<D, si> {D(12000.0, column == 0 ? 1.0 : 0.0)},
               t_m);
             for (const std::size_t k : backward_at_electron) {
-                const double dual = q.backward[k].value().dual();
+                const double dual = q.backward()[canary::ReactionIndex {k}].value().dual();
                 expect(column == 2 ? dual != 0.0 : dual == 0.0) << column << k << dual;
             }
         }
@@ -1608,8 +1628,10 @@ void test_multi_temperature_kinetics()
             const auto state = cell_state(gas, s.y, s.rho, s.temp, s.t_v, t_e);
             const auto q =
               canary::rates_of_progress(mech, gas, mix, state.rho, state.temp, state.mode_temp);
-            const double net = q.forward[38].value() - q.backward[38].value() +
-                               q.forward[39].value() - q.backward[39].value();
+            const double net = q.forward()[canary::ReactionIndex {38}].value() -
+                               q.backward()[canary::ReactionIndex {38}].value() +
+                               q.forward()[canary::ReactionIndex {39}].value() -
+                               q.backward()[canary::ReactionIndex {39}].value();
             const double ce = canary::electron_impact_ionisation_source(exchange, q)[1].value();
             expect(index == 0 ? net > 0.0 : net < 0.0) << index << net;
             expect(index == 0 ? ce < 0.0 : ce > 0.0) << index << ce;
@@ -1635,10 +1657,10 @@ void test_multi_temperature_kinetics()
                   mass += omega[i].value();
                   charge += z * omega[i].value() / m;
                   // The terms omega_i is summed from.
-                  for (std::size_t k = 0; k < reaction_count; ++k) {
-                      const double both = q.forward[k].value() + q.backward[k].value();
-                      mass_scale += m * std::abs(coefficient_change(mech, k, i)) * both;
-                      charge_scale += std::abs(z * coefficient_change(mech, k, i)) * both;
+                  for (const auto k : canary::reaction_indices(0, reaction_count)) {
+                      const double both = q.forward()[k].value() + q.backward()[k].value();
+                      mass_scale += m * std::abs(coefficient_change(mech, k.value(), i)) * both;
+                      charge_scale += std::abs(z * coefficient_change(mech, k.value(), i)) * both;
                   }
               }
               // Sums of terms of opposite signs, in double, relative to the
@@ -1726,15 +1748,14 @@ void test_multi_temperature_kinetics()
             };
             T cv_scale = T(0.0);
             for (const auto& c : exchange.chemistry_vibration) {
-                cv_scale = cv_scale + T(boltzmann * c.dissociation_temperature.value() *
-                                        (q.forward[c.reaction.value()].value() +
-                                         q.backward[c.reaction.value()].value()));
+                cv_scale = cv_scale +
+                           T(boltzmann * c.dissociation_temperature.value() *
+                             (q.forward()[c.reaction].value() + q.backward()[c.reaction].value()));
             }
             T ce_scale = T(0.0);
             for (const auto& c : exchange.electron_impact_ionisation) {
-                ce_scale =
-                  ce_scale + T(c.ionisation_energy * (q.forward[c.reaction.value()].value() +
-                                                      q.backward[c.reaction.value()].value()));
+                ce_scale = ce_scale + T(c.ionisation_energy * (q.forward()[c.reaction].value() +
+                                                               q.backward()[c.reaction].value()));
             }
             out[outputs] = magnitude(out[0]);
             out[outputs + 1] = cv_scale;
@@ -1812,17 +1833,19 @@ void test_multi_temperature_kinetics()
             // As for one temperature: the Gibbs energies of the scaled thermo
             // model differ from the SI ones by up to 6e-13 relative, times
             // m / (k_B T) in K_c.
-            for (std::size_t k = 0; k < reaction_count; ++k) {
-                expect(relative(to_si(q_s.forward[k]), q.forward[k].value(), 1.0e-12))
-                  << s.name << k;
-                expect(relative(to_si(q_s.backward[k]), q.backward[k].value(), 1.0e-10))
-                  << s.name << k;
+            for (const auto k : canary::reaction_indices(0, reaction_count)) {
+                expect(relative(to_si(q_s.forward()[k]), q.forward()[k].value(), 1.0e-12))
+                  << s.name << k.value();
+                expect(relative(to_si(q_s.backward()[k]), q.backward()[k].value(), 1.0e-10))
+                  << s.name << k.value();
             }
             // The SI rates converted, so that only the exchange is compared.
             canary::RatesOfProgress<double, scaled, reaction_count> q_converted {};
-            for (std::size_t k = 0; k < reaction_count; ++k) {
-                q_converted.forward[k] = canary::convert<scaled>(q.forward[k], reference_scales);
-                q_converted.backward[k] = canary::convert<scaled>(q.backward[k], reference_scales);
+            for (const auto k : canary::reaction_indices(0, reaction_count)) {
+                q_converted.forward()[k] =
+                  canary::convert<scaled>(q.forward()[k], reference_scales);
+                q_converted.backward()[k] =
+                  canary::convert<scaled>(q.backward()[k], reference_scales);
             }
             const auto cv = canary::chemistry_vibration_source(exchange, mech, q, state);
             const auto cv_s =
@@ -2138,31 +2161,71 @@ void test_multi_temperature_kinetics()
         expect(arbitrary_names.electron_impact_ionisation[0].ionisation_energy ==
                reference.electron_impact_ionisation[0].ionisation_energy);
 
-        auto changed = mech;
-        changed.reactions[38].reactants[spectator.value()] = 2;
-        changed.reactions[38].products[spectator.value()] = 2;
-        expect(error_message([&] { (void)build(built.species, changed, names); }) == "no exception");
-        changed.reactions[38].products[spectator.value()] = 3;
-        rejects(built.species, changed, "no other net species changes");
-        changed.reactions[38].products[spectator.value()] = 1;
-        rejects(built.species, changed, "no other net species changes");
+        auto spectator_input = canary::air11_kim_jo;
+        auto& spectator_reaction = spectator_input.reactions[38];
+        spectator_reaction.reactants.entries[spectator_reaction.reactants.count++] = {"N2", 2};
+        spectator_reaction.products.entries[spectator_reaction.products.count++] = {"N2", 2};
+        const auto with_spectator =
+          canary::make_reaction_mechanism(spectator_input,
+                                          canary::reaction_species(canary::air11_species),
+                                          si_scales,
+                                          p0,
+                                          gas);
+        expect(error_message([&] { (void)build(built.species, with_spectator, names); }) ==
+               "no exception");
+
+        const auto rejects_record = [&](const auto& record, auto reason) {
+            const auto message = error_message([&] {
+                canary::detail::check_ionisation_participants(record,
+                                                              names,
+                                                              built.species,
+                                                              source,
+                                                              carrier,
+                                                              canary::ReactionIndex {38});
+            });
+            expect(message.find(reason) != std::string::npos) << message;
+        };
+        auto changed = with_spectator.reactions()[canary::ReactionIndex {38}];
+        changed.products()[spectator] = 3;
+        rejects_record(changed, "no other net species changes");
+        changed.products()[spectator] = 1;
+        rejects_record(changed, "no other net species changes");
         for (const int count : {0, 1, 3}) {
-            changed = mech;
-            changed.reactions[38].products[carrier.value()] = count;
-            rejects(built.species, changed, "net electron production +1");
+            changed = mech.reactions()[canary::ReactionIndex {38}];
+            changed.products()[carrier] = count;
+            rejects_record(changed, "net electron production +1");
         }
-        changed = mech;
-        changed.reactions[38].reactants[carrier.value()] = 0;
-        changed.reactions[38].products[carrier.value()] = 1;
-        rejects(built.species, changed, "incident electron");
-        changed = mech;
-        changed.reactions[38].products[source.value()] = 1;
-        rejects(built.species, changed, "must consume one");
+        changed = mech.reactions()[canary::ReactionIndex {38}];
+        changed.reactants()[carrier] = 0;
+        changed.products()[carrier] = 1;
+        rejects_record(changed, "incident electron");
+        changed = mech.reactions()[canary::ReactionIndex {38}];
+        changed.products()[source] = 1;
+        rejects_record(changed, "must consume one");
         for (const int count : {0, 2}) {
-            changed = mech;
-            changed.reactions[38].products[ion.value()] = count;
-            rejects(built.species, changed, "must produce one ion");
+            changed = mech.reactions()[canary::ReactionIndex {38}];
+            changed.products()[ion] = count;
+            rejects_record(changed, "must produce one ion");
         }
+        // A reaction may conserve charge and nuclei while consuming two neutrals.
+        // This exchange model requires one neutral consumed per reaction.
+        auto unsupported_input = canary::air11_kim_jo;
+        auto& unsupported_reaction = unsupported_input.reactions[38];
+        for (int i = 0; i < unsupported_reaction.reactants.count; ++i) {
+            auto& coefficient = unsupported_reaction.reactants.entries[i];
+            if (std::string_view(coefficient.name) == "O") { coefficient.value = 2; }
+        }
+        for (int i = 0; i < unsupported_reaction.products.count; ++i) {
+            auto& coefficient = unsupported_reaction.products.entries[i];
+            coefficient.value = std::string_view(coefficient.name) == "e-" ? 3 : 2;
+        }
+        const auto unsupported =
+          canary::make_reaction_mechanism(unsupported_input,
+                                          canary::reaction_species(canary::air11_species),
+                                          si_scales,
+                                          p0,
+                                          gas);
+        rejects(built.species, unsupported, "must consume one");
         const double q = built.species.charge[ion.value()].value();
         const double nan = std::numeric_limits<double>::quiet_NaN();
         const double inf = std::numeric_limits<double>::infinity();

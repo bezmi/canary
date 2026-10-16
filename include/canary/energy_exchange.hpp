@@ -376,8 +376,9 @@ ChemistryVibrationCoupling<P, U>
     }
     coupling.reaction = ReactionIndex {static_cast<std::size_t>(input.reaction)};
     coupling.species = known_species(names, input.species, "species");
-    const Reaction<P, U, N>& r = mechanism.reactions[coupling.reaction.value()];
-    if (r.products[coupling.species.value()] == r.reactants[coupling.species.value()]) {
+    const auto r_records = mechanism.reactions();
+    const Reaction<P, U, N>& r = r_records[coupling.reaction];
+    if (r.products()[coupling.species] == r.reactants()[coupling.species]) {
         throw ParameterError(std::format("species \"{}\" has no net change in reaction {}",
                                          input.species,
                                          input.reaction));
@@ -732,12 +733,13 @@ CANARY_HOST_DEVICE T coupling_energy_rate(const ChemistryVibrationCoupling<P, U>
     const T x_derivative = x - T(x_value);
     // NOLINTNEXTLINE(misc-static-assert): run-time reaction index
     CANARY_ASSERT(coupling.reaction.value() < R);
-    const Reaction<P, U, N>& r = mechanism.reactions[coupling.reaction.value()];
-    const int dnu = r.products[coupling.species.value()] - r.reactants[coupling.species.value()];
+    const auto r_records = mechanism.reactions();
+    const Reaction<P, U, N>& r = r_records[coupling.reaction];
+    const int dnu = r.products()[coupling.species] - r.reactants()[coupling.species];
     const auto made = static_cast<Real>(dnu > 0 ? dnu : 0);
     const auto destroyed = static_cast<Real>(dnu < 0 ? -dnu : 0);
-    const T q_f = rates.forward[coupling.reaction.value()].value();
-    const T q_b = rates.backward[coupling.reaction.value()].value();
+    const T q_f = rates.forward()[coupling.reaction].value();
+    const T q_b = rates.backward()[coupling.reaction].value();
     const T production = T(made * q_f) + T(destroyed * q_b);
     const T loss = T(destroyed * q_f) + T(made * q_b);
     const auto theta_v = static_cast<Real>(coupling.vibrational_temperature.value());
@@ -1144,6 +1146,58 @@ VibrationElectronCoupling<P, U>
     return coupling;
 }
 
+// Validate the net participants and charge transfer of electron-impact ionisation.
+template <std::floating_point P, UnitSystem U, std::size_t N>
+void check_ionisation_participants(const Reaction<P, U, N>& r,
+                                   const std::array<std::string_view, N>& names,
+                                   const SpeciesData<P, U, N>& species,
+                                   SpeciesIndex source,
+                                   SpeciesIndex electron,
+                                   ReactionIndex reaction)
+{
+    if (source == electron) { throw ParameterError("the ionised species must be a heavy species"); }
+    if (species.charge[source.value()].value() != P(0)) {
+        throw ParameterError("the ionised species must be neutral");
+    }
+    const P electron_charge = species.charge[electron.value()].value();
+    if (!std::isfinite(electron_charge) || !(electron_charge < P(0))) {
+        throw ParameterError("the electron charge must be finite and negative");
+    }
+    // Widen before subtraction so malformed stored coefficients cannot overflow.
+    const auto net = [&](SpeciesIndex i) {
+        return std::int64_t {r.products()[i]} - std::int64_t {r.reactants()[i]};
+    };
+    if (net(source) != -1) {
+        throw ParameterError(std::format(R"(reaction {} must consume one "{}" (net change -1))",
+                                         reaction.value(),
+                                         names[source.value()]));
+    }
+    if (r.reactants()[electron] < 1 || net(electron) != 1) {
+        throw ParameterError(
+          std::format("reaction {} must have an incident electron and net electron production +1",
+                      reaction.value()));
+    }
+    OptionalSpeciesIndex ion;
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        if (i == source || i == electron || net(i) == 0) { continue; }
+        if (net(i) != 1 || ion) {
+            throw ParameterError(std::format(
+              "reaction {} must produce one ion (net change +1) with no other net species changes",
+              reaction.value()));
+        }
+        ion = OptionalSpeciesIndex {i};
+    }
+    if (!ion) {
+        throw ParameterError(
+          std::format("reaction {} must produce one ion (net change +1)", reaction.value()));
+    }
+    if (species.charge[(*ion).value()].value() != -electron_charge) {
+        throw ParameterError(std::format(
+          R"(product ion "{}" must have charge opposite to the electron charge)",
+          names[(*ion).value()]));
+    }
+}
+
 template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t R>
 ElectronImpactIonisationCoupling<P, U>
   make_ionisation_coupling(const ElectronImpactIonisationInput& input,
@@ -1160,50 +1214,12 @@ ElectronImpactIonisationCoupling<P, U>
     }
     coupling.reaction = ReactionIndex {static_cast<std::size_t>(input.reaction)};
     coupling.species = known_species(names, input.species, "species");
-    if (coupling.species == electron) {
-        throw ParameterError("the ionised species must be a heavy species");
-    }
-    if (species.charge[coupling.species.value()].value() != P(0)) {
-        throw ParameterError("the ionised species must be neutral");
-    }
-    const P electron_charge = species.charge[electron.value()].value();
-    if (!std::isfinite(electron_charge) || !(electron_charge < P(0))) {
-        throw ParameterError("the electron charge must be finite and negative");
-    }
-    const Reaction<P, U, N>& r = mechanism.reactions[coupling.reaction.value()];
-    // Widen before subtraction so malformed stored coefficients cannot overflow.
-    const auto net = [&](SpeciesIndex i) {
-        return std::int64_t {r.products[i.value()]} - std::int64_t {r.reactants[i.value()]};
-    };
-    if (net(coupling.species) != -1) {
-        throw ParameterError(std::format(R"(reaction {} must consume one "{}" (net change -1))",
-                                         input.reaction,
-                                         input.species));
-    }
-    if (r.reactants[electron.value()] < 1 || net(electron) != 1) {
-        throw ParameterError(std::format(
-          "reaction {} must have an incident electron and net electron production +1",
-          input.reaction));
-    }
-    OptionalSpeciesIndex ion;
-    for (const SpeciesIndex i : species_indices(0, N)) {
-        if (i == coupling.species || i == electron || net(i) == 0) { continue; }
-        if (net(i) != 1 || ion) {
-            throw ParameterError(std::format(
-              "reaction {} must produce one ion (net change +1) with no other net species changes",
-              input.reaction));
-        }
-        ion = OptionalSpeciesIndex {i};
-    }
-    if (!ion) {
-        throw ParameterError(std::format("reaction {} must produce one ion (net change +1)",
-                                         input.reaction));
-    }
-    if (species.charge[(*ion).value()].value() != -electron_charge) {
-        throw ParameterError(std::format(
-          R"(product ion "{}" must have charge opposite to the electron charge)",
-          names[(*ion).value()]));
-    }
+    check_ionisation_participants(mechanism.reactions()[coupling.reaction],
+                                  names,
+                                  species,
+                                  coupling.species,
+                                  electron,
+                                  coupling.reaction);
     const auto energy = positive_parameter<double>(input.ionisation_energy, "ionisation energy");
     // Energy per particle.
     const Dimension particle_energy {.mass = 1, .length = 2, .time = -2, .count = -1};
@@ -1825,8 +1841,8 @@ CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M> electron_impact_ionisation_
          exchange.electron_impact_ionisation) {
         // NOLINTNEXTLINE(misc-static-assert): run-time reaction index
         CANARY_ASSERT(coupling.reaction.value() < R);
-        const T net = T(rates.forward[coupling.reaction.value()].value() -
-                        rates.backward[coupling.reaction.value()].value());
+        const T net = T(rates.forward()[coupling.reaction].value() -
+                        rates.backward()[coupling.reaction].value());
         q = q - T(net * coupling.ionisation_energy);
     }
     out[(*exchange.electron_mode).value()] = PowerDensity<T, U> {q};

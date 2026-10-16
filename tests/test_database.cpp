@@ -307,8 +307,12 @@ int main()
                                                 scales,
                                                 canary::Pressure<double, canary::si> {1e5},
                                                 gas11.model);
-              expect(built.reactions[21].reactants == mechanism11.reactions[21].reactants);
-              expect(built.reactions[38].backward.A == mechanism11.reactions[38].backward.A);
+              for (const auto i : canary::species_indices(0, 11)) {
+                  expect(built.reactions()[canary::ReactionIndex {21}].reactants()[i] ==
+                         mechanism11.reactions()[canary::ReactionIndex {21}].reactants()[i]);
+              }
+              expect(built.reactions()[canary::ReactionIndex {38}].backward.A ==
+                     mechanism11.reactions()[canary::ReactionIndex {38}].backward.A);
           });
         exercise(
           [] {
@@ -1027,17 +1031,23 @@ int main()
                                               canary::reaction_species(canary::air5_species),
                                               scales);
             const auto from_header = canary::make_air5_kim_jo(scales);
-            for (std::size_t k = 0; k < 13; ++k) {
-                const auto& a = from_file.reactions[k];
-                const auto& b = from_header.reactions[k];
-                expect(a.reactants == b.reactants && a.products == b.products &&
-                       a.coefficient_change == b.coefficient_change)
-                  << k;
+            for (const auto k : canary::reaction_indices(0, 13)) {
+                const auto a_records = from_file.reactions();
+                const auto& a = a_records[k];
+                const auto b_records = from_header.reactions();
+                const auto& b = b_records[k];
+                for (const auto i : canary::species_indices(0, 5)) {
+                    expect(a.reactants()[i] == b.reactants()[i] &&
+                           a.products()[i] == b.products()[i])
+                      << k.value() << i.value();
+                    expect(a.efficiencies()[i] == b.efficiencies()[i]) << k.value() << i.value();
+                }
+                expect(a.coefficient_change == b.coefficient_change) << k.value();
                 expect(a.forward.A == b.forward.A && a.forward.n == b.forward.n &&
                        a.forward.activation_temperature == b.forward.activation_temperature)
-                  << k;
-                expect(a.backward_model == b.backward_model && a.third_body == b.third_body) << k;
-                expect(a.efficiencies == b.efficiencies) << k;
+                  << k.value();
+                expect(a.backward_model == b.backward_model && a.third_body == b.third_body)
+                  << k.value();
             }
         });
     };
@@ -1629,8 +1639,11 @@ int main()
         const auto gas = canary::make_air11_three_temperature(scales);
         const auto reference = canary::make_air11_kim_jo(scales);
         const auto result = canary::make_reaction_mechanism(mechanism, copied, scales);
-        expect(result.mass == gas.species.mass);
-        expect(result.reactions[38].products == reference.reactions[38].products);
+        for (const auto i : canary::species_indices(0, 11)) {
+            expect(result.mass()[i] == gas.species.mass[i.value()]);
+            expect(result.reactions()[canary::ReactionIndex {38}].products()[i] ==
+                   reference.reactions()[canary::ReactionIndex {38}].products()[i]);
+        }
         auto file = db::read_species_file(air11_path());
         file.species.at("O+").charge = 2;
         const auto invalid = canary::reaction_species(db::nasa9_species<4>(file, air11_names));
@@ -1697,16 +1710,31 @@ int main()
             changed.electron_impact_ionisation[0].reaction = index;
             check(changed, gas.species, mechanism, "reaction index must be between 0 and 39");
         }
-        auto changed = mechanism;
-        changed.reactions[38].products[electron.value()] = 1;
-        check(file, gas.species, changed, "net electron production +1");
+        const auto source = *canary::detail::species_index(air11_names, "O");
+        const auto check_record = [&](const auto& record, std::string_view reason) {
+            std::string message;
+            try {
+                canary::detail::check_ionisation_participants(record,
+                                                              air11_names,
+                                                              gas.species,
+                                                              source,
+                                                              electron,
+                                                              canary::ReactionIndex {38});
+            } catch (const canary::ParameterError& error) {
+                message = error.what();
+            }
+            expect(message.find(reason) != std::string::npos) << message;
+        };
+        auto changed = mechanism.reactions()[canary::ReactionIndex {38}];
+        changed.products()[electron] = 1;
+        check_record(changed, "net electron production +1");
         auto species = gas.species;
         species.charge[ion.value()] =
           canary::Charge<double, canary::si> {2.0 * species.charge[ion.value()].value()};
         check(file, species, mechanism, "must have charge opposite to the electron charge");
-        changed = mechanism;
-        changed.reactions[38].products[spectator.value()] += 1;
-        check(file, gas.species, changed, "no other net species changes");
+        changed = mechanism.reactions()[canary::ReactionIndex {38}];
+        changed.products()[spectator] += 1;
+        check_record(changed, "no other net species changes");
     };
 
     "electron exchange conversion rejects incomplete parameters and unsupported models"_test = [] {
