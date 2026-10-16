@@ -934,23 +934,6 @@ CANARY_HOST_DEVICE GuptaYosValues<T> gupta_yos_values(const GuptaYosTransport<P,
     };
 }
 
-// 1 / D_ij = p Delta(1)_ij / (k_B T) of GuptaYosTransport, i = j included.
-template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N>
-    requires ScalarWith<T, P> && HasLog<T> && HasExp<T>
-CANARY_HOST_DEVICE std::array<std::array<T, N>, N> gupta_yos_inverse_binary_diffusion(
-  const GuptaYosTransport<P, U, N>& model, Temperature<T, U> temp, Pressure<T, U> p)
-{
-    const CollisionTermValues<T, N> delta = collision_term_values<false>(model, temp);
-    const T p_over_kt = T(p.value() / T(model.boltzmann.value() * temp.value()));
-    std::array<std::array<T, N>, N> out {};
-    for (const SpeciesIndex i : species_indices(0, N)) {
-        for (const SpeciesIndex j : species_indices(0, N)) {
-            out[i.value()][j.value()] = T(delta.delta_1[i.value()][j.value()] * p_over_kt);
-        }
-    }
-    return out;
-}
-
 // D_ij = k_B T / (p Delta(1)_ij) of GuptaYosTransport, i = j included.
 template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N>
     requires ScalarWith<T, P> && HasLog<T> && HasExp<T>
@@ -1000,6 +983,49 @@ CANARY_HOST_DEVICE BinaryDiffusionCoefficients<T, U, N>
         for (const SpeciesIndex j : species_indices(0, N)) {
             out[i.value()][j.value()] = DiffusionCoefficient<T, U> {d[i.value()][j.value()]};
         }
+    }
+    return out;
+}
+
+// Complete one diffusion row after accumulating partners in species order.
+// A zero value-part denominator retains the constant-zero result convention.
+template <Scalar T, UnitSystem U, std::size_t N>
+CANARY_HOST_DEVICE DiffusionCoefficient<T, U>
+  mixture_diffusion_row(const std::array<T, N>& x, SpeciesIndex i, T sum)
+{
+    using V = ScalarTraits<T>::value_type;
+    T others = T(V(0));
+    for (const SpeciesIndex j : species_indices(0, N)) {
+        if (j == i) { continue; }
+        others = others + x[j.value()];
+    }
+    return DiffusionCoefficient<T, U> {
+      ScalarTraits<T>::value(sum) == V(0) ? T(V(0)) : T(others / sum)};
+}
+
+// Accumulate direct p Delta(1)_ij / (k_B T) values without pair matrices.
+template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N>
+    requires ScalarWith<T, P> && HasLog<T> && HasExp<T>
+CANARY_HOST_DEVICE std::array<DiffusionCoefficient<T, U>, N>
+  mixture_diffusion(const GuptaYosTransport<P, U, N>& model,
+                    const std::array<T, N>& x,
+                    Temperature<T, U> temp,
+                    Pressure<T, U> p)
+{
+    using V = ScalarTraits<T>::value_type;
+    const T ln_t = math::log(temp.value());
+    const T p_over_kt = T(p.value() / T(model.boltzmann.value() * temp.value()));
+    std::array<T, N> sums {};
+    for (auto& sum : sums) { sum = T(V(0)); }
+    std::array<DiffusionCoefficient<T, U>, N> out {};
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        for (const SpeciesIndex j : species_indices(i.value() + 1, N)) {
+            const T delta = collision_term(model.collision[i.value()][j.value()].delta_1, ln_t);
+            const T inverse = T(delta * p_over_kt);
+            sums[i.value()] = sums[i.value()] + T(x[j.value()] * inverse);
+            sums[j.value()] = sums[j.value()] + T(x[i.value()] * inverse);
+        }
+        out[i.value()] = mixture_diffusion_row<T, U>(x, i, sums[i.value()]);
     }
     return out;
 }
@@ -1184,9 +1210,8 @@ CANARY_HOST_DEVICE std::array<DiffusionCoefficient<T, U>, N>
                                  const NormalisedComposition<T, U, N>& mix,
                                  const State& state)
 {
-    return detail::mixture_diffusion<T, U>(
-      detail::mole_fractions(model.mass, mix),
-      detail::gupta_yos_inverse_binary_diffusion(model, state.temp, state.p));
+    return detail::mixture_diffusion(
+      model, detail::mole_fractions(model.mass, mix), state.temp, state.p);
 }
 
 namespace detail
