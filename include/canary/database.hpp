@@ -69,7 +69,7 @@
 // Reactions files hold a mechanism of reversible reactions (see
 // reactions.hpp), in SI units per mole:
 //   {
-//     "format": "canary-reactions-1",
+//     "format": "canary-reactions-2",
 //     "units": {"quantity": "mol", "length": "m", "time": "s", "temperature": "K"},
 //     "temperature_limits": {"lower": 300.0, "upper": 30000.0},
 //     "reactions": [
@@ -285,7 +285,7 @@ struct SpeciesFile {
 };
 
 // Value of the "format" key of a reactions file.
-inline constexpr std::string_view reactions_format = "canary-reactions-1";
+inline constexpr std::string_view reactions_format = "canary-reactions-2";
 
 // Units of the values in a reactions file: amounts of substance in mol,
 // lengths in m, times in s and temperatures in K. Only these are accepted.
@@ -306,6 +306,15 @@ struct TemperatureLimits {
     friend bool operator==(const TemperatureLimits&, const TemperatureLimits&) = default;
 };
 
+// Wire representation of a physical temperature requirement. Species is used
+// only by vibration and bound_electronic; conversion validates field applicability.
+struct PhysicalTemperatureRecord {
+    std::string kind;
+    std::optional<std::string> species;
+    friend bool operator==(const PhysicalTemperatureRecord&,
+                           const PhysicalTemperatureRecord&) = default;
+};
+
 // A rate constant: model "arrhenius" with A, n and activation_temperature
 // and optionally translational_exponent (see ArrheniusInput), or model
 // "equilibrium" with none of them.
@@ -315,7 +324,8 @@ struct RateRecord {
     std::optional<double> n;
     std::optional<double> activation_temperature;
     std::optional<double> translational_exponent;
-    std::optional<std::string> other_temperature;
+    std::optional<PhysicalTemperatureRecord> other_temperature;
+    std::optional<PhysicalTemperatureRecord> temperature;
 
     friend bool operator==(const RateRecord&, const RateRecord&) = default;
 };
@@ -755,6 +765,32 @@ SpeciesCoefficients<K> species_coefficients(const std::map<std::string, double>&
     return out;
 }
 
+inline std::optional<PhysicalTemperatureInput>
+  physical_temperature_input(const std::optional<PhysicalTemperatureRecord>& record,
+                             std::string_view role)
+try {
+    if (!record) { return std::nullopt; }
+    const auto& kind = record->kind;
+    if (kind == "vibration" || kind == "bound_electronic") {
+        if (!record->species || record->species->empty()) {
+            throw ParameterError("temperature requirement needs a species");
+        }
+        if (kind == "vibration") { return VibrationTemperatureInput {record->species->c_str()}; }
+        return BoundElectronicTemperatureInput {record->species->c_str()};
+    }
+    if (kind != "translation" && kind != "rotation" && kind != "free_electron") {
+        throw ParameterError(std::format("unknown temperature kind \"{}\"", kind));
+    }
+    if (record->species) {
+        throw ParameterError("temperature requirement does not take a species");
+    }
+    if (kind == "translation") { return TranslationTemperatureInput {}; }
+    if (kind == "rotation") { return RotationTemperatureInput {}; }
+    return FreeElectronTemperatureInput {};
+} catch (const ParameterError& error) {
+    throw ParameterError(std::format("{} rate: {}", role, error.what()));
+}
+
 // The Arrhenius parameters of a rate record. Throws ParameterError when the
 // model is not "arrhenius" or a parameter is missing.
 inline ArrheniusInput arrhenius_input(const RateRecord& rate, std::string_view role)
@@ -766,12 +802,17 @@ inline ArrheniusInput arrhenius_input(const RateRecord& rate, std::string_view r
     if (!rate.A || !rate.n || !rate.activation_temperature) {
         throw ParameterError(std::format("{} rate needs A, n and activation_temperature", role));
     }
+    if (rate.temperature) {
+        throw ParameterError(std::format(
+          "{} rate: equilibrium temperature is only valid for an equilibrium backward rate",
+          role));
+    }
     return {
       .A = *rate.A,
       .n = *rate.n,
       .activation_temperature = *rate.activation_temperature,
       .translational_exponent = rate.translational_exponent.value_or(1.0),
-      .other_temperature = rate.other_temperature ? rate.other_temperature->c_str() : nullptr,
+      .other_temperature = physical_temperature_input(rate.other_temperature, role),
     };
 }
 
@@ -779,7 +820,7 @@ inline ArrheniusInput arrhenius_input(const RateRecord& rate, std::string_view r
 
 // Model inputs of the R reactions of file, in file order, with at most K
 // species in each list of species coefficients, for
-// make_reaction_mechanism. The result owns names, equations, temperature labels
+// make_reaction_mechanism. The result owns names, equations, temperature requirements
 // and numeric data. Throws ParameterError when
 // file does not have R reactions, and (with the reaction index and equation) when a list has more
 // than K species, the forward rate is not an Arrhenius rate with A, n and activation_temperature,
@@ -813,9 +854,11 @@ OwnedInput<MechanismInput<R, K>> mechanism_input(const ReactionsFile& file)
                 }
                 reaction.backward_model = BackwardRateModel::equilibrium;
                 if (record.backward.other_temperature) {
-                    reaction.backward.other_temperature =
-                      record.backward.other_temperature->c_str();
+                    throw ParameterError(
+                      "backward rate: an equilibrium backward rate uses equilibrium_temperature");
                 }
+                reaction.equilibrium_temperature =
+                  detail::physical_temperature_input(record.backward.temperature, "backward");
             } else {
                 reaction.backward_model = BackwardRateModel::arrhenius;
                 reaction.backward = detail::arrhenius_input(record.backward, "backward");

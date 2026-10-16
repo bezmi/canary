@@ -74,6 +74,7 @@ inline constexpr MechanismInput<13, 5> air5_kim_jo {
               .n = 0.0,
               .activation_temperature = 0.0,
             },
+          .equilibrium_temperature = TranslationTemperatureInput {},
           .third_body = false,
           .efficiencies =
             {
@@ -133,6 +134,7 @@ inline constexpr MechanismInput<13, 5> air5_kim_jo {
               .n = 0.0,
               .activation_temperature = 0.0,
             },
+          .equilibrium_temperature = TranslationTemperatureInput {},
           .third_body = false,
           .efficiencies =
             {
@@ -192,6 +194,7 @@ inline constexpr MechanismInput<13, 5> air5_kim_jo {
               .n = 0.0,
               .activation_temperature = 0.0,
             },
+          .equilibrium_temperature = TranslationTemperatureInput {},
           .third_body = false,
           .efficiencies =
             {
@@ -247,6 +250,7 @@ inline constexpr MechanismInput<13, 5> air5_kim_jo {
               .n = 0.0,
               .activation_temperature = 0.0,
             },
+          .equilibrium_temperature = TranslationTemperatureInput {},
           .third_body = false,
           .efficiencies =
             {
@@ -306,6 +310,7 @@ inline constexpr MechanismInput<13, 5> air5_kim_jo {
               .n = 0.0,
               .activation_temperature = 0.0,
             },
+          .equilibrium_temperature = TranslationTemperatureInput {},
           .third_body = false,
           .efficiencies =
             {
@@ -365,6 +370,7 @@ inline constexpr MechanismInput<13, 5> air5_kim_jo {
               .n = 0.0,
               .activation_temperature = 0.0,
             },
+          .equilibrium_temperature = TranslationTemperatureInput {},
           .third_body = false,
           .efficiencies =
             {
@@ -420,6 +426,7 @@ inline constexpr MechanismInput<13, 5> air5_kim_jo {
               .n = 0.0,
               .activation_temperature = 0.0,
             },
+          .equilibrium_temperature = TranslationTemperatureInput {},
           .third_body = false,
           .efficiencies =
             {
@@ -479,6 +486,7 @@ inline constexpr MechanismInput<13, 5> air5_kim_jo {
               .n = 0.0,
               .activation_temperature = 0.0,
             },
+          .equilibrium_temperature = TranslationTemperatureInput {},
           .third_body = false,
           .efficiencies =
             {
@@ -538,6 +546,7 @@ inline constexpr MechanismInput<13, 5> air5_kim_jo {
               .n = 0.0,
               .activation_temperature = 0.0,
             },
+          .equilibrium_temperature = TranslationTemperatureInput {},
           .third_body = false,
           .efficiencies =
             {
@@ -593,6 +602,7 @@ inline constexpr MechanismInput<13, 5> air5_kim_jo {
               .n = 0.0,
               .activation_temperature = 0.0,
             },
+          .equilibrium_temperature = TranslationTemperatureInput {},
           .third_body = false,
           .efficiencies =
             {
@@ -648,6 +658,7 @@ inline constexpr MechanismInput<13, 5> air5_kim_jo {
               .n = 0.0,
               .activation_temperature = 0.0,
             },
+          .equilibrium_temperature = TranslationTemperatureInput {},
           .third_body = true,
           .efficiencies =
             {
@@ -728,6 +739,7 @@ inline constexpr MechanismInput<13, 5> air5_kim_jo {
               .n = 0.0,
               .activation_temperature = 0.0,
             },
+          .equilibrium_temperature = TranslationTemperatureInput {},
           .third_body = false,
           .efficiencies =
             {
@@ -787,6 +799,7 @@ inline constexpr MechanismInput<13, 5> air5_kim_jo {
               .n = 0.0,
               .activation_temperature = 0.0,
             },
+          .equilibrium_temperature = TranslationTemperatureInput {},
           .third_body = false,
           .efficiencies =
             {

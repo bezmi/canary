@@ -1,5 +1,5 @@
 {
-   "format": "canary-reactions-1",
+   "format": "canary-reactions-2",
    "units": {
       "quantity": "mol",
       "length": "m",
@@ -20,6 +20,7 @@
             "N": 2.0
          },
          "forward": {
+            "other_temperature": {"kind": "vibration", "species": "N2"},
             "model": "arrhenius",
             "A": 7000000000000000.0,
             "n": -1.6,
@@ -27,7 +28,8 @@
             "translational_exponent": 0.5
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "third_body": {
             "efficiencies": {
@@ -49,6 +51,7 @@
             "O": 2.0
          },
          "forward": {
+            "other_temperature": {"kind": "vibration", "species": "O2"},
             "model": "arrhenius",
             "A": 2000000000000000.0,
             "n": -1.5,
@@ -56,7 +59,8 @@
             "translational_exponent": 0.5
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "third_body": {
             "efficiencies": {
@@ -79,6 +83,7 @@
             "O": 1.0
          },
          "forward": {
+            "other_temperature": {"kind": "vibration", "species": "NO"},
             "model": "arrhenius",
             "A": 5000000000.0,
             "n": 0.0,
@@ -86,7 +91,8 @@
             "translational_exponent": 0.5
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "third_body": {
             "efficiencies": {
@@ -116,7 +122,8 @@
             "activation_temperature": 19450.0
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "r4"
       },
@@ -137,7 +144,8 @@
             "activation_temperature": 38400.0
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "r5"
       }

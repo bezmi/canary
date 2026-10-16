@@ -157,13 +157,23 @@ bool same_coefficients(const canary::SpeciesCoefficients<K>& a,
     return true;
 }
 
-// The same other temperature (both absent, or the same name).
-bool same_other(const canary::ArrheniusInput& a, const canary::ArrheniusInput& b)
+// Compare physical identities and species text independently of ownership.
+bool same_temperature(const std::optional<canary::PhysicalTemperatureInput>& a,
+                      const std::optional<canary::PhysicalTemperatureInput>& b)
 {
-    if (a.other_temperature == nullptr || b.other_temperature == nullptr) {
-        return a.other_temperature == b.other_temperature;
+    if (!a || !b) { return a.has_value() == b.has_value(); }
+    if (a->index() != b->index()) { return false; }
+    if (const auto* v = std::get_if<canary::VibrationTemperatureInput>(&*a)) {
+        const auto* w = std::get_if<canary::VibrationTemperatureInput>(&*b);
+        if (!v->species || !w->species) { return v->species == w->species; }
+        return std::string_view(v->species) == w->species;
     }
-    return std::string_view(a.other_temperature) == b.other_temperature;
+    if (const auto* v = std::get_if<canary::BoundElectronicTemperatureInput>(&*a)) {
+        const auto* w = std::get_if<canary::BoundElectronicTemperatureInput>(&*b);
+        if (!v->species || !w->species) { return v->species == w->species; }
+        return std::string_view(v->species) == w->species;
+    }
+    return true;
 }
 
 bool same_correction(const canary::RelaxationCorrectionInput& a,
@@ -176,7 +186,8 @@ bool same_correction(const canary::RelaxationCorrectionInput& a,
 bool same_rate(const canary::ArrheniusInput& a, const canary::ArrheniusInput& b)
 {
     return a.A == b.A && a.n == b.n && a.activation_temperature == b.activation_temperature &&
-           a.translational_exponent == b.translational_exponent && same_other(a, b);
+           a.translational_exponent == b.translational_exponent &&
+           same_temperature(a.other_temperature, b.other_temperature);
 }
 
 // air5_collision_integrals.json with one textual replacement.
@@ -402,7 +413,7 @@ int main()
         static_assert(!std::is_convertible_v<Owner, Input>);
         static_assert(!std::is_constructible_v<canary::detail::OwnedSpeciesName,
                                                canary::detail::OwnedReactionEquation>);
-        static_assert(!std::is_constructible_v<canary::detail::OwnedTemperatureLabel,
+        static_assert(!std::is_constructible_v<canary::detail::OwnedSpeciesName,
                                                canary::detail::OwnedElementName>);
         const auto make_owner = [] {
             std::string name = "nitrogen_species_with_a_long_owned_name";
@@ -946,6 +957,8 @@ int main()
         expect(file.reactions[10].third_body.has_value());
         db::RateRecord equilibrium {};
         equilibrium.model = "equilibrium";
+        equilibrium.temperature =
+          db::PhysicalTemperatureRecord {.kind = "translation", .species = {}};
         expect(file.reactions[12].backward == equilibrium);
     };
 
@@ -985,7 +998,7 @@ int main()
 
     "another reactions format, other units, or a missing file are errors"_test = [] {
         expect(throws_database_error(
-          [] { db::parse_reactions(kim_jo_with("canary-reactions-1", "canary-reactions-2")); }));
+          [] { db::parse_reactions(kim_jo_with("canary-reactions-2", "canary-reactions-1")); }));
         expect(throws_database_error([] {
             db::parse_reactions(kim_jo_with(R"("quantity": "mol")", R"("quantity": "kmol")"));
         }));
@@ -1021,6 +1034,7 @@ int main()
                 expect(same_rate(a.forward, b.forward)) << k;
                 expect(a.backward_model == b.backward_model) << k;
                 expect(same_rate(a.backward, b.backward)) << k;
+                expect(same_temperature(a.equilibrium_temperature, b.equilibrium_temperature)) << k;
                 expect(a.third_body == b.third_body) << k;
                 expect(same_coefficients(a.efficiencies, b.efficiencies)) << k;
             }
@@ -1124,6 +1138,8 @@ int main()
                   expect(same_rate(a.forward, b.forward)) << k;
                   expect(a.backward_model == b.backward_model) << k;
                   expect(same_rate(a.backward, b.backward)) << k;
+                  expect(same_temperature(a.equilibrium_temperature, b.equilibrium_temperature))
+                    << k;
                   expect(a.third_body == b.third_body) << k;
                   expect(same_coefficients(a.efficiencies, b.efficiencies)) << k;
               }
@@ -1142,7 +1158,9 @@ int main()
           .n = -0.75,
           .activation_temperature = 12500.0,
           .translational_exponent = 0.25,
-          .other_temperature = "electron",
+          .other_temperature =
+            db::PhysicalTemperatureRecord {.kind = "free_electron", .species = {}},
+          .temperature = {},
         };
         const auto owner = db::mechanism_input<40, 11>(
           db::parse_reactions(db::write_reactions(file)));
@@ -1152,11 +1170,90 @@ int main()
               .n = -0.75,
               .activation_temperature = 12500.0,
               .translational_exponent = 0.25,
-              .other_temperature = "electron",
+              .other_temperature = canary::FreeElectronTemperatureInput {},
             };
             expect(input.reactions[38].backward_model == canary::BackwardRateModel::arrhenius);
             expect(same_rate(input.reactions[38].backward, expected));
         });
+    };
+
+    "physical temperature conversion validates kind and applicable species fields"_test = [] {
+        const auto original = db::read_reactions_file(air11_kim_jo_path());
+        for (const auto& bad : std::array {
+               db::PhysicalTemperatureRecord {.kind = "unknown", .species = {}},
+               db::PhysicalTemperatureRecord {.kind = "vibration", .species = {}},
+               db::PhysicalTemperatureRecord {.kind = "bound_electronic", .species = ""},
+               db::PhysicalTemperatureRecord {.kind = "translation", .species = "N2"},
+               db::PhysicalTemperatureRecord {.kind = "rotation", .species = "N2"},
+               db::PhysicalTemperatureRecord {.kind = "free_electron", .species = "e-"}}) {
+            for (const bool equilibrium : {false, true}) {
+                auto file = original;
+                if (equilibrium) {
+                    file.reactions[0].backward.temperature = bad;
+                } else {
+                    file.reactions[0].forward.other_temperature = bad;
+                }
+                expect(throws_parameter_error([&] { (void)db::mechanism_input<40, 11>(file); }));
+            }
+        }
+        auto file = original;
+        file.reactions[0].forward.temperature = file.reactions[0].backward.temperature;
+        expect(throws_parameter_error([&] { (void)db::mechanism_input<40, 11>(file); }));
+        file = original;
+        file.reactions[0].backward.other_temperature = file.reactions[0].forward.other_temperature;
+        expect(throws_parameter_error([&] { (void)db::mechanism_input<40, 11>(file); }));
+    };
+
+    "physical temperature owners retain short and long species names"_test = [] {
+        using namespace canary;
+        const UnitScales<double, si> scales {};
+        for (const bool electronic : {false, true}) {
+            for (const std::string& name :
+                 {std::string {"X"}, std::string {"nitrogen_species_with_a_long_owned_name"}}) {
+                const auto factory = [&] {
+                    auto species = air5_species;
+                    std::string transient = name;
+                    species[0].name = transient.c_str();
+                    auto r = air5_park.reactions[0];
+                    r.reactants.entries[0].name = transient.c_str();
+                    for (auto& entry : r.efficiencies.entries) {
+                        if (entry.name && std::string_view(entry.name) == "N2") {
+                            entry.name = transient.c_str();
+                        }
+                    }
+                    const PhysicalTemperatureInput requirement =
+                      electronic
+                        ? PhysicalTemperatureInput {BoundElectronicTemperatureInput {
+                            transient.c_str()}}
+                        : PhysicalTemperatureInput {VibrationTemperatureInput {transient.c_str()}};
+                    r.forward.other_temperature = requirement;
+                    r.equilibrium_temperature = requirement;
+                    const MechanismInput<1, 5> input {.temperature_lower = 300.0,
+                                                      .temperature_upper = 30000.0,
+                                                      .reactions = {r}};
+                    return std::pair {OwnedInput {input}, OwnedInput {species}};
+                };
+                const auto copied = [&] {
+                    const auto source = factory();
+                    return decltype(source)(source);
+                }();
+                const auto moved = [&] {
+                    auto source = copied;
+                    return decltype(source)(std::move(source));
+                }();
+                const auto gas =
+                  make_two_temperature_mixture(moved.second, air5_rotational_degrees, scales);
+                const auto mechanism = make_reaction_mechanism(moved.first,
+                                                               reaction_species(moved.second),
+                                                               scales,
+                                                               Pressure<double, si> {101325.0},
+                                                               gas.model);
+                expect(mechanism.reactions()[ReactionIndex {0}].forward.other_mode ==
+                       OptionalModeIndex {ModeIndex {0}});
+                expect(mechanism.reactions()[ReactionIndex {0}].backward.other_mode ==
+                       OptionalModeIndex {ModeIndex {0}});
+            }
+        }
     };
 
     "a forward rate requires an explicit model"_test = [] {
@@ -1603,9 +1700,15 @@ int main()
         expect(file.reactions.size() == 40_u);
         const db::ReactionRecord& n2e = file.reactions[21];
         expect(n2e.equation == "N2 + e- <=> N + N + e-");
-        expect(n2e.forward.other_temperature == std::optional<std::string> {"electron"});
-        expect(n2e.backward.other_temperature == std::optional<std::string> {"electron"});
-        expect(!file.reactions[0].forward.other_temperature.has_value());
+        expect(
+          n2e.forward.other_temperature ==
+          std::optional {db::PhysicalTemperatureRecord {.kind = "free_electron", .species = {}}});
+        expect(
+          n2e.backward.temperature ==
+          std::optional {db::PhysicalTemperatureRecord {.kind = "free_electron", .species = {}}});
+        expect(
+          file.reactions[0].forward.other_temperature ==
+          std::optional {db::PhysicalTemperatureRecord {.kind = "vibration", .species = "N2"}});
         const auto input_owner = db::mechanism_input<40, 11>(file);
         canary::detail::with_input(input_owner, [&](const auto& input) {
             expect(input.temperature_lower == canary::air11_kim_jo.temperature_lower);
@@ -1619,10 +1722,12 @@ int main()
                 expect(same_coefficients(a.products, b.products)) << k;
                 expect(a.backward_model == b.backward_model) << k;
                 expect(same_rate(a.backward, b.backward)) << k;
+                expect(same_temperature(a.equilibrium_temperature, b.equilibrium_temperature)) << k;
                 expect(a.third_body == b.third_body) << k;
                 expect(same_coefficients(a.efficiencies, b.efficiencies)) << k;
             }
-            expect(std::string_view(input.reactions[38].backward.other_temperature) == "electron");
+            expect(std::holds_alternative<canary::FreeElectronTemperatureInput>(
+              *input.reactions[38].equilibrium_temperature));
         });
     };
 

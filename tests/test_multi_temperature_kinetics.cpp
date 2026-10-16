@@ -91,6 +91,35 @@ static_assert(!AcceptsModeEnergyIndex<canary::SpeciesIndex>);
 static_assert(!AcceptsModeEnergyIndex<std::size_t>);
 static_assert(!AcceptsModeEnergyIndex<canary::OptionalModeIndex>);
 
+static_assert(!canary::HasReactionTemperatureModes<SpeciesQueryModel>);
+static_assert(canary::HasReactionTemperatureModes<Gas>);
+struct TemperatureQueryModel {
+    using parameter_type = double;
+    using units = si;
+    static constexpr std::size_t mode_count = 2;
+    canary::OptionalModeIndex selected;
+    friend canary::OptionalModeIndex species_vibration_mode(const TemperatureQueryModel& g,
+                                                            canary::SpeciesIndex)
+    { return g.selected; }
+    friend canary::OptionalModeIndex species_electronic_mode(const TemperatureQueryModel& g,
+                                                             canary::SpeciesIndex)
+    { return g.selected; }
+    friend canary::OptionalModeIndex electron_energy_mode(const TemperatureQueryModel& g)
+    { return g.selected; }
+};
+
+template <typename G>
+concept AcceptsScalarReactionTemperature =
+  requires(const G& gas,
+           const Mechanism& mechanism,
+           const canary::NormalisedComposition<double, si, 11>& mix,
+           Rho rho,
+           Temp t) {
+      canary::rates_of_progress(mechanism, gas, mix, rho, t, t);
+      canary::production_rates(mechanism, gas, mix, rho, t, t);
+  };
+static_assert(!AcceptsScalarReactionTemperature<Gas>);
+
 constexpr std::size_t species_count = 11;
 constexpr std::size_t reaction_count = 40;
 constexpr std::size_t mode_count = 2;
@@ -393,6 +422,9 @@ canary::ReactionInput<3> reaction(const char* equation,
     r.forward = forward;
     r.backward_model = backward_model;
     r.backward = backward;
+    if (backward_model == canary::BackwardRateModel::equilibrium) {
+        r.equilibrium_temperature = canary::TranslationTemperatureInput {};
+    }
     r.third_body = false;
     return r;
 }
@@ -994,17 +1026,20 @@ void test_multi_temperature_kinetics()
         for (const auto k : canary::reaction_indices(0, reaction_count)) {
             const auto r_records = mech.reactions();
             const auto& r = r_records[k];
-            const bool forward_electron = r.forward.translational_exponent != 1.0 &&
-                                          r.forward.other_mode == canary::ModeIndex {1};
+            const bool forward_electron =
+              r.forward.translational_exponent != 1.0 &&
+              r.forward.other_mode == canary::OptionalModeIndex {canary::ModeIndex {1}};
             expect(forward_electron == contains(forward_at_electron, k.value())) << k.value();
             const bool backward_electron = r.equilibrium_at_other_temperature;
             expect(backward_electron == contains(backward_at_electron, k.value())) << k.value();
             if (backward_electron) {
-                expect(r.backward.other_mode == canary::ModeIndex {1}) << k.value();
+                expect(r.backward.other_mode == canary::OptionalModeIndex {canary::ModeIndex {1}})
+                  << k.value();
             }
             // Dissociations of N2, O2 and NO: their vibration mode.
             if (k.value() <= 20) {
-                expect(r.forward.other_mode == canary::ModeIndex {0}) << k.value();
+                expect(r.forward.other_mode == canary::OptionalModeIndex {canary::ModeIndex {0}})
+                  << k.value();
             }
         }
         expect(exchange.electron == canary::OptionalSpeciesIndex {canary::SpeciesIndex {10}} &&
@@ -1164,19 +1199,18 @@ void test_multi_temperature_kinetics()
                                                                 si_scales);
         static_assert(decltype(one.model)::mode_count == 1);
         const Mechanism with_gas = canary::make_air11_kim_jo(si_scales, p0, one.model);
-        const Mechanism without = canary::make_air11_kim_jo(si_scales, p0);
         for (const auto k : canary::reaction_indices(0, reaction_count)) {
-            expect(with_gas.reactions()[k].forward.other_mode == canary::ModeIndex {0});
-            expect(with_gas.reactions()[k].backward.other_mode == canary::ModeIndex {0});
-            expect(with_gas.reactions()[k].equilibrium_at_other_temperature ==
-                   without.reactions()[k].equilibrium_at_other_temperature);
+            const auto f = with_gas.reactions()[k].forward.other_mode;
+            const auto b = with_gas.reactions()[k].backward.other_mode;
+            expect(!f || *f == canary::ModeIndex {0});
+            expect(!b || *b == canary::ModeIndex {0});
         }
         for (const ReferenceState& s : reference_states) {
             const auto mix = canary::mixture(one.model, fractions(s.y));
             const std::array t_m {canary::ModeTemperature<double, si> {s.t_v}};
             const auto modes =
               canary::rates_of_progress(with_gas, one.model, mix, Rho {s.rho}, Temp {s.temp}, t_m);
-            const auto two = canary::rates_of_progress(without,
+            const auto two = canary::rates_of_progress(with_gas,
                                                        one.model,
                                                        mix,
                                                        Rho {s.rho},
@@ -1199,7 +1233,7 @@ void test_multi_temperature_kinetics()
             }
             const auto omega_modes =
               canary::production_rates(with_gas, one.model, mix, Rho {s.rho}, Temp {s.temp}, t_m);
-            const auto omega_two = canary::production_rates(without,
+            const auto omega_two = canary::production_rates(with_gas,
                                                             one.model,
                                                             mix,
                                                             Rho {s.rho},
@@ -1211,199 +1245,311 @@ void test_multi_temperature_kinetics()
         }
     };
 
-    "multi-temperature kinetics: other temperatures resolve to modes"_test = [&] {
-        using canary::BackwardRateModel;
-        const auto split = canary::make_multi_temperature_mixture(canary::air11_species,
-                                                                  canary::air11_rotational_degrees,
-                                                                  canary::air11_electronic_levels,
-                                                                  split_modes,
-                                                                  si_scales);
-        const auto rate = [](double s, const char* other) {
-            return canary::ArrheniusInput {
-              .A = 1.0e15,
-              .n = -1.0,
-              .activation_temperature = 50000.0,
-              .translational_exponent = s,
-              .other_temperature = other,
-            };
+    "multi-temperature kinetics: explicit physical temperature requirements"_test = [&] {
+        using namespace canary;
+        const auto split = make_multi_temperature_mixture(air11_species,
+                                                          air11_rotational_degrees,
+                                                          air11_electronic_levels,
+                                                          split_modes,
+                                                          si_scales);
+        const auto rate = [](double s, std::optional<PhysicalTemperatureInput> other = {}) {
+            return ArrheniusInput {.A = 1.0e15,
+                                   .n = -1.0,
+                                   .activation_temperature = 50000.0,
+                                   .translational_exponent = s,
+                                   .other_temperature = other};
         };
-        const canary::ArrheniusInput none {};
-        const auto build = [&](const canary::ReactionInput<3>& r, const auto& model) {
-            const canary::MechanismInput<1, 3> input {
-              .temperature_lower = 300.0,
-              .temperature_upper = 30000.0,
-              .reactions = {r},
-            };
+        const auto base =
+          reaction("N2 + O2 <=> N + N + O2",
+                   coefficients({{.name = "N2", .value = 1.0}, {.name = "O2", .value = 1.0}}),
+                   coefficients({{.name = "N", .value = 2.0}, {.name = "O2", .value = 1.0}}),
+                   rate(0.5),
+                   BackwardRateModel::equilibrium,
+                   {});
+        const auto build = [&](const ReactionInput<3>& r, const auto& model) {
+            const MechanismInput<1, 3> input {.temperature_lower = 300.0,
+                                              .temperature_upper = 30000.0,
+                                              .reactions = {r}};
             const auto mechanism =
-              canary::make_reaction_mechanism(input,
-                                              canary::reaction_species(canary::air11_species),
-                                              si_scales,
-                                              p0,
-                                              model);
-            return mechanism.reactions()[canary::ReactionIndex {0}];
+              make_reaction_mechanism(input, reaction_species(air11_species), si_scales, p0, model);
+            return mechanism.reactions()[ReactionIndex {0}];
         };
-        const auto o2 = [&](canary::ArrheniusInput f,
-                            BackwardRateModel model = BackwardRateModel::equilibrium,
-                            canary::ArrheniusInput b = {}) {
-            return reaction(
-              "O + O2 <=> O + O + O",
-              coefficients({{.name = "O", .value = 1.0}, {.name = "O2", .value = 1.0}}),
-              coefficients({{.name = "O", .value = 3.0}}),
-              f,
-              model,
-              b);
+        const auto rejects = [&](const auto& input, const auto& model, std::string_view reason) {
+            const auto message = error_message([&] { (void)build(input, model); });
+            expect(message.starts_with("reaction 0 (N2 + O2 <=> N + N + O2): ")) << message;
+            expect(message.find(reason) != std::string::npos) << message;
         };
-        const auto ionise = [&](canary::ArrheniusInput f) {
-            return reaction(
-              "N + O <=> NO+ + e-",
-              coefficients({{.name = "N", .value = 1.0}, {.name = "O", .value = 1.0}}),
-              coefficients({{.name = "NO+", .value = 1.0}, {.name = "e-", .value = 1.0}}),
-              f,
-              BackwardRateModel::equilibrium,
-              none);
-        };
-        // Without other_temperature: the unique reactant vibration mode.
-        expect(build(o2(rate(0.5, nullptr)), split.model).forward.other_mode ==
-               canary::ModeIndex {1});
-        const auto dissociation = reaction(
-          "N2 + O2 <=> N + N + O2",
-          coefficients({{.name = "N2", .value = 1.0}, {.name = "O2", .value = 1.0}}),
-          coefficients({{.name = "N", .value = 2.0}, {.name = "O2", .value = 1.0}}),
-          rate(0.5, nullptr),
-          BackwardRateModel::equilibrium,
-          none);
         for (const bool reorder_modes : {false, true}) {
             auto modes = split_modes;
             if (reorder_modes) { std::swap(modes[0], modes[1]); }
-            const auto reordered = canary::make_multi_temperature_mixture(
-              canary::air11_species, canary::air11_rotational_degrees,
-              canary::air11_electronic_levels, modes, si_scales);
-            const canary::ModeIndex n2_mode {reorder_modes ? 1U : 0U};
-            const canary::ModeIndex o2_mode {reorder_modes ? 0U : 1U};
+            const auto reordered = make_multi_temperature_mixture(air11_species,
+                                                                  air11_rotational_degrees,
+                                                                  air11_electronic_levels,
+                                                                  modes,
+                                                                  si_scales);
             for (const bool reorder_reactants : {false, true}) {
-                auto input = dissociation;
+                auto input = base;
                 if (reorder_reactants) {
                     std::swap(input.reactants.entries[0], input.reactants.entries[1]);
                 }
-                const auto error = [&](std::string_view role) {
-                    const std::string message =
-                      error_message([&] { (void)build(input, reordered.model); });
-                    expect(message == "reaction 0 (N2 + O2 <=> N + N + O2): " +
-                                        std::string(role) + " rate: reactant vibrations occupy "
-                                        "different modes; specify other_temperature") << message;
-                };
-                error("forward");
-                // The standard three-temperature model shares one vibration mode.
-                expect(build(input, gas).forward.other_mode == canary::ModeIndex {0});
-                input.forward = rate(1.0, nullptr);
-                expect(build(input, reordered.model).forward.other_mode == canary::ModeIndex {0});
-                input.forward = rate(0.5, "N2");
-                expect(build(input, reordered.model).forward.other_mode == n2_mode);
-                input.forward = rate(0.5, "O2");
-                expect(build(input, reordered.model).forward.other_mode == o2_mode);
-                input.forward = rate(1.0, "O2");
-                expect(build(input, reordered.model).forward.other_mode == o2_mode);
+                rejects(input,
+                        reordered.model,
+                        "forward rate: other temperature requirement is missing");
+                rejects(input, gas, "forward rate: other temperature requirement is missing");
+                input.forward = rate(1.0);
+                expect(!build(input, reordered.model).forward.other_mode);
+                for (const double s : {0.5, 1.0}) {
+                    input.forward = rate(s, VibrationTemperatureInput {"N2"});
+                    expect(build(input, reordered.model).forward.other_mode ==
+                           OptionalModeIndex {ModeIndex {reorder_modes ? 1U : 0U}});
+                    input.forward = rate(s, VibrationTemperatureInput {"O2"});
+                    expect(build(input, reordered.model).forward.other_mode ==
+                           OptionalModeIndex {ModeIndex {reorder_modes ? 0U : 1U}});
+                }
                 input.backward_model = BackwardRateModel::arrhenius;
-                input.backward = rate(0.5, nullptr);
-                error("backward");
-                input.backward = rate(0.5, "N2");
-                expect(build(input, reordered.model).backward.other_mode == n2_mode);
-                input.backward = rate(1.0, nullptr);
-                expect(build(input, reordered.model).backward.other_mode == canary::ModeIndex {0});
+                input.equilibrium_temperature.reset();
+                input.backward = rate(0.5);
+                rejects(input,
+                        reordered.model,
+                        "backward rate: other temperature requirement is missing");
+                input.backward = rate(0.5, VibrationTemperatureInput {"N2"});
+                expect(build(input, reordered.model).backward.other_mode ==
+                       OptionalModeIndex {ModeIndex {reorder_modes ? 1U : 0U}});
+                input.backward = rate(1.0);
+                expect(!build(input, reordered.model).backward.other_mode);
             }
         }
-        // A species name: the mode of its vibration; electron: the electron
-        // mode.
-        expect(build(o2(rate(0.5, "N2")), split.model).forward.other_mode == canary::ModeIndex {0});
-        expect(build(o2(rate(0.5, "NO")), split.model).forward.other_mode == canary::ModeIndex {1});
-        expect(build(o2(rate(0.5, "electron")), split.model).forward.other_mode ==
-               canary::ModeIndex {2});
-        // s = 1 without a vibrating reactant is accepted.
-        expect(build(ionise(rate(1.0, nullptr)), split.model).forward.other_mode ==
-               canary::ModeIndex {0});
-        // The backward Arrhenius rate resolves with the reactant list; an
-        // equilibrium backward rate only with an other temperature.
-        const auto arrhenius =
-          build(o2(rate(1.0, nullptr), BackwardRateModel::arrhenius, rate(0.5, nullptr)),
-                split.model);
-        expect(arrhenius.backward.other_mode == canary::ModeIndex {1} &&
-               !arrhenius.equilibrium_at_other_temperature);
-        const auto at_electron =
-          build(o2(rate(1.0, nullptr), BackwardRateModel::equilibrium, rate(1.0, "electron")),
-                split.model);
-        expect(at_electron.equilibrium_at_other_temperature &&
-               at_electron.backward.other_mode == canary::ModeIndex {2});
-        expect(!build(o2(rate(1.0, nullptr)), split.model).equilibrium_at_other_temperature);
-        // One mode: every rate resolves to it.
-        const auto one = canary::make_multi_temperature_mixture(canary::air11_species,
-                                                                canary::air11_rotational_degrees,
-                                                                canary::air11_electronic_levels,
-                                                                single_mode,
-                                                                si_scales);
-        expect(build(ionise(rate(0.5, nullptr)), one.model).forward.other_mode ==
-               canary::ModeIndex {0});
-        expect(build(o2(rate(0.5, "electron")), one.model).forward.other_mode ==
-               canary::ModeIndex {0});
-
-        const auto fails = [&](const canary::ReactionInput<3>& r, std::string_view message) {
-            const std::string got = error_message([&] { (void)build(r, split.model); });
-            expect(got == message) << got;
+        const std::array<PhysicalTemperatureInput, 5> requirements {
+          TranslationTemperatureInput {},
+          RotationTemperatureInput {},
+          VibrationTemperatureInput {"NO"},
+          BoundElectronicTemperatureInput {"N"},
+          FreeElectronTemperatureInput {}};
+        const std::array<OptionalModeIndex, 5> selected {{{},
+                                                          {},
+                                                          OptionalModeIndex {ModeIndex {1}},
+                                                          OptionalModeIndex {ModeIndex {2}},
+                                                          OptionalModeIndex {ModeIndex {2}}}};
+        for (std::size_t i = 0; i < requirements.size(); ++i) {
+            auto input = base;
+            input.forward.other_temperature = requirements[i];
+            input.equilibrium_temperature = requirements[i];
+            const auto result = build(input, split.model);
+            expect(result.forward.other_mode == selected[i]);
+            expect(result.backward.other_mode == selected[i]);
+            expect(result.equilibrium_at_other_temperature == selected[i].has_value());
+            input.backward_model = BackwardRateModel::arrhenius;
+            input.equilibrium_temperature.reset();
+            input.backward = rate(0.25, requirements[i]);
+            expect(build(input, split.model).backward.other_mode == selected[i]);
+        }
+        auto invalid = base;
+        invalid.forward = rate(1.0);
+        invalid.equilibrium_temperature.reset();
+        rejects(invalid, split.model, "equilibrium temperature requirement is missing");
+        invalid.equilibrium_temperature = TranslationTemperatureInput {};
+        invalid.backward.other_temperature = FreeElectronTemperatureInput {};
+        rejects(invalid, split.model, "an equilibrium backward rate uses equilibrium_temperature");
+        invalid.backward = rate(1.0);
+        invalid.backward_model = BackwardRateModel::arrhenius;
+        rejects(invalid,
+                split.model,
+                "equilibrium temperature is only valid for an equilibrium backward rate");
+        for (const double s : {0.5, 1.0}) {
+            for (const auto& [source, reason] : std::array {
+                   std::pair {PhysicalTemperatureInput {VibrationTemperatureInput {nullptr}},
+                              "temperature requirement needs a species"},
+                   std::pair {PhysicalTemperatureInput {VibrationTemperatureInput {""}},
+                              "temperature requirement needs a species"},
+                   std::pair {PhysicalTemperatureInput {VibrationTemperatureInput {"Ar"}},
+                              "unknown temperature species"},
+                   std::pair {PhysicalTemperatureInput {VibrationTemperatureInput {"N"}},
+                              "vibration temperature requires a molecular heavy species"},
+                   std::pair {PhysicalTemperatureInput {VibrationTemperatureInput {"N2+"}},
+                              "temperature component is not assigned to a mode"},
+                   std::pair {PhysicalTemperatureInput {BoundElectronicTemperatureInput {"e-"}},
+                              "bound electronic temperature requires a heavy species"}}) {
+                invalid = base;
+                invalid.forward = rate(s, source);
+                rejects(invalid, split.model, reason);
+            }
+        }
+        const auto one = make_multi_temperature_mixture(air11_species,
+                                                        air11_rotational_degrees,
+                                                        air11_electronic_levels,
+                                                        single_mode,
+                                                        si_scales);
+        rejects(base, one.model, "other temperature requirement is missing");
+        auto input = base;
+        input.forward = rate(0.5, FreeElectronTemperatureInput {});
+        expect(build(input, one.model).forward.other_mode == OptionalModeIndex {ModeIndex {0}});
+        const auto air5 = make_air5_two_temperature<double>(si_scales);
+        const auto build5 = [&](PhysicalTemperatureInput requirement) {
+            auto r = base;
+            r.forward = rate(0.5, requirement);
+            const MechanismInput<1, 3> mechanism {.temperature_lower = 300.0,
+                                                  .temperature_upper = 30000.0,
+                                                  .reactions = {r}};
+            return make_reaction_mechanism(mechanism,
+                                           reaction_species(air5_species),
+                                           si_scales,
+                                           p0,
+                                           air5.model);
         };
-        fails(o2(rate(0.5, "Ar")),
-              "reaction 0 (O + O2 <=> O + O + O): forward rate: other temperature \"Ar\" is not "
-              "\"electron\" or a species");
-        fails(o2(rate(0.5, "N")),
-              "reaction 0 (O + O2 <=> O + O + O): forward rate: other temperature \"N\": the "
-              "species has no vibration component");
-        // The vibration of N2+ is frozen in this model.
-        fails(o2(rate(1.0, "N2+")),
-              "reaction 0 (O + O2 <=> O + O + O): forward rate: other temperature \"N2+\": the "
-              "species has no vibration component");
-        fails(ionise(rate(0.5, nullptr)),
-              "reaction 0 (N + O <=> NO+ + e-): forward rate: no reactant has a vibration "
-              "component to give the other temperature");
-        fails(o2(rate(1.0, nullptr), BackwardRateModel::equilibrium, rate(1.0, "Ar")),
-              "reaction 0 (O + O2 <=> O + O + O): backward rate: other temperature \"Ar\" is "
-              "not \"electron\" or a species");
-
-        // The two-temperature model has one mode holding every species and
-        // no free electrons.
-        const auto air5 = canary::make_air5_two_temperature<double>(si_scales);
-        const auto build5 = [&](canary::ArrheniusInput f) {
-            const canary::MechanismInput<1, 3> input {
-              .temperature_lower = 300.0,
-              .temperature_upper = 30000.0,
-              .reactions =
-                {
-                  reaction("N + O <=> NO",
-                           coefficients({{.name = "N", .value = 1.0}, {.name = "O", .value = 1.0}}),
-                           coefficients({{.name = "NO", .value = 1.0}}),
-                           f,
-                           canary::BackwardRateModel::equilibrium,
-                           none),
-                },
-            };
-            const auto mechanism =
-              canary::make_reaction_mechanism(input,
-                                              canary::reaction_species(canary::air5_species),
-                                              si_scales,
-                                              p0,
-                                              air5.model);
-            return mechanism.reactions()[canary::ReactionIndex {0}];
+        expect(error_message([&] {
+                   (void)build5(VibrationTemperatureInput {"N"});
+               }).find("vibration temperature requires a molecular heavy species") !=
+               std::string::npos);
+        const auto atomic = build5(BoundElectronicTemperatureInput {"N"});
+        expect(atomic.reactions()[ReactionIndex {0}].forward.other_mode ==
+               OptionalModeIndex {ModeIndex {0}});
+        expect(error_message([&] {
+                   (void)build5(FreeElectronTemperatureInput {});
+               }).find("free-electron temperature requires a free-electron species") !=
+               std::string::npos);
+        static_assert(AcceptsScalarReactionTemperature<std::remove_cvref_t<decltype(one.model)>>);
+        for (const auto& source : requirements) {
+            if (std::holds_alternative<TranslationTemperatureInput>(source) ||
+                std::holds_alternative<RotationTemperatureInput>(source)) {
+                continue;
+            }
+            input = base;
+            input.forward.other_temperature = source;
+            rejects(input,
+                    TemperatureQueryModel {OptionalModeIndex {ModeIndex {2}}},
+                    "temperature mode is outside the model mode range");
+            rejects(input,
+                    TemperatureQueryModel {},
+                    "temperature component is not assigned to a mode");
+        }
+        // Requirement validation uses the original input exponent before storage narrowing.
+        const UnitScales<float, si> float_scales {};
+        const auto float_gas = make_air11_three_temperature(float_scales);
+        auto narrow = base;
+        narrow.forward.translational_exponent = std::nextafter(1.0, 0.0);
+        expect(static_cast<float>(narrow.forward.translational_exponent) == 1.0_f);
+        const auto build_float = [&](const auto& r) {
+            const MechanismInput<1, 3> input {.temperature_lower = 300.0,
+                                              .temperature_upper = 30000.0,
+                                              .reactions = {r}};
+            return make_reaction_mechanism(input,
+                                           reaction_species(air11_species),
+                                           float_scales,
+                                           Pressure<float, si> {101325.0F},
+                                           float_gas.model);
         };
-        expect(build5(rate(0.5, "N")).forward.other_mode == canary::ModeIndex {0});
-        expect(build5(rate(0.5, nullptr)).forward.other_mode == canary::ModeIndex {0});
-        const std::string got = error_message([&] { (void)build5(rate(0.5, "electron")); });
-        expect(got ==
-               "reaction 0 (N + O <=> NO): forward rate: other temperature \"electron\": the model "
-               "has no free electrons")
-          << got;
+        expect(error_message([&] {
+                   (void)build_float(narrow);
+               }).find("other temperature requirement is missing") != std::string::npos);
+        narrow.forward.other_temperature = VibrationTemperatureInput {"N2"};
+        const auto narrowed = build_float(narrow);
+        expect(narrowed.reactions()[ReactionIndex {0}].forward.other_mode ==
+               OptionalModeIndex {ModeIndex {0}});
+        auto metadata = air11_species;
+        metadata[4].metadata.role = SpeciesRole::unspecified;
+        auto referenced = base;
+        referenced.forward.other_temperature = VibrationTemperatureInput {"NO"};
+        const MechanismInput<1, 3> unused_species {.temperature_lower = 300.0,
+                                                   .temperature_upper = 30000.0,
+                                                   .reactions = {referenced}};
+        expect(error_message([&] {
+                   (void)make_reaction_mechanism(unused_species,
+                                                 reaction_species(metadata),
+                                                 si_scales,
+                                                 p0,
+                                                 split.model);
+               }).find("species role must be specified") != std::string::npos);
+        expect(
+          error_message([&] {
+              (void)make_reaction_mechanism(unused_species, reaction_species(metadata), si_scales);
+          }).find("species role must be specified") != std::string::npos);
+        const MechanismInput<1, 3> collapse {.temperature_lower = 300.0,
+                                             .temperature_upper = 30000.0,
+                                             .reactions = {base}};
+        const auto single =
+          make_reaction_mechanism(collapse, reaction_species(air11_species), si_scales);
+        expect(!single.reactions()[ReactionIndex {0}].forward.other_mode);
+    };
+
+    "physical temperature identities preserve independent derivatives at equal values"_test = [&] {
+        using namespace canary;
+        const std::array<EnergyModeInput<1>, 3> components {
+          {{.count = 1, .components = {{{.species = "N2", .component = ModeComponent::vibration}}}},
+           {.count = 1, .components = {{{.species = "N", .component = ModeComponent::electronic}}}},
+           {.count = 1,
+            .components = {{{.species = "e-", .component = ModeComponent::electron}}}}}};
+        for (const bool permute : {false, true}) {
+            auto assigned = components;
+            if (permute) { std::swap(assigned[0], assigned[2]); }
+            const auto split = make_multi_temperature_mixture(air11_species,
+                                                              air11_rotational_degrees,
+                                                              air11_electronic_levels,
+                                                              assigned,
+                                                              si_scales);
+            auto r =
+              reaction("N2 <=> N + N",
+                       coefficients({{"N2", 1.0}}),
+                       coefficients({{"N", 2.0}}),
+                       ArrheniusInput {.A = 1e9,
+                                       .n = 1.0,
+                                       .activation_temperature = 0.0,
+                                       .translational_exponent = 0.0,
+                                       .other_temperature = VibrationTemperatureInput {"N2"}},
+                       BackwardRateModel::equilibrium,
+                       {});
+            r.equilibrium_temperature = BoundElectronicTemperatureInput {"N"};
+            for (const bool explicit_reverse : {false, true}) {
+                if (explicit_reverse) {
+                    r.backward_model = BackwardRateModel::arrhenius;
+                    r.equilibrium_temperature.reset();
+                    r.backward = {.A = 1e9,
+                                  .n = 1.0,
+                                  .activation_temperature = 0.0,
+                                  .translational_exponent = 0.0,
+                                  .other_temperature = FreeElectronTemperatureInput {}};
+                }
+                const MechanismInput<1, 3> input {.temperature_lower = 300.0,
+                                                  .temperature_upper = 30000.0,
+                                                  .reactions = {r}};
+                const auto mechanism = make_reaction_mechanism(input,
+                                                               reaction_species(air11_species),
+                                                               si_scales,
+                                                               p0,
+                                                               split.model);
+                std::array<D, 11> y {};
+                y[0] = D(0.5);
+                y[2] = D(0.5);
+                const auto mix = mixture(split.model, fractions(y));
+                for (std::size_t column = 0; column < 3; ++column) {
+                    std::array<ModeTemperature<D, si>, 3> temperatures {};
+                    for (std::size_t m = 0; m < 3; ++m) {
+                        temperatures[m] =
+                          ModeTemperature<D, si> {D(8000.0, m == column ? 1.0 : 0.0)};
+                    }
+                    const auto q = rates_of_progress(mechanism,
+                                                     split.model,
+                                                     mix,
+                                                     Density<D, si> {D(0.01)},
+                                                     Temperature<D, si> {D(8000.0)},
+                                                     temperatures);
+                    const auto f = q.forward()[ReactionIndex {0}].value().dual();
+                    const auto b = q.backward()[ReactionIndex {0}].value().dual();
+                    const std::size_t forward_mode = permute ? 2 : 0;
+                    const std::size_t backward_mode = explicit_reverse ? (permute ? 0 : 2) : 1;
+                    expect(column == forward_mode ? f != 0.0 : f == 0.0);
+                    expect(column == backward_mode ? b != 0.0 : b == 0.0);
+                }
+            }
+        }
     };
 
     "multi-temperature kinetics: translational rates ignore other mode logarithms"_test = [] {
         const canary::ArrheniusRate<double, si> rate {
-          .A = 1.0, .n = 2.0, .activation_temperature = Temp {3.0},
-          .translational_exponent = 1.0, .other_mode = canary::ModeIndex {0}};
+          .A = 1.0,
+          .n = 2.0,
+          .activation_temperature = Temp {3.0},
+          .translational_exponent = 1.0,
+          .other_mode = canary::OptionalModeIndex {canary::ModeIndex {0}}};
         const double nan = std::numeric_limits<double>::quiet_NaN();
         const std::array<double, 2> logarithms {nan, nan};
         const double value = canary::detail::rate_exponent<2>(rate, 4.0, 0.5, logarithms);

@@ -545,7 +545,9 @@ try {
     const auto kim_jo = canary::make_air5_kim_jo(si_scales);
     production_case("unchecked Kim-Jo air (13 reactions) production", c, kim_jo, air5);
     const auto air5_two_temperature_built = canary::make_air5_two_temperature<double>(si_scales);
-    const auto park = canary::make_air5_park(si_scales);
+    const auto park = canary::make_air5_park(si_scales,
+                                             canary::Pressure<double, canary::si> {100000},
+                                             air5_two_temperature_built.model);
     const auto park_exchange =
       canary::make_air5_park_exchange(air5_two_temperature_built.species, park, si_scales);
     sources_case("unchecked Park air (5 reactions) 2T sources",

@@ -1,5 +1,5 @@
 {
-   "format": "canary-reactions-1",
+   "format": "canary-reactions-2",
    "units": {
       "quantity": "mol",
       "length": "m",
@@ -21,6 +21,7 @@
             "N2": 1.0
          },
          "forward": {
+            "other_temperature": {"kind": "vibration", "species": "N2"},
             "model": "arrhenius",
             "A": 121600000000000.0,
             "n": -1.214,
@@ -28,7 +29,8 @@
             "translational_exponent": 0.5
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "N2diss"
       },
@@ -43,6 +45,7 @@
             "O2": 1.0
          },
          "forward": {
+            "other_temperature": {"kind": "vibration", "species": "N2"},
             "model": "arrhenius",
             "A": 7000000000000000.0,
             "n": -1.6,
@@ -50,7 +53,8 @@
             "translational_exponent": 0.5
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "N2diss"
       },
@@ -65,6 +69,7 @@
             "NO": 1.0
          },
          "forward": {
+            "other_temperature": {"kind": "vibration", "species": "N2"},
             "model": "arrhenius",
             "A": 7000000000000000.0,
             "n": -1.6,
@@ -72,7 +77,8 @@
             "translational_exponent": 0.5
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "N2diss"
       },
@@ -86,6 +92,7 @@
             "N": 3.0
          },
          "forward": {
+            "other_temperature": {"kind": "vibration", "species": "N2"},
             "model": "arrhenius",
             "A": 359100000000000.0,
             "n": -1.226,
@@ -93,7 +100,8 @@
             "translational_exponent": 0.5
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "N2diss"
       },
@@ -108,6 +116,7 @@
             "O": 1.0
          },
          "forward": {
+            "other_temperature": {"kind": "vibration", "species": "N2"},
             "model": "arrhenius",
             "A": 3e+16,
             "n": -1.6,
@@ -115,7 +124,8 @@
             "translational_exponent": 0.5
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "N2diss"
       },
@@ -130,6 +140,7 @@
             "N2+": 1.0
          },
          "forward": {
+            "other_temperature": {"kind": "vibration", "species": "N2"},
             "model": "arrhenius",
             "A": 121600000000000.0,
             "n": -1.214,
@@ -137,7 +148,8 @@
             "translational_exponent": 0.5
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "N2diss"
       },
@@ -152,6 +164,7 @@
             "O2+": 1.0
          },
          "forward": {
+            "other_temperature": {"kind": "vibration", "species": "N2"},
             "model": "arrhenius",
             "A": 7000000000000000.0,
             "n": -1.6,
@@ -159,7 +172,8 @@
             "translational_exponent": 0.5
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "N2diss"
       },
@@ -174,6 +188,7 @@
             "NO+": 1.0
          },
          "forward": {
+            "other_temperature": {"kind": "vibration", "species": "N2"},
             "model": "arrhenius",
             "A": 7000000000000000.0,
             "n": -1.6,
@@ -181,7 +196,8 @@
             "translational_exponent": 0.5
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "N2diss"
       },
@@ -196,6 +212,7 @@
             "N+": 1.0
          },
          "forward": {
+            "other_temperature": {"kind": "vibration", "species": "N2"},
             "model": "arrhenius",
             "A": 359100000000000.0,
             "n": -1.226,
@@ -203,7 +220,8 @@
             "translational_exponent": 0.5
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "N2diss"
       },
@@ -218,6 +236,7 @@
             "O+": 1.0
          },
          "forward": {
+            "other_temperature": {"kind": "vibration", "species": "N2"},
             "model": "arrhenius",
             "A": 3e+16,
             "n": -1.6,
@@ -225,7 +244,8 @@
             "translational_exponent": 0.5
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "N2diss"
       },
@@ -240,6 +260,7 @@
             "N2": 1.0
          },
          "forward": {
+            "other_temperature": {"kind": "vibration", "species": "O2"},
             "model": "arrhenius",
             "A": 3354000000.0,
             "n": -0.2726,
@@ -247,7 +268,8 @@
             "translational_exponent": 0.5
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "O2diss"
       },
@@ -261,6 +283,7 @@
             "O2": 1.0
          },
          "forward": {
+            "other_temperature": {"kind": "vibration", "species": "O2"},
             "model": "arrhenius",
             "A": 1.117e+19,
             "n": -2.585,
@@ -268,7 +291,8 @@
             "translational_exponent": 0.5
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "O2diss"
       },
@@ -283,6 +307,7 @@
             "NO": 1.0
          },
          "forward": {
+            "other_temperature": {"kind": "vibration", "species": "O2"},
             "model": "arrhenius",
             "A": 3354000000.0,
             "n": -0.2726,
@@ -290,7 +315,8 @@
             "translational_exponent": 0.5
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "O2diss"
       },
@@ -305,6 +331,7 @@
             "N": 1.0
          },
          "forward": {
+            "other_temperature": {"kind": "vibration", "species": "O2"},
             "model": "arrhenius",
             "A": 1e+16,
             "n": -1.5,
@@ -312,7 +339,8 @@
             "translational_exponent": 0.5
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "O2diss"
       },
@@ -326,6 +354,7 @@
             "O": 3.0
          },
          "forward": {
+            "other_temperature": {"kind": "vibration", "species": "O2"},
             "model": "arrhenius",
             "A": 3000000000000000.0,
             "n": -1.5,
@@ -333,7 +362,8 @@
             "translational_exponent": 0.5
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "O2diss"
       },
@@ -348,6 +378,7 @@
             "N2+": 1.0
          },
          "forward": {
+            "other_temperature": {"kind": "vibration", "species": "O2"},
             "model": "arrhenius",
             "A": 3354000000.0,
             "n": -0.2726,
@@ -355,7 +386,8 @@
             "translational_exponent": 0.5
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "O2diss"
       },
@@ -370,6 +402,7 @@
             "O2+": 1.0
          },
          "forward": {
+            "other_temperature": {"kind": "vibration", "species": "O2"},
             "model": "arrhenius",
             "A": 1.117e+19,
             "n": -2.585,
@@ -377,7 +410,8 @@
             "translational_exponent": 0.5
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "O2diss"
       },
@@ -392,6 +426,7 @@
             "NO+": 1.0
          },
          "forward": {
+            "other_temperature": {"kind": "vibration", "species": "O2"},
             "model": "arrhenius",
             "A": 3354000000.0,
             "n": -0.2726,
@@ -399,7 +434,8 @@
             "translational_exponent": 0.5
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "O2diss"
       },
@@ -414,6 +450,7 @@
             "N+": 1.0
          },
          "forward": {
+            "other_temperature": {"kind": "vibration", "species": "O2"},
             "model": "arrhenius",
             "A": 1e+16,
             "n": -1.5,
@@ -421,7 +458,8 @@
             "translational_exponent": 0.5
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "O2diss"
       },
@@ -436,6 +474,7 @@
             "O+": 1.0
          },
          "forward": {
+            "other_temperature": {"kind": "vibration", "species": "O2"},
             "model": "arrhenius",
             "A": 3000000000000000.0,
             "n": -1.5,
@@ -443,7 +482,8 @@
             "translational_exponent": 0.5
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "O2diss"
       },
@@ -457,6 +497,7 @@
             "O": 1.0
          },
          "forward": {
+            "other_temperature": {"kind": "vibration", "species": "NO"},
             "model": "arrhenius",
             "A": 1450000000.0,
             "n": 0.0,
@@ -464,7 +505,8 @@
             "translational_exponent": 0.5
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "third_body": {
             "efficiencies": {
@@ -494,16 +536,16 @@
             "e-": 1.0
          },
          "forward": {
+            "other_temperature": {"kind": "free_electron"},
             "model": "arrhenius",
             "A": 1.2e+19,
             "n": -1.6,
             "activation_temperature": 113200.0,
-            "translational_exponent": 0.5,
-            "other_temperature": "electron"
+            "translational_exponent": 0.5
          },
          "backward": {
             "model": "equilibrium",
-            "other_temperature": "electron"
+            "temperature": {"kind": "free_electron"}
          },
          "label": "N2EIdiss"
       },
@@ -524,7 +566,8 @@
             "activation_temperature": 19450.0
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "exchange"
       },
@@ -545,7 +588,8 @@
             "activation_temperature": 38400.0
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "exchange"
       },
@@ -567,7 +611,7 @@
          },
          "backward": {
             "model": "equilibrium",
-            "other_temperature": "electron"
+            "temperature": {"kind": "free_electron"}
          },
          "label": "ass_ion"
       },
@@ -588,7 +632,7 @@
          },
          "backward": {
             "model": "equilibrium",
-            "other_temperature": "electron"
+            "temperature": {"kind": "free_electron"}
          },
          "label": "ass_ion"
       },
@@ -609,7 +653,7 @@
          },
          "backward": {
             "model": "equilibrium",
-            "other_temperature": "electron"
+            "temperature": {"kind": "free_electron"}
          },
          "label": "ass_ion"
       },
@@ -630,7 +674,8 @@
             "activation_temperature": 77200.0
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "charge_exchange"
       },
@@ -651,7 +696,8 @@
             "activation_temperature": 12200.0
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "charge_exchange"
       },
@@ -672,7 +718,8 @@
             "activation_temperature": 28600.0
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "charge_exchange"
       },
@@ -693,7 +740,8 @@
             "activation_temperature": 26600.0
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "charge_exchange"
       },
@@ -714,7 +762,8 @@
             "activation_temperature": 40700.0
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "charge_exchange"
       },
@@ -735,7 +784,8 @@
             "activation_temperature": 18000.0
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "charge_exchange"
       },
@@ -756,7 +806,8 @@
             "activation_temperature": 12800.0
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "charge_exchange"
       },
@@ -777,7 +828,8 @@
             "activation_temperature": 32600.0
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "charge_exchange"
       },
@@ -798,7 +850,8 @@
             "activation_temperature": 48600.0
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "charge_exchange"
       },
@@ -819,7 +872,8 @@
             "activation_temperature": 22800.0
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "charge_exchange"
       },
@@ -840,7 +894,8 @@
             "activation_temperature": 35500.0
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "charge_exchange"
       },
@@ -855,16 +910,16 @@
             "e-": 2.0
          },
          "forward": {
+            "other_temperature": {"kind": "free_electron"},
             "model": "arrhenius",
             "A": 3.9e+27,
             "n": -3.78,
             "activation_temperature": 158500.0,
-            "translational_exponent": 0.0,
-            "other_temperature": "electron"
+            "translational_exponent": 0.0
          },
          "backward": {
             "model": "equilibrium",
-            "other_temperature": "electron"
+            "temperature": {"kind": "free_electron"}
          },
          "label": "EII"
       },
@@ -879,16 +934,16 @@
             "e-": 2.0
          },
          "forward": {
+            "other_temperature": {"kind": "free_electron"},
             "model": "arrhenius",
             "A": 2.5e+28,
             "n": -3.82,
             "activation_temperature": 168600.0,
-            "translational_exponent": 0.0,
-            "other_temperature": "electron"
+            "translational_exponent": 0.0
          },
          "backward": {
             "model": "equilibrium",
-            "other_temperature": "electron"
+            "temperature": {"kind": "free_electron"}
          },
          "label": "EII"
       }

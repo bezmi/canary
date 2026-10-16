@@ -12,6 +12,7 @@ bool expect_extent_failure = false;
 #include <canary/data/air11.hpp>
 #include <canary/data/air11_kim_jo.hpp>
 #include <canary/data/air11_kim_jo_exchange.hpp>
+#include <canary/data/air5_park.hpp>
 #include <canary/reactions.hpp>
 #include <canary/thermo.hpp>
 
@@ -33,6 +34,52 @@ int main(int argc, char** argv)
                                      canary::as_kind<canary::kind::mass_fraction>(
                                        Kokkos::mdspan<const double, Extents>(y.data(), y.size())));
     const std::array<double, 3> modes {5000, 8000, 9000};
+    if (operation == "bound_rates" || operation == "bound_production") {
+        const auto unbound = canary::make_air11_kim_jo(scales);
+        const auto raw = canary::as_kind<canary::kind::mode_temperature, canary::si>(
+          Kokkos::mdspan<const double, Extents>(nullptr, gas.mode_count));
+        const auto check = [&](const auto& view) {
+            expect_extent_failure = true;
+            if (operation == "bound_rates") {
+                (void)canary::rates_of_progress(unbound,
+                                                gas,
+                                                mix,
+                                                canary::Density<double, canary::si> {0.001},
+                                                canary::Temperature<double, canary::si> {10000},
+                                                view);
+            } else {
+                (void)canary::production_rates(unbound,
+                                               gas,
+                                               mix,
+                                               canary::Density<double, canary::si> {0.001},
+                                               canary::Temperature<double, canary::si> {10000},
+                                               view);
+            }
+        };
+        if (typed) {
+            check(canary::as_indexed<canary::ModeIndex>(raw));
+        } else {
+            check(raw);
+        }
+        return 1;
+    }
+    if (operation == "bound_scalar") {
+        const auto two = canary::make_air5_two_temperature<double>(scales);
+        const auto unbound = canary::make_air5_park(scales);
+        const std::array<double, 5> fractions {0.767, 0.233, 0, 0, 0};
+        const auto composition = canary::mixture(
+          two.model,
+          canary::as_kind<canary::kind::mass_fraction>(
+            Kokkos::mdspan<const double, Extents>(fractions.data(), fractions.size())));
+        expect_extent_failure = true;
+        (void)canary::rates_of_progress(unbound,
+                                        two.model,
+                                        composition,
+                                        canary::Density<double, canary::si> {0.001},
+                                        canary::Temperature<double, canary::si> {10000},
+                                        canary::Temperature<double, canary::si> {5000});
+        return 1;
+    }
     const auto evaluate = [&](const auto& view) {
         const canary::Density<double, canary::si> rho {0.001};
         const canary::Temperature<double, canary::si> temp {10000};

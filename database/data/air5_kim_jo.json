@@ -1,5 +1,5 @@
 {
-   "format": "canary-reactions-1",
+   "format": "canary-reactions-2",
    "units": {
       "quantity": "mol",
       "length": "m",
@@ -27,7 +27,8 @@
             "activation_temperature": 113200.0
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "N2diss"
       },
@@ -48,7 +49,8 @@
             "activation_temperature": 113200.0
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "N2diss"
       },
@@ -69,7 +71,8 @@
             "activation_temperature": 113200.0
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "N2diss"
       },
@@ -89,7 +92,8 @@
             "activation_temperature": 113200.0
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "N2diss"
       },
@@ -110,7 +114,8 @@
             "activation_temperature": 113200.0
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "N2diss"
       },
@@ -131,7 +136,8 @@
             "activation_temperature": 59500.0
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "O2diss"
       },
@@ -151,7 +157,8 @@
             "activation_temperature": 59500.0
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "O2diss"
       },
@@ -172,7 +179,8 @@
             "activation_temperature": 59500.0
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "O2diss"
       },
@@ -193,7 +201,8 @@
             "activation_temperature": 59500.0
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "O2diss"
       },
@@ -213,7 +222,8 @@
             "activation_temperature": 59500.0
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "label": "O2diss"
       },
@@ -233,7 +243,8 @@
             "activation_temperature": 75200.0
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          },
          "third_body": {
             "efficiencies": {
@@ -263,7 +274,8 @@
             "activation_temperature": 19450.0
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          }
       },
       {
@@ -283,7 +295,8 @@
             "activation_temperature": 38400.0
          },
          "backward": {
-            "model": "equilibrium"
+            "model": "equilibrium",
+            "temperature": {"kind": "translation"}
          }
       }
    ],

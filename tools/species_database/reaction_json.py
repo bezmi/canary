@@ -12,13 +12,31 @@ from _schema_validation import validate_structure
 import species_json
 
 
+def _validate_temperature(value, context):
+    if value is None:
+        return
+    kind = value["kind"]
+    if kind in ("vibration", "bound_electronic"):
+        if not value.get("species"):
+            raise SystemExit(f"{context}: temperature requirement needs a species")
+    elif kind in ("translation", "rotation", "free_electron"):
+        if value.get("species") is not None:
+            raise SystemExit(f"{context}: temperature requirement does not take a species")
+    else:
+        raise SystemExit(f"{context}: unknown temperature kind {kind!r}")
+
+
 def _validate_rate(rate, role, context):
     model = rate["model"]
     if role == "backward" and model == "equilibrium":
-        for field in ("A", "n", "activation_temperature", "translational_exponent"):
+        for field in ("A", "n", "activation_temperature", "translational_exponent", "other_temperature"):
             if rate.get(field) is not None:
                 raise SystemExit(f"{context}: equilibrium backward rate forbids {field}")
+        _validate_temperature(rate.get("temperature"), f"{context}: backward rate")
     elif model == "arrhenius":
+        if rate.get("temperature") is not None:
+            raise SystemExit(f"{context}: {role} Arrhenius rate forbids temperature")
+        _validate_temperature(rate.get("other_temperature"), f"{context}: {role} rate")
         for field in ("A", "n", "activation_temperature"):
             if rate.get(field) is None:
                 raise SystemExit(f"{context}: {role} Arrhenius rate requires {field}")
@@ -49,8 +67,8 @@ def _validate_stoichiometry(coefficients, role, context):
 def validate(data, source):
     """Check a decoded file, raising SystemExit with source/record context."""
     validate_structure(data, "reactions.schema.json", source)
-    if data["format"] != "canary-reactions-1":
-        raise SystemExit(f"{source}: format must be canary-reactions-1")
+    if data["format"] != "canary-reactions-2":
+        raise SystemExit(f"{source}: format must be canary-reactions-2")
     if data["units"] != {"quantity": "mol", "length": "m", "time": "s", "temperature": "K"}:
         raise SystemExit(f"{source}: units must be quantity mol, length m, time s and temperature K")
     lower = float(data["temperature_limits"]["lower"])

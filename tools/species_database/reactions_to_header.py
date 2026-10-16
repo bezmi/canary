@@ -1,4 +1,4 @@
-"""Writes a canary reactions file (format canary-reactions-1) as a C++ header
+"""Writes a canary reactions file (format canary-reactions-2) as a C++ header
 of host input records (canary::MechanismInput, see include/canary/reactions.hpp)
 and a builder of the mechanism for one thermo model's species.
 
@@ -52,13 +52,19 @@ def coefficients(values):
     return f"{{.count = {len(values)}, .entries = {{{{{entries}}},}},}}"
 
 
+def temperature(value):
+    names = {"translation": "TranslationTemperatureInput", "rotation": "RotationTemperatureInput",
+             "vibration": "VibrationTemperatureInput", "bound_electronic": "BoundElectronicTemperatureInput",
+             "free_electron": "FreeElectronTemperatureInput"}
+    species = value.get("species")
+    return names[value["kind"]] + " {" + (string(species) if species is not None else "") + "}"
+
+
 def arrhenius(rate):
-    """An ArrheniusInput; an equilibrium rate carries only its other_temperature."""
+    """An ArrheniusInput; equilibrium requirements are stored on the reaction."""
     other = rate.get("other_temperature") if rate else None
-    other_text = f" .other_temperature = {string(other)}," if other is not None else ""
+    other_text = f" .other_temperature = {temperature(other)}," if other is not None else ""
     if rate is None or rate["model"] == "equilibrium":
-        if other is not None:
-            return "{.A = 0.0, .n = 0.0, .activation_temperature = 0.0, .translational_exponent = 1.0," + other_text + "}"
         return "{.A = 0.0, .n = 0.0, .activation_temperature = 0.0,}"
     exponent = rate.get("translational_exponent")
     if exponent is None and other is not None:
@@ -80,6 +86,8 @@ def reaction(record):
         f".forward = {arrhenius(record['forward'])},",
         f".backward_model = BackwardRateModel::{'equilibrium' if equilibrium else 'arrhenius'},",
         f".backward = {arrhenius(backward)},",
+        *([f".equilibrium_temperature = {temperature(backward['temperature'])},"]
+          if equilibrium and backward.get("temperature") is not None else []),
         f".third_body = {'true' if third_body is not None else 'false'},",
         f".efficiencies = {coefficients(third_body['efficiencies'] if third_body else {})},",
         "},",

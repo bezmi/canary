@@ -63,6 +63,7 @@ inline constexpr MechanismInput<5, 5> air5_park {
               .n = -1.6,
               .activation_temperature = 113200.0,
               .translational_exponent = 0.5,
+              .other_temperature = VibrationTemperatureInput {"N2"},
             },
           .backward_model = BackwardRateModel::equilibrium,
           .backward =
@@ -71,6 +72,7 @@ inline constexpr MechanismInput<5, 5> air5_park {
               .n = 0.0,
               .activation_temperature = 0.0,
             },
+          .equilibrium_temperature = TranslationTemperatureInput {},
           .third_body = true,
           .efficiencies =
             {
@@ -136,6 +138,7 @@ inline constexpr MechanismInput<5, 5> air5_park {
               .n = -1.5,
               .activation_temperature = 59500.0,
               .translational_exponent = 0.5,
+              .other_temperature = VibrationTemperatureInput {"O2"},
             },
           .backward_model = BackwardRateModel::equilibrium,
           .backward =
@@ -144,6 +147,7 @@ inline constexpr MechanismInput<5, 5> air5_park {
               .n = 0.0,
               .activation_temperature = 0.0,
             },
+          .equilibrium_temperature = TranslationTemperatureInput {},
           .third_body = true,
           .efficiencies =
             {
@@ -213,6 +217,7 @@ inline constexpr MechanismInput<5, 5> air5_park {
               .n = 0.0,
               .activation_temperature = 75500.0,
               .translational_exponent = 0.5,
+              .other_temperature = VibrationTemperatureInput {"NO"},
             },
           .backward_model = BackwardRateModel::equilibrium,
           .backward =
@@ -221,6 +226,7 @@ inline constexpr MechanismInput<5, 5> air5_park {
               .n = 0.0,
               .activation_temperature = 0.0,
             },
+          .equilibrium_temperature = TranslationTemperatureInput {},
           .third_body = true,
           .efficiencies =
             {
@@ -301,6 +307,7 @@ inline constexpr MechanismInput<5, 5> air5_park {
               .n = 0.0,
               .activation_temperature = 0.0,
             },
+          .equilibrium_temperature = TranslationTemperatureInput {},
           .third_body = false,
           .efficiencies =
             {
@@ -360,6 +367,7 @@ inline constexpr MechanismInput<5, 5> air5_park {
               .n = 0.0,
               .activation_temperature = 0.0,
             },
+          .equilibrium_temperature = TranslationTemperatureInput {},
           .third_body = false,
           .efficiencies =
             {

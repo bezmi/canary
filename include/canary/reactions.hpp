@@ -12,9 +12,10 @@
 // Concentrations are number densities n_i = rho y_i / m_i (particles per
 // unit volume), so that the same functions work in SI and in scaled units.
 // T_l is T clamped to the mechanism's temperature limits. Each rate has a
-// second temperature T_o: T_ve with two temperatures, the temperature of
-// the mode the rate's other_temperature resolves to with M modes, and T_l
-// with one temperature; T_o is not clamped. An Arrhenius rate constant with
+// second temperature T_o: the primary T_l or the internal temperature selected
+// by its physical requirement. Internal temperatures are not clamped. Explicit
+// single-temperature evaluation collapses every requirement to T_l.
+// An Arrhenius rate constant with
 // translational exponent s is evaluated at the rate-controlling temperature
 // T_c = T_l^s T_o^(1 - s):
 //   k(T_c) = A T_c^n exp(-theta / T_c).
@@ -26,9 +27,8 @@
 //   omega_i = m_i sum_r (nu''_ir - nu'_ir) (q_f,r - q_b,r).
 // The backward rate constant is either an Arrhenius rate of its own, at its
 // own T_c, or k_b = k_f(T_eq) / K_c(T_eq) at the equilibrium temperature
-// T_eq: T_l, or the backward rate's T_o when the backward input names an
-// other_temperature. k_f(T_eq) is the forward Arrhenius expression at
-// T_c = T_eq, and K_c is the equilibrium constant in concentration form
+// T_eq selected by the independent equilibrium_temperature requirement. k_f(T_eq) is the forward
+// Arrhenius expression at T_c = T_eq, and K_c is the equilibrium constant in concentration form
 //   K_c = exp(-sum_i dnu_i g_i m_i / (k_B T_eq)) (p0 / (k_B T_eq))^(sum_i dnu_i),
 // where dnu_i = nu''_i - nu'_i, g_i is the standard-state Gibbs energy per
 // unit mass of species i at T_eq from the species_properties of the thermo
@@ -57,6 +57,7 @@
 #include <mdspan/mdspan.hpp>
 #include <string_view>
 #include <type_traits>
+#include <variant>
 
 namespace canary
 {
@@ -147,26 +148,33 @@ class ReactionIndexRange
     return {first, last};
 }
 
-// Host input of an Arrhenius rate constant k = A T_c^n exp(-theta / T_c), in
-// SI per mole: A in (m^3/mol)^(order - 1) / s with T_c in K, where order is
-// the sum of the coefficients of the reaction side the rate multiplies, plus
-// 1 with a third body; n dimensionless; activation_temperature theta in K;
-// translational_exponent s in [0, 1], the exponent of the translational
-// temperature in the rate-controlling temperature T_c = T^s T_o^(1 - s)
-// (1: the rate depends on T only); other_temperature names the second
-// temperature T_o for a thermo model with energy modes (see
-// make_reaction_mechanism with a gas model): "electron" for the temperature
-// of the mode holding the free electrons, or a species name for the
-// temperature of the mode holding that species' vibration; null for the
-// default. The backward input of a BackwardRateModel::equilibrium rate uses
-// only other_temperature: when it is not null, the equilibrium backward rate
-// is evaluated at that T_o.
+// Physical temperature requirements are host inputs. Construction resolves them
+// against the model's component assignments; no variant enters numerical data.
+struct TranslationTemperatureInput {};
+struct RotationTemperatureInput {};
+struct VibrationTemperatureInput {
+    const char* species;
+};
+struct BoundElectronicTemperatureInput {
+    const char* species;
+};
+struct FreeElectronTemperatureInput {};
+using PhysicalTemperatureInput = std::variant<TranslationTemperatureInput,
+                                              RotationTemperatureInput,
+                                              VibrationTemperatureInput,
+                                              BoundElectronicTemperatureInput,
+                                              FreeElectronTemperatureInput>;
+
+// SI per mole: k = A T_c^n exp(-theta/T_c), T_c = T^s T_o^(1-s).
+// A has units (m^3/mol)^(order-1)/s, theta and T_c are in K, n and s
+// are dimensionless. A model-aware builder requires other_temperature when
+// s != 1, and validates every supplied requirement, including unused ones.
 struct ArrheniusInput {
     double A;
     double n;
     double activation_temperature;
     double translational_exponent = 1.0;
-    const char* other_temperature = nullptr;
+    std::optional<PhysicalTemperatureInput> other_temperature {};
 };
 
 // Host input of a species name and a number: a stoichiometric coefficient
@@ -196,7 +204,9 @@ enum class BackwardRateModel : std::uint8_t {
 // Host input of one reversible reaction: its equation (for error messages),
 // the reactant and product coefficients (positive integers), the forward
 // rate, the backward rate model and, for BackwardRateModel::arrhenius, the
-// backward rate, and whether a third body takes part, with the efficiencies
+// backward rate. Equilibrium rates use the independent equilibrium_temperature;
+// explicit backward Arrhenius rates forbid it. Also specifies whether a third
+// body takes part, with the efficiencies
 // of the listed species (species not listed have efficiency 1). With no
 // third body, efficiencies must be empty.
 template <std::size_t K>
@@ -208,6 +218,7 @@ struct ReactionInput {
     ArrheniusInput forward;
     BackwardRateModel backward_model;
     ArrheniusInput backward;
+    std::optional<PhysicalTemperatureInput> equilibrium_temperature {};
     bool third_body;
     SpeciesCoefficients<K> efficiencies;
 };
@@ -228,14 +239,14 @@ struct MechanismInput {
 // raised to n. A and n are plain values, since the dimension of A depends
 // on the reaction order. translational_exponent is s of
 // T_c = T^s T_o^(1 - s); other_mode is the index of the energy mode whose
-// temperature is T_o in an evaluation with M mode temperatures (0 for a
-// mechanism built without a gas model).
+// temperature is T_o. Absence denotes the primary temperature, including
+// every requirement collapsed by explicit single-temperature construction.
 template <std::floating_point P, UnitSystem U> struct ArrheniusRate {
     P A;
     P n;
     Temperature<P, U> activation_temperature;
     P translational_exponent;
-    ModeIndex other_mode;
+    OptionalModeIndex other_mode;
 };
 
 // One reaction of a mechanism over N species, indexed as the species of the
@@ -321,6 +332,9 @@ ReactionMechanism<P, U, N, R> build_mechanism(const MechanismInput<R, K>& input,
                                               const UnitScales<P, U>& scales,
                                               Pressure<P, U> standard_pressure,
                                               const OtherMode& other_mode);
+template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t R>
+CANARY_HOST_DEVICE constexpr std::size_t
+  reaction_mode_count(const ReactionMechanism<P, U, N, R>& mechanism) noexcept;
 }  // namespace detail
 
 // R reactions over the N species of a thermo model, in unit system U, as
@@ -337,6 +351,7 @@ struct ReactionMechanism {
   private:
     std::array<Reaction<P, U, N>, R> reactions_;
     std::array<ParticleMass<P, U>, N> mass_;
+    std::size_t configured_mode_count_ {};
 
   public:
     Temperature<P, U> temperature_lower;
@@ -364,6 +379,9 @@ struct ReactionMechanism {
 
   private:
     ReactionMechanism() = default;
+    template <std::floating_point Q, UnitSystem V, std::size_t Ns, std::size_t Rs>
+    friend CANARY_HOST_DEVICE constexpr std::size_t
+      detail::reaction_mode_count(const ReactionMechanism<Q, V, Ns, Rs>&) noexcept;
     template <std::floating_point Q,
               UnitSystem V,
               std::size_t Ns,
@@ -381,6 +399,11 @@ struct ReactionMechanism {
 
 namespace detail
 {
+
+template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t R>
+CANARY_HOST_DEVICE constexpr std::size_t
+  reaction_mode_count(const ReactionMechanism<P, U, N, R>& mechanism) noexcept
+{ return mechanism.configured_mode_count_; }
 
 // Checks the entry count of a list and the names of its first count
 // entries: each known and listed once. Returns the species indices.
@@ -568,23 +591,110 @@ ArrheniusRate<P, U> arrhenius_rate(const ArrheniusInput& input,
       .n = n,
       .activation_temperature = theta,
       .translational_exponent = exponent,
-      .other_mode = ModeIndex {0},
+      .other_mode = {},
     };
 }
 
-// The other modes of a mechanism built without a gas model: every T_o is
-// the single second temperature of a two-temperature evaluation (mode 0).
-struct SingleOtherTemperature {
-    template <std::size_t K>
-    ModeIndex operator()(const ArrheniusInput& /*rate*/,
-                         const SpeciesCoefficients<K>& /*reactants*/,
-                         std::string_view /*role*/) const
-    { return ModeIndex {0}; }
+// Validate species-bearing requirements before resolving model components.
+// The host definitions and optional model reference outlive construction only.
+template <typename Source, std::size_t N> struct TemperatureSpecies {
+    const ReactionSpeciesView<Source, N>& species;
+
+    SpeciesMetadataView metadata(SpeciesIndex i) const
+    {
+        const auto value = species.metadata(i);
+        try {
+            check_species_metadata(value, species.charge_number(i).value());
+        } catch (const ParameterError& error) {
+            throw ParameterError(std::format("species \"{}\": {}", species.name(i), error.what()));
+        }
+        return value;
+    }
+    SpeciesIndex named(const char* name) const
+    {
+        if (name == nullptr || std::string_view {name}.empty()) {
+            throw ParameterError("temperature requirement needs a species");
+        }
+        for (const SpeciesIndex i : species_indices(0, N)) {
+            if (species.name(i) == name) { return i; }
+        }
+        throw ParameterError(std::format("unknown temperature species \"{}\"", name));
+    }
+    SpeciesIndex vibration(const char* name) const
+    {
+        const auto i = named(name);
+        const auto m = metadata(i);
+        const bool molecular =
+          m.elements &&
+          (m.elements->size() > 1 || (m.elements->size() == 1 && (*m.elements)[0].count > 1));
+        if (m.role != SpeciesRole::heavy || !molecular) {
+            throw ParameterError(
+              std::format("vibration temperature requires a molecular heavy species: \"{}\"",
+                          name));
+        }
+        return i;
+    }
+    SpeciesIndex electronic(const char* name) const
+    {
+        const auto i = named(name);
+        if (metadata(i).role != SpeciesRole::heavy) {
+            throw ParameterError(
+              std::format("bound electronic temperature requires a heavy species: \"{}\"", name));
+        }
+        return i;
+    }
+    SpeciesIndex electron() const
+    {
+        for (const SpeciesIndex i : species_indices(0, N)) {
+            if (species.metadata(i).role == SpeciesRole::electron) {
+                (void)metadata(i);
+                return i;
+            }
+        }
+        throw ParameterError("free-electron temperature requires a free-electron species");
+    }
 };
 
+template <typename Source, std::size_t N> struct SingleOtherTemperature {
+    static constexpr std::size_t mode_count = 0;
+    TemperatureSpecies<Source, N> species;
+    OptionalModeIndex operator()(TranslationTemperatureInput) const { return {}; }
+    OptionalModeIndex operator()(RotationTemperatureInput) const { return {}; }
+    OptionalModeIndex operator()(VibrationTemperatureInput input) const
+    {
+        (void)species.vibration(input.species);
+        return {};
+    }
+    OptionalModeIndex operator()(BoundElectronicTemperatureInput input) const
+    {
+        (void)species.electronic(input.species);
+        return {};
+    }
+    OptionalModeIndex operator()(FreeElectronTemperatureInput) const
+    {
+        (void)species.electron();
+        return {};
+    }
+};
+
+template <typename Resolver>
+OptionalModeIndex resolve_temperature(const std::optional<PhysicalTemperatureInput>& input,
+                                      const Resolver& resolver,
+                                      bool required,
+                                      std::string_view role,
+                                      std::string_view missing)
+{
+    try {
+        if (input) { return std::visit(resolver, *input); }
+        if (required && Resolver::mode_count > 0) { throw ParameterError(std::string(missing)); }
+        return {};
+    } catch (const ParameterError& error) {
+        throw ParameterError(std::format("{} rate: {}", role, error.what()));
+    }
+}
+
 // Reaction of input with the other mode of each rate from
-// other_mode(rate, reactants, role), which throws ParameterError for a rate
-// whose other temperature does not resolve.
+// the host resolver, which rejects unavailable physical components.
 template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t K, typename OtherMode>
 Reaction<P, U, N> make_reaction(const ReactionInput<K>& input,
                                 const std::array<std::string_view, N>& names,
@@ -616,17 +726,36 @@ Reaction<P, U, N> make_reaction(const ReactionInput<K>& input,
     }
     r.coefficient_change = static_cast<int>(change);
     r.forward = arrhenius_rate(input.forward, reactant_order, scales, "forward");
-    r.forward.other_mode = other_mode(input.forward, input.reactants, "forward");
+    r.forward.other_mode = resolve_temperature(input.forward.other_temperature,
+                                               other_mode,
+                                               input.forward.translational_exponent != 1.0,
+                                               "forward",
+                                               "other temperature requirement is missing");
     r.backward_model = input.backward_model;
     r.equilibrium_at_other_temperature = false;
     if (input.backward_model == BackwardRateModel::arrhenius) {
-        r.backward = arrhenius_rate(input.backward, product_order, scales, "backward");
-        r.backward.other_mode = other_mode(input.backward, input.reactants, "backward");
-    } else if (input.backward_model == BackwardRateModel::equilibrium) {
-        if (input.backward.other_temperature != nullptr) {
-            r.equilibrium_at_other_temperature = true;
-            r.backward.other_mode = other_mode(input.backward, input.reactants, "backward");
+        if (input.equilibrium_temperature) {
+            throw ParameterError("backward rate: equilibrium temperature is only valid for an "
+                                 "equilibrium backward rate");
         }
+        r.backward = arrhenius_rate(input.backward, product_order, scales, "backward");
+        r.backward.other_mode = resolve_temperature(input.backward.other_temperature,
+                                                    other_mode,
+                                                    input.backward.translational_exponent != 1.0,
+                                                    "backward",
+                                                    "other temperature requirement is missing");
+    } else if (input.backward_model == BackwardRateModel::equilibrium) {
+        if (input.backward.other_temperature) {
+            throw ParameterError(
+              "backward rate: an equilibrium backward rate uses equilibrium_temperature");
+        }
+        r.backward.other_mode =
+          resolve_temperature(input.equilibrium_temperature,
+                              other_mode,
+                              true,
+                              "backward",
+                              "equilibrium temperature requirement is missing");
+        r.equilibrium_at_other_temperature = r.backward.other_mode.has_value();
     } else {
         throw ParameterError("unknown backward rate model");
     }
@@ -740,6 +869,7 @@ ReactionMechanism<P, U, N, R> build_mechanism(const MechanismInput<R, K>& input,
         }
     }
     mech.mass_ = mass;
+    mech.configured_mode_count_ = OtherMode::mode_count;
     using W = std::common_type_t<double, P>;
     mech.temperature_lower = positive_thermodynamic_parameter<P>(
       convert<U>(Temperature<W, si> {static_cast<W>(lower)}, scales), "temperature lower limit");
@@ -782,10 +912,9 @@ ReactionMechanism<P, U, N, R> build_mechanism(const MechanismInput<R, K>& input,
 // balances are exact checked integer sums; nonzero or overflowing balances are
 // rejected with reaction context. Unchanged explicit participants are validated.
 // The host species and thermo model used for rate evaluation must share ordering.
-// Every rate's other mode is 0, whatever its other_temperature: each T_o is
-// the single second temperature T_ve of a two-temperature evaluation, and a
-// backward input of an equilibrium rate with an other_temperature gives an
-// equilibrium backward rate at T_ve.
+// Without a gas model this constructs an explicitly single-temperature
+// mechanism. Supplied physical requirements are validated and collapsed to T_l;
+// evaluating this mechanism with internal temperatures violates its contract.
 template <std::floating_point P,
           UnitSystem U,
           typename Source,
@@ -802,7 +931,7 @@ ReactionMechanism<P, U, N, R> make_reaction_mechanism(const MechanismInput<R, K>
                                    species,
                                    scales,
                                    standard_pressure,
-                                   detail::SingleOtherTemperature {});
+                                   detail::SingleOtherTemperature<Source, N> {{species}});
 }
 
 // As above, with the standard pressure 1 bar (1e5 Pa).
@@ -835,97 +964,69 @@ concept HasEnergyModes = GasModelType<G> && requires(const G& gas, SpeciesIndex 
     { electron_energy_mode(gas) } -> std::same_as<OptionalModeIndex>;
 };
 
+// Reaction construction also resolves bound electronic components.
+template <typename G>
+concept HasReactionTemperatureModes =
+  HasEnergyModes<G> && detail::HasModeCount<G> && requires(const G& gas, SpeciesIndex i) {
+      { species_electronic_mode(gas, i) } -> std::same_as<OptionalModeIndex>;
+  };
+
 namespace detail
 {
+template <HasReactionTemperatureModes G, typename Source, std::size_t N>
+struct ModelOtherTemperature {
+    static constexpr std::size_t mode_count = G::mode_count;
+    const G& gas;
+    TemperatureSpecies<Source, N> species;
 
-// The other modes of a mechanism built with the gas model *gas, over the
-// species *names (in the species order of *gas); see
-// make_reaction_mechanism. Both must outlive the builder call.
-template <HasEnergyModes G, std::size_t N> struct ModelOtherTemperature {
-    const G* gas;
-    const std::array<std::string_view, N>* names;
-
-    template <std::size_t K>
-    ModeIndex operator()(const ArrheniusInput& rate,
-                         const SpeciesCoefficients<K>& reactants,
-                         std::string_view role) const
+    OptionalModeIndex checked(OptionalModeIndex mode, std::string_view component) const
     {
-        const char* name = rate.other_temperature;
-        if (name == nullptr) {
-            if (G::mode_count == 1 || rate.translational_exponent == 1.0) {
-                return ModeIndex {0};
-            }
-            OptionalModeIndex selected {};
-            for (std::size_t e = 0; e < static_cast<std::size_t>(reactants.count); ++e) {
-                const auto index = species_index(*names, reactants.entries[e].name);
-                if (!index) { throw ParameterError("unknown reactant species for mode selection"); }
-                const OptionalModeIndex mode = species_vibration_mode(*gas, *index);
-                if (!mode) { continue; }
-                if (selected && *selected != *mode) {
-                    throw ParameterError(std::format(
-                      "{} rate: reactant vibrations occupy different modes; specify other_temperature",
-                      role));
-                }
-                selected = mode;
-            }
-            if (selected) { return *selected; }
-            throw ParameterError(std::format(
-              "{} rate: no reactant has a vibration component to give the other temperature",
-              role));
-        }
-        if (std::string_view {name} == "electron") {
-            const OptionalModeIndex mode = electron_energy_mode(*gas);
-            if (!mode) {
-                throw ParameterError(std::format(
-                  "{} rate: other temperature \"electron\": the model has no free electrons",
-                  role));
-            }
-            return *mode;
-        }
-        const auto i = species_index(*names, name);
-        if (!i) {
-            throw ParameterError(
-              std::format(R"({} rate: other temperature "{}" is not "electron" or a species)",
-                          role,
-                          name));
-        }
-        const OptionalModeIndex mode = species_vibration_mode(*gas, *i);
         if (!mode) {
-            throw ParameterError(std::format(
-              "{} rate: other temperature \"{}\": the species has no vibration component",
-              role,
-              name));
+            throw ParameterError(
+              std::format("temperature component is not assigned to a mode: {}", component));
         }
-        return *mode;
+        if ((*mode).value() >= mode_count) {
+            throw ParameterError(
+              std::format("temperature mode is outside the model mode range: {}", component));
+        }
+        return mode;
+    }
+    OptionalModeIndex operator()(TranslationTemperatureInput) const { return {}; }
+    OptionalModeIndex operator()(RotationTemperatureInput) const { return {}; }
+    OptionalModeIndex operator()(VibrationTemperatureInput input) const
+    {
+        const auto i = species.vibration(input.species);
+        return checked(species_vibration_mode(gas, i),
+                       std::format("vibration of {}", input.species));
+    }
+    OptionalModeIndex operator()(BoundElectronicTemperatureInput input) const
+    {
+        const auto i = species.electronic(input.species);
+        return checked(species_electronic_mode(gas, i),
+                       std::format("bound electronic of {}", input.species));
+    }
+    OptionalModeIndex operator()(FreeElectronTemperatureInput) const
+    {
+        (void)species.electron();
+        return checked(electron_energy_mode(gas), "free electron");
     }
 };
-
 }  // namespace detail
 
-// As make_reaction_mechanism with a standard pressure, with each rate's
-// other temperature resolved against the energy modes of gas, whose
-// species are those of the host definitions in the same order. The other mode of a rate
-// is:
-// - for other_temperature "electron": electron_energy_mode(gas);
-// - for a species name: species_vibration_mode(gas) of that species;
-// - without other_temperature: 0 when gas has one mode or s = 1 (unused);
-//   otherwise the unique mode holding the reactants' unfrozen vibrations.
-//   Multiple reactants sharing one vibration mode give a unique choice.
-// The backward rate of BackwardRateModel::arrhenius resolves the same way,
-// with the reactant list; the backward input of an equilibrium rate is
-// resolved only when it names an other_temperature. In addition to the
-// errors above, throws ParameterError, with the reaction index and
-// equation, when other_temperature is "electron" and gas has no electron
-// mode, names neither "electron" nor a species, or names a species without
-// a vibration mode, or when it is null, gas has more than one mode, s is not
-// 1 and the reactants have no vibration mode or occupy different vibration modes.
+// Resolve each physical requirement against gas, in the host species order.
+// Translation and rotation use the primary temperature. Vibration, bound
+// electronic excitation and free electrons require their configured components.
+// Even a one-mode model requires explicit active Arrhenius and equilibrium
+// sources. Unused supplied requirements are validated. Invalid species metadata,
+// missing components and out-of-range model queries throw ParameterError with
+// reaction, rate and component context. No reactant inference is performed.
 template <std::floating_point P,
           UnitSystem U,
           std::size_t N,
           std::size_t R,
           std::size_t K,
           typename Source,
-          HasEnergyModes G>
+          HasReactionTemperatureModes G>
     requires(N > 0 && R > 0 && K > 0) && std::same_as<typename G::units, U>
 ReactionMechanism<P, U, N, R> make_reaction_mechanism(const MechanismInput<R, K>& input,
                                                       const ReactionSpeciesView<Source, N>& species,
@@ -933,14 +1034,12 @@ ReactionMechanism<P, U, N, R> make_reaction_mechanism(const MechanismInput<R, K>
                                                       Pressure<P, U> standard_pressure,
                                                       const G& gas)
 {
-    std::array<std::string_view, N> names {};
-    for (const SpeciesIndex i : species_indices(0, N)) { names[i.value()] = species.name(i); }
     return detail::build_mechanism(
       input,
       species,
       scales,
       standard_pressure,
-      detail::ModelOtherTemperature<G, N> {.gas = &gas, .names = &names});
+      detail::ModelOtherTemperature<G, Source, N> {.gas = gas, .species = {species}});
 }
 
 // Owned host species definitions are borrowed only during construction.
@@ -1058,20 +1157,6 @@ CANARY_HOST_DEVICE T
            T(rate.activation_temperature.value() * T(inv_t * math::exp(T(-w))));
 }
 
-// Index into the M other temperatures of rates_of_progress_at of a rate
-// with the given other mode: 0 with one other temperature (T_ve of a
-// two-temperature evaluation, or the only mode), the mode otherwise.
-template <std::size_t M> CANARY_HOST_DEVICE constexpr ModeIndex other_index(ModeIndex mode)
-{
-    if constexpr (M == 1) {
-        return ModeIndex {0};
-    } else {
-        // NOLINTNEXTLINE(misc-static-assert): run-time mode index
-        CANARY_ASSERT(mode.value() < M);
-        return mode;
-    }
-}
-
 // ln(k / A) of an Arrhenius rate in rates_of_progress_at: at T_l with no
 // other temperature (M = 0); otherwise at T_c for s != 1, from ln_ratio =
 // ln(T_o / T_l) of the rate's other temperature, and at T_l for s = 1, so
@@ -1082,11 +1167,8 @@ CANARY_HOST_DEVICE T
   rate_exponent(const ArrheniusRate<P, U>& rate, T ln_t, T inv_t, const std::array<T, M>& ln_ratio)
 {
     if constexpr (M > 0) {
-        if (rate.translational_exponent != P(1)) {
-            return arrhenius_exponent(rate,
-                                      ln_t,
-                                      inv_t,
-                                      ln_ratio[other_index<M>(rate.other_mode).value()]);
+        if (rate.other_mode && rate.translational_exponent != P(1)) {
+            return arrhenius_exponent(rate, ln_t, inv_t, ln_ratio[(*rate.other_mode).value()]);
         }
     }
     return arrhenius_exponent(rate, ln_t, inv_t);
@@ -1181,7 +1263,7 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
             const auto& r = records[k];
             if (r.backward_model == BackwardRateModel::equilibrium &&
                 r.equilibrium_at_other_temperature) {
-                used[other_index<M>(r.backward.other_mode).value()] = true;
+                used[(*r.backward.other_mode).value()] = true;
             }
         }
         for (const ModeIndex m : mode_indices(0, M)) {
@@ -1200,12 +1282,11 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
         const T forward_exponent = arrhenius_exponent(r.forward, ln_t, inv_t);
         T controlled_exponent = forward_exponent;
         if constexpr (M > 0) {
-            if (r.forward.translational_exponent != P(1)) {
-                controlled_exponent =
-                  arrhenius_exponent(r.forward,
-                                     ln_t,
-                                     inv_t,
-                                     ln_ratio[other_index<M>(r.forward.other_mode).value()]);
+            if (r.forward.other_mode && r.forward.translational_exponent != P(1)) {
+                controlled_exponent = arrhenius_exponent(r.forward,
+                                                         ln_t,
+                                                         inv_t,
+                                                         ln_ratio[(*r.forward.other_mode).value()]);
             }
         }
         const T k_f = T(r.forward.A * math::exp(controlled_exponent));
@@ -1215,7 +1296,7 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
             if constexpr (M > 0) { at_other_temperature = r.equilibrium_at_other_temperature; }
             T exponent = forward_exponent;
             if (at_other_temperature) {
-                const ModeIndex m = other_index<M>(r.backward.other_mode);
+                const ModeIndex m = (*r.backward.other_mode);
                 exponent = equilibrium_exponent(
                   r,
                   arrhenius_exponent(r.forward, ln_other[m.value()], inv_other[m.value()]),
@@ -1278,11 +1359,12 @@ CANARY_HOST_DEVICE CANARY_FORCE_INLINE std::array<MassProductionRate<T, U>, N>
 
 // Rates of progress of every reaction of mech in a cell of density rho,
 // translational temperature temp and vibrational-electronic temperature
-// temp_ve, with the normalised mass fractions of mix. Every rate constant
+// temp_ve, with the normalised mass fractions of mix. Requires a one-mode gas
+// and a mechanism constructed with a one-mode gas. Every rate constant
 // and the Gibbs energies of the equilibrium constants use T_l, temp clamped
 // to [temperature_lower, temperature_upper] of mech (on its value part; a
 // clamped temperature has derivative zero), except that temp_ve is T_o of
-// every rate: it is not clamped and enters through the rate-controlling
+// rates resolved to the internal mode: it is not clamped and enters through the rate-controlling
 // temperatures of the Arrhenius rates and the equilibrium backward rates
 // at T_o (see the top of this file). The Arrhenius expressions compute on
 // the values of the quantities, since A has no fixed kind. The gas model is
@@ -1290,7 +1372,8 @@ CANARY_HOST_DEVICE CANARY_FORCE_INLINE std::array<MassProductionRate<T, U>, N>
 // has its equilibrium backward rate at T_o. The status of mix is not
 // checked.
 template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::size_t R, typename G>
-    requires ReactingModel<G, T, P, N> && std::same_as<typename G::units, U>
+    requires ReactingModel<G, T, P, N> && std::same_as<typename G::units, U> &&
+             detail::HasModeCount<G> && (G::mode_count == 1)
 CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
   rates_of_progress(const ReactionMechanism<P, U, N, R>& mech,
                     const G& gas,
@@ -1299,6 +1382,7 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
                     Temperature<T, U> temp,
                     Temperature<T, U> temp_ve)
 {
+    CANARY_ASSERT(detail::reaction_mode_count(mech) == 1);
     return detail::rates_of_progress_at<1>(mech,
                                            gas,
                                            mix,
@@ -1308,7 +1392,8 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
 }
 
 // Mode temperatures borrow the caller's storage. The extent must equal
-// G::mode_count; the model determines the size of the numerical scratch arrays.
+// G::mode_count and the mechanism's configured mode count must agree before any
+// input read. The model determines the size of the numerical scratch arrays.
 template <Scalar T,
           std::floating_point P,
           UnitSystem U,
@@ -1328,6 +1413,7 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
 {
     constexpr std::size_t modes = G::mode_count;
     CANARY_ASSERT(static_cast<std::size_t>(mode_temp.extent(0)) == modes);
+    CANARY_ASSERT(detail::reaction_mode_count(mech) == modes);
     std::array<T, modes> other {};
     for (const ModeIndex m : mode_indices(0, modes)) {
         other[m.value()] = detail::mode_at(mode_temp, m).value();
@@ -1343,7 +1429,7 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
 // Rates of progress with the M mode temperatures mode_temp of the cell
 // (for example MultiTemperatureState::mode_temp): as above, with T_o of
 // each rate the temperature of its other mode (ArrheniusRate::other_mode;
-// with M = 1, the only mode). The gas model is called through
+// resolved during construction). The gas model is called through
 // species_properties at T_l and at each mode temperature at which a
 // reaction has its equilibrium backward rate.
 template <Scalar T,
@@ -1392,7 +1478,8 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
 // nu'_ir) (q_f,r - q_b,r), from the rates of progress of rates_of_progress
 // with the same arguments.
 template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::size_t R, typename G>
-    requires ReactingModel<G, T, P, N> && std::same_as<typename G::units, U>
+    requires ReactingModel<G, T, P, N> && std::same_as<typename G::units, U> &&
+             detail::HasModeCount<G> && (G::mode_count == 1)
 CANARY_HOST_DEVICE std::array<MassProductionRate<T, U>, N>
   production_rates(const ReactionMechanism<P, U, N, R>& mech,
                    const G& gas,
@@ -1463,12 +1550,55 @@ CANARY_HOST_DEVICE std::array<MassProductionRate<T, U>, N>
 namespace detail
 {
 
+struct OwnedVibrationTemperature {
+    OwnedSpeciesName species;
+};
+struct OwnedBoundElectronicTemperature {
+    OwnedSpeciesName species;
+};
+struct StorePhysicalTemperature {
+    using Storage = std::variant<TranslationTemperatureInput,
+                                 RotationTemperatureInput,
+                                 OwnedVibrationTemperature,
+                                 OwnedBoundElectronicTemperature,
+                                 FreeElectronTemperatureInput>;
+    Storage operator()(TranslationTemperatureInput v) const { return v; }
+    Storage operator()(RotationTemperatureInput v) const { return v; }
+    Storage operator()(VibrationTemperatureInput v) const
+    { return OwnedVibrationTemperature {OwnedSpeciesName {v.species}}; }
+    Storage operator()(BoundElectronicTemperatureInput v) const
+    { return OwnedBoundElectronicTemperature {OwnedSpeciesName {v.species}}; }
+    Storage operator()(FreeElectronTemperatureInput v) const { return v; }
+};
+struct BorrowPhysicalTemperature {
+    PhysicalTemperatureInput operator()(TranslationTemperatureInput v) const { return v; }
+    PhysicalTemperatureInput operator()(RotationTemperatureInput v) const { return v; }
+    PhysicalTemperatureInput operator()(const OwnedVibrationTemperature& v) const
+    { return VibrationTemperatureInput {v.species.c_str()}; }
+    PhysicalTemperatureInput operator()(const OwnedBoundElectronicTemperature& v) const
+    { return BoundElectronicTemperatureInput {v.species.c_str()}; }
+    PhysicalTemperatureInput operator()(FreeElectronTemperatureInput v) const { return v; }
+};
+struct OwnedPhysicalTemperature {
+    std::optional<StorePhysicalTemperature::Storage> value;
+    OwnedPhysicalTemperature() = default;
+    explicit OwnedPhysicalTemperature(const std::optional<PhysicalTemperatureInput>& input)
+    {
+        if (input) { value = std::visit(StorePhysicalTemperature {}, *input); }
+    }
+    std::optional<PhysicalTemperatureInput> borrow() const
+    {
+        if (value) { return std::visit(BorrowPhysicalTemperature {}, *value); }
+        return std::nullopt;
+    }
+};
+
 template <> struct InputStorage<ArrheniusInput> {
     double A {};
     double n {};
     double activation_temperature {};
     double translational_exponent {};
-    OwnedTemperatureLabel other_temperature {};
+    OwnedPhysicalTemperature other_temperature {};
     using Scratch = std::tuple<>;
     InputStorage() = default;
     explicit InputStorage(const ArrheniusInput& input) :
@@ -1484,7 +1614,7 @@ template <> struct InputStorage<ArrheniusInput> {
           .n = n,
           .activation_temperature = activation_temperature,
           .translational_exponent = translational_exponent,
-          .other_temperature = other_temperature.c_str(),
+          .other_temperature = other_temperature.borrow(),
         };
     }
 };
@@ -1529,6 +1659,7 @@ template <std::size_t K> struct InputStorage<ReactionInput<K>> {
     InputStorage<ArrheniusInput> forward {};
     BackwardRateModel backward_model {};
     InputStorage<ArrheniusInput> backward {};
+    OwnedPhysicalTemperature equilibrium_temperature {};
     bool third_body {};
     InputStorage<SpeciesCoefficients<K>> efficiencies {};
     using Scratch = std::tuple<typename InputStorage<SpeciesCoefficients<K>>::Scratch,
@@ -1540,7 +1671,8 @@ template <std::size_t K> struct InputStorage<ReactionInput<K>> {
     explicit InputStorage(const ReactionInput<K>& input) :
         equation(input.equation), reactants(input.reactants), products(input.products),
         forward(input.forward), backward_model(input.backward_model), backward(input.backward),
-        third_body(input.third_body), efficiencies(input.efficiencies)
+        equilibrium_temperature(input.equilibrium_temperature), third_body(input.third_body),
+        efficiencies(input.efficiencies)
     {
     }
     ReactionInput<K> borrow([[maybe_unused]] Scratch& scratch) const
@@ -1552,6 +1684,7 @@ template <std::size_t K> struct InputStorage<ReactionInput<K>> {
           .forward = forward.borrow(std::get<2>(scratch)),
           .backward_model = backward_model,
           .backward = backward.borrow(std::get<3>(scratch)),
+          .equilibrium_temperature = equilibrium_temperature.borrow(),
           .third_body = third_body,
           .efficiencies = efficiencies.borrow(std::get<4>(scratch)),
         };

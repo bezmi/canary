@@ -865,7 +865,7 @@ template <Scalar T,
           std::size_t C,
           typename G>
     requires ReactingModel<G, T, P, N> && RelaxingModel<G, T, P, N> &&
-             std::same_as<typename G::units, U>
+             std::same_as<typename G::units, U> && detail::HasModeCount<G> && (G::mode_count == 1)
 CANARY_HOST_DEVICE TwoTemperatureSources<T, U, N>
   two_temperature_sources(const ReactionMechanism<P, U, N, R>& mechanism,
                           const EnergyExchange<P, U, N, V, C>& exchange,

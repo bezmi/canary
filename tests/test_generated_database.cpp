@@ -20,6 +20,15 @@ void construct_generated(const canary::UnitScales<P, U>& scales)
     const auto built =
       canary::make_thermally_perfect_mixture(canary::generated_species_species, scales);
     const auto mechanism = canary::make_generated_reactions(scales);
+    const auto two = canary::make_two_temperature_mixture(canary::generated_species_species,
+                                                          canary::air5_rotational_degrees,
+                                                          scales);
+    expect(nothrow([&] {
+        (void)canary::make_generated_reactions(
+          scales,
+          canary::convert<U>(canary::Pressure<P, canary::si> {P(101325)}, scales),
+          two.model);
+    }));
     expect(
       nothrow([&] { (void)canary::make_generated_exchange(built.species, mechanism, scales); }));
     expect(nothrow([&] {

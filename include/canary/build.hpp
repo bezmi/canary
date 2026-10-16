@@ -35,7 +35,6 @@ struct InputAccess;
 
 struct SpeciesNameTag {};
 struct ReactionEquationTag {};
-struct TemperatureLabelTag {};
 struct ElementNameTag {};
 
 template <typename Tag> struct OwnedText {
@@ -51,7 +50,6 @@ template <typename Tag> struct OwnedText {
 
 using OwnedSpeciesName = OwnedText<SpeciesNameTag>;
 using OwnedReactionEquation = OwnedText<ReactionEquationTag>;
-using OwnedTemperatureLabel = OwnedText<TemperatureLabelTag>;
 using OwnedElementName = OwnedText<ElementNameTag>;
 
 template <typename T, std::size_t N> struct InputStorage<std::array<T, N>> {

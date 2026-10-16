@@ -22,7 +22,7 @@ class ReactionJsonTests(unittest.TestCase):
         self.source = self.directory / "reactions.json"
         self.output = self.directory / "reactions.hpp"
         self.data = {
-            "format": "canary-reactions-1",
+            "format": "canary-reactions-2",
             "units": {"quantity": "mol", "length": "m", "time": "s", "temperature": "K"},
             "temperature_limits": {"lower": 300.0, "upper": 50000.0},
             "reactions": [{"equation": "N2 <=> N + N", "reactants": {"N2": 1.0}, "products": {"N": 2.0},
@@ -46,7 +46,7 @@ class ReactionJsonTests(unittest.TestCase):
                                "-o", str(self.output)], capture_output=True, text=True, timeout=30)
 
     def test_supported_rates_and_zero_parameters(self):
-        for backward in ({"model": "equilibrium"}, {"model": "equilibrium", "other_temperature": "electron"},
+        for backward in ({"model": "equilibrium"}, {"model": "equilibrium", "temperature": {"kind": "free_electron"}},
                          copy.deepcopy(self.data["reactions"][0]["forward"])):
             with self.subTest(backward=backward):
                 self.data["reactions"][0]["backward"] = backward
@@ -116,9 +116,9 @@ class ReactionJsonTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         original = self.output.read_bytes()
         record = self.data["reactions"][0]
-        record["forward"].update(translational_exponent=None, other_temperature=None)
+        record["forward"].update(translational_exponent=None, other_temperature=None, temperature=None)
         record["backward"].update(A=None, n=None, activation_temperature=None,
-                                  translational_exponent=None, other_temperature=None)
+                                  translational_exponent=None, other_temperature=None, temperature=None)
         record["third_body"] = None
         self.source.write_text(json.dumps(self.data), encoding="utf-8")
         result = self.generate()
@@ -146,6 +146,41 @@ class ReactionJsonTests(unittest.TestCase):
                         self.assertEqual(self.output.read_bytes(), b"original output\n")
                     else:
                         self.assertFalse(self.output.exists())
+
+    def test_physical_temperature_requirements(self):
+        valid = [{"kind": k} for k in ("translation", "rotation", "free_electron")]
+        valid += [{"kind": k, "species": "N2"} for k in ("vibration", "bound_electronic")]
+        for role, field in (("forward", "other_temperature"), ("backward", "temperature")):
+            for requirement in valid:
+                data = copy.deepcopy(self.data)
+                data["reactions"][0][role][field] = requirement
+                reaction_json.validate(data, self.source)
+            for requirement, reason in (
+                ({"kind": "bad"}, "unknown temperature kind"),
+                ({"kind": "vibration"}, "needs a species"),
+                ({"kind": "bound_electronic", "species": ""}, "needs a species"),
+                ({"kind": "translation", "species": "N2"}, "does not take a species"),
+                ({"kind": "rotation", "species": "N2"}, "does not take a species"),
+                ({"kind": "free_electron", "species": "e-"}, "does not take a species")):
+                data = copy.deepcopy(self.data)
+                data["reactions"][0][role][field] = requirement
+                self.assert_rejected(data, reason)
+        for role, field in (("forward", "temperature"), ("backward", "other_temperature")):
+            data = copy.deepcopy(self.data)
+            data["reactions"][0][role][field] = {"kind": "translation"}
+            self.assert_rejected(data, f"forbids {field}")
+
+    def test_old_format_and_string_requirements_are_rejected(self):
+        self.data["format"] = "canary-reactions-1"
+        with self.assertRaises(SystemExit):
+            reaction_json.validate(self.data, self.source)
+        self.data["format"] = "canary-reactions-2"
+        self.data["reactions"][0]["forward"]["other_temperature"] = "electron"
+        self.source.write_text(json.dumps(self.data), encoding="utf-8")
+        self.output.write_bytes(b"original output")
+        result = self.generate()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.output.read_bytes(), b"original output")
 
     def test_duplicate_json_keys_are_rejected(self):
         text = json.dumps(self.data).replace('"model": "equilibrium"',

@@ -975,6 +975,7 @@ void test_reactions()
         expect(starts(error_message([&] { build(input); }), "reaction 10"));
         input = canary::air5_kim_jo;
         input.reactions[11].backward_model = canary::BackwardRateModel::arrhenius;
+        input.reactions[11].equilibrium_temperature.reset();
         expect(starts(error_message([&] { build(input); }),
                       "reaction 11 (NO + O <=> O2 + N): backward rate"));
 
@@ -988,6 +989,7 @@ void test_reactions()
               << message;
             input = canary::air5_kim_jo;
             input.reactions[11].backward_model = canary::BackwardRateModel::arrhenius;
+            input.reactions[11].equilibrium_temperature.reset();
             input.reactions[11].backward = input.reactions[11].forward;
             input.reactions[11].backward.translational_exponent = s;
             message = error_message([&] { build(input); });
@@ -1042,7 +1044,7 @@ void test_reactions()
         canary::MechanismInput<1, 11> input {.temperature_lower = 300.0,
                                              .temperature_upper = 30000.0,
                                              .reactions = {canary::air11_kim_jo.reactions[38]}};
-        input.reactions[0].forward.other_temperature = nullptr;
+        input.reactions[0].forward.other_temperature = std::nullopt;
         input.reactions[0].forward.translational_exponent = 1.0;
         const auto check = [&](const auto& definitions, const auto& mechanism) {
             return error_message([&] {

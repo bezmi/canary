@@ -69,6 +69,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = -1.214,
                 .activation_temperature = 113200.0,
                 .translational_exponent = 0.5,
+                .other_temperature = VibrationTemperatureInput {"N2"},
               },
             .backward_model = BackwardRateModel::equilibrium,
             .backward =
@@ -77,6 +78,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -129,6 +131,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = -1.6,
                 .activation_temperature = 113200.0,
                 .translational_exponent = 0.5,
+                .other_temperature = VibrationTemperatureInput {"N2"},
               },
             .backward_model = BackwardRateModel::equilibrium,
             .backward =
@@ -137,6 +140,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -189,6 +193,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = -1.6,
                 .activation_temperature = 113200.0,
                 .translational_exponent = 0.5,
+                .other_temperature = VibrationTemperatureInput {"N2"},
               },
             .backward_model = BackwardRateModel::equilibrium,
             .backward =
@@ -197,6 +202,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -245,6 +251,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = -1.226,
                 .activation_temperature = 113200.0,
                 .translational_exponent = 0.5,
+                .other_temperature = VibrationTemperatureInput {"N2"},
               },
             .backward_model = BackwardRateModel::equilibrium,
             .backward =
@@ -253,6 +260,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -305,6 +313,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = -1.6,
                 .activation_temperature = 113200.0,
                 .translational_exponent = 0.5,
+                .other_temperature = VibrationTemperatureInput {"N2"},
               },
             .backward_model = BackwardRateModel::equilibrium,
             .backward =
@@ -313,6 +322,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -365,6 +375,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = -1.214,
                 .activation_temperature = 113200.0,
                 .translational_exponent = 0.5,
+                .other_temperature = VibrationTemperatureInput {"N2"},
               },
             .backward_model = BackwardRateModel::equilibrium,
             .backward =
@@ -373,6 +384,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -425,6 +437,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = -1.6,
                 .activation_temperature = 113200.0,
                 .translational_exponent = 0.5,
+                .other_temperature = VibrationTemperatureInput {"N2"},
               },
             .backward_model = BackwardRateModel::equilibrium,
             .backward =
@@ -433,6 +446,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -485,6 +499,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = -1.6,
                 .activation_temperature = 113200.0,
                 .translational_exponent = 0.5,
+                .other_temperature = VibrationTemperatureInput {"N2"},
               },
             .backward_model = BackwardRateModel::equilibrium,
             .backward =
@@ -493,6 +508,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -545,6 +561,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = -1.226,
                 .activation_temperature = 113200.0,
                 .translational_exponent = 0.5,
+                .other_temperature = VibrationTemperatureInput {"N2"},
               },
             .backward_model = BackwardRateModel::equilibrium,
             .backward =
@@ -553,6 +570,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -605,6 +623,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = -1.6,
                 .activation_temperature = 113200.0,
                 .translational_exponent = 0.5,
+                .other_temperature = VibrationTemperatureInput {"N2"},
               },
             .backward_model = BackwardRateModel::equilibrium,
             .backward =
@@ -613,6 +632,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -665,6 +685,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = -0.2726,
                 .activation_temperature = 59500.0,
                 .translational_exponent = 0.5,
+                .other_temperature = VibrationTemperatureInput {"O2"},
               },
             .backward_model = BackwardRateModel::equilibrium,
             .backward =
@@ -673,6 +694,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -721,6 +743,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = -2.585,
                 .activation_temperature = 59500.0,
                 .translational_exponent = 0.5,
+                .other_temperature = VibrationTemperatureInput {"O2"},
               },
             .backward_model = BackwardRateModel::equilibrium,
             .backward =
@@ -729,6 +752,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -781,6 +805,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = -0.2726,
                 .activation_temperature = 59500.0,
                 .translational_exponent = 0.5,
+                .other_temperature = VibrationTemperatureInput {"O2"},
               },
             .backward_model = BackwardRateModel::equilibrium,
             .backward =
@@ -789,6 +814,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -841,6 +867,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = -1.5,
                 .activation_temperature = 59500.0,
                 .translational_exponent = 0.5,
+                .other_temperature = VibrationTemperatureInput {"O2"},
               },
             .backward_model = BackwardRateModel::equilibrium,
             .backward =
@@ -849,6 +876,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -897,6 +925,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = -1.5,
                 .activation_temperature = 59500.0,
                 .translational_exponent = 0.5,
+                .other_temperature = VibrationTemperatureInput {"O2"},
               },
             .backward_model = BackwardRateModel::equilibrium,
             .backward =
@@ -905,6 +934,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -957,6 +987,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = -0.2726,
                 .activation_temperature = 59500.0,
                 .translational_exponent = 0.5,
+                .other_temperature = VibrationTemperatureInput {"O2"},
               },
             .backward_model = BackwardRateModel::equilibrium,
             .backward =
@@ -965,6 +996,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -1017,6 +1049,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = -2.585,
                 .activation_temperature = 59500.0,
                 .translational_exponent = 0.5,
+                .other_temperature = VibrationTemperatureInput {"O2"},
               },
             .backward_model = BackwardRateModel::equilibrium,
             .backward =
@@ -1025,6 +1058,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -1077,6 +1111,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = -0.2726,
                 .activation_temperature = 59500.0,
                 .translational_exponent = 0.5,
+                .other_temperature = VibrationTemperatureInput {"O2"},
               },
             .backward_model = BackwardRateModel::equilibrium,
             .backward =
@@ -1085,6 +1120,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -1137,6 +1173,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = -1.5,
                 .activation_temperature = 59500.0,
                 .translational_exponent = 0.5,
+                .other_temperature = VibrationTemperatureInput {"O2"},
               },
             .backward_model = BackwardRateModel::equilibrium,
             .backward =
@@ -1145,6 +1182,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -1197,6 +1235,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = -1.5,
                 .activation_temperature = 59500.0,
                 .translational_exponent = 0.5,
+                .other_temperature = VibrationTemperatureInput {"O2"},
               },
             .backward_model = BackwardRateModel::equilibrium,
             .backward =
@@ -1205,6 +1244,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -1253,6 +1293,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 75200.0,
                 .translational_exponent = 0.5,
+                .other_temperature = VibrationTemperatureInput {"NO"},
               },
             .backward_model = BackwardRateModel::equilibrium,
             .backward =
@@ -1261,6 +1302,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = true,
             .efficiencies =
               {
@@ -1358,7 +1400,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = -1.6,
                 .activation_temperature = 113200.0,
                 .translational_exponent = 0.5,
-                .other_temperature = "electron",
+                .other_temperature = FreeElectronTemperatureInput {},
               },
             .backward_model = BackwardRateModel::equilibrium,
             .backward =
@@ -1366,9 +1408,8 @@ inline constexpr MechanismInput<40, 11>
                 .A = 0.0,
                 .n = 0.0,
                 .activation_temperature = 0.0,
-                .translational_exponent = 1.0,
-                .other_temperature = "electron",
               },
+            .equilibrium_temperature = FreeElectronTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -1428,6 +1469,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -1487,6 +1529,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -1545,9 +1588,8 @@ inline constexpr MechanismInput<40, 11>
                 .A = 0.0,
                 .n = 0.0,
                 .activation_temperature = 0.0,
-                .translational_exponent = 1.0,
-                .other_temperature = "electron",
               },
+            .equilibrium_temperature = FreeElectronTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -1602,9 +1644,8 @@ inline constexpr MechanismInput<40, 11>
                 .A = 0.0,
                 .n = 0.0,
                 .activation_temperature = 0.0,
-                .translational_exponent = 1.0,
-                .other_temperature = "electron",
               },
+            .equilibrium_temperature = FreeElectronTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -1659,9 +1700,8 @@ inline constexpr MechanismInput<40, 11>
                 .A = 0.0,
                 .n = 0.0,
                 .activation_temperature = 0.0,
-                .translational_exponent = 1.0,
-                .other_temperature = "electron",
               },
+            .equilibrium_temperature = FreeElectronTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -1721,6 +1761,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -1780,6 +1821,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -1839,6 +1881,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -1898,6 +1941,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -1957,6 +2001,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -2016,6 +2061,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -2075,6 +2121,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -2134,6 +2181,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -2193,6 +2241,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -2252,6 +2301,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -2311,6 +2361,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = 0.0,
                 .activation_temperature = 0.0,
               },
+            .equilibrium_temperature = TranslationTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -2363,7 +2414,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = -3.78,
                 .activation_temperature = 158500.0,
                 .translational_exponent = 0.0,
-                .other_temperature = "electron",
+                .other_temperature = FreeElectronTemperatureInput {},
               },
             .backward_model = BackwardRateModel::equilibrium,
             .backward =
@@ -2371,9 +2422,8 @@ inline constexpr MechanismInput<40, 11>
                 .A = 0.0,
                 .n = 0.0,
                 .activation_temperature = 0.0,
-                .translational_exponent = 1.0,
-                .other_temperature = "electron",
               },
+            .equilibrium_temperature = FreeElectronTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {
@@ -2426,7 +2476,7 @@ inline constexpr MechanismInput<40, 11>
                 .n = -3.82,
                 .activation_temperature = 168600.0,
                 .translational_exponent = 0.0,
-                .other_temperature = "electron",
+                .other_temperature = FreeElectronTemperatureInput {},
               },
             .backward_model = BackwardRateModel::equilibrium,
             .backward =
@@ -2434,9 +2484,8 @@ inline constexpr MechanismInput<40, 11>
                 .A = 0.0,
                 .n = 0.0,
                 .activation_temperature = 0.0,
-                .translational_exponent = 1.0,
-                .other_temperature = "electron",
               },
+            .equilibrium_temperature = FreeElectronTemperatureInput {},
             .third_body = false,
             .efficiencies =
               {

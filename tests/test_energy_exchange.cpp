@@ -257,7 +257,7 @@ void test_energy_exchange()
     const auto built = canary::make_air5_two_temperature<double>(si_scales);
     const Air& gas = built.model;
     const Mechanism mech =
-      canary::make_air5_park(si_scales, canary::Pressure<double, si> {atmosphere});
+      canary::make_air5_park(si_scales, canary::Pressure<double, si> {atmosphere}, gas);
     const Exchange exchange = canary::make_air5_park_exchange(built.species, mech, si_scales);
     const double ru = canary::constants::universal_gas_constant<double>;
 
@@ -824,7 +824,8 @@ void test_energy_exchange()
         const auto built_s = canary::make_air5_two_temperature<double>(reference_scales);
         const auto mech_s = canary::make_air5_park(
           reference_scales,
-          canary::convert<scaled>(canary::Pressure<double, si> {atmosphere}, reference_scales));
+          canary::convert<scaled>(canary::Pressure<double, si> {atmosphere}, reference_scales),
+          built_s.model);
         const auto exchange_s =
           canary::make_air5_park_exchange(built_s.species, mech_s, reference_scales);
         for (const ReferenceState& s : reference_states) {

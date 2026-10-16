@@ -127,6 +127,24 @@
    },
    "additionalProperties": false,
    "$defs": {
+      "canary::database::PhysicalTemperatureRecord": {
+         "type": "object",
+         "properties": {
+            "kind": {
+               "type": "string"
+            },
+            "species": {
+               "type": [
+                  "string",
+                  "null"
+               ]
+            }
+         },
+         "additionalProperties": false,
+         "required": [
+            "kind"
+         ]
+      },
       "canary::database::RateRecord": {
          "type": "object",
          "properties": {
@@ -164,9 +182,23 @@
                ]
             },
             "other_temperature": {
-               "type": [
-                  "string",
-                  "null"
+               "anyOf": [
+                  {
+                     "$ref": "#/$defs/canary::database::PhysicalTemperatureRecord"
+                  },
+                  {
+                     "type": "null"
+                  }
+               ]
+            },
+            "temperature": {
+               "anyOf": [
+                  {
+                     "$ref": "#/$defs/canary::database::PhysicalTemperatureRecord"
+                  },
+                  {
+                     "type": "null"
+                  }
                ]
             },
             "translational_exponent": {

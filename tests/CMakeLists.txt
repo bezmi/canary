@@ -29,12 +29,15 @@ add_test(NAME canary.unit COMMAND canary_tests)
 add_executable(canary_mode_extent_tests test_mode_extent.cpp)
 target_link_libraries(canary_mode_extent_tests PRIVATE canary::canary)
 canary_test_options(canary_mode_extent_tests)
-foreach(operation closure rates production)
+foreach(operation closure rates production bound_rates bound_production)
   foreach(view raw typed)
     add_test(NAME canary.mode_extent.${operation}.${view}
              COMMAND canary_mode_extent_tests ${operation} ${view})
   endforeach()
 endforeach()
+
+add_test(NAME canary.mode_extent.bound_scalar
+         COMMAND canary_mode_extent_tests bound_scalar raw)
 
 foreach(operation state_vt state_cv state_et state_ve state_sources)
   foreach(field energy temperature)

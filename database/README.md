@@ -63,7 +63,16 @@ of `mechanism_input`. The forward rate must be Arrhenius; a backward rate must
 be Arrhenius or equilibrium. Arrhenius requires `A`, `n` and
 `activation_temperature`; equilibrium forbids those values and
 `translational_exponent`. An optional `null` value is unset, as in the C++ file
-reader. `other_temperature` remains optional for either model. Errors identify
+reader. Reaction files use `canary-reactions-2`; version 1 is rejected.
+An Arrhenius `other_temperature` is an optional physical requirement, for example
+`{"kind": "vibration", "species": "N2"}`. Equilibrium uses its separate
+`temperature` field, for example `{"kind": "translation"}`, and forbids
+`other_temperature`. Arrhenius forbids `temperature`. Supported kinds are
+`translation`, `rotation`, `vibration`, `bound_electronic`, and `free_electron`;
+only vibration and bound electronic require a species name. A model-aware
+builder requires an equilibrium temperature and an Arrhenius other temperature
+when its translational exponent is not one. Explicit single-temperature
+construction permits omission and collapses valid requirements. Errors identify
 the source and the reaction or structural field before output is written.
 The header generator also rejects duplicate JSON keys. It requires a
 nonempty reaction list, nonempty sides with positive integer coefficients,
