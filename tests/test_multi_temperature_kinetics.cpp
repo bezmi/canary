@@ -1011,7 +1011,7 @@ void test_multi_temperature_kinetics()
         expect(relative(ve.relaxation_time.c_high, 24.35 + std::log10(atmosphere), 1.0e-15));
         expect(ve.relaxation_time.blend_lower.value() == 6950.0_d);
         const auto& ce = exchange.electron_impact_ionisation[1];
-        expect(ce.reaction == 39_ul && ce.species == canary::SpeciesIndex {2});
+        expect(ce.reaction == canary::ReactionIndex {39} && ce.species == canary::SpeciesIndex {2});
         expect(relative(ce.ionisation_energy, 1402330.360173364 / avogadro, 1.0e-15));
         // (2 pi / 9) C^2 and 9 / (4 pi C^3) with C = e^2 / (4 pi eps_0 k_B),
         // the exact e and k_B and CODATA 2018 eps_0; a few ulp.
@@ -1104,7 +1104,8 @@ void test_multi_temperature_kinetics()
             double cv_scale = 0;
             for (const auto& c : exchange.chemistry_vibration) {
                 cv_scale += boltzmann * c.dissociation_temperature.value() *
-                            (got.forward[c.reaction] + got.backward[c.reaction]) / 2.0;
+                            (got.forward[c.reaction.value()] + got.backward[c.reaction.value()]) /
+                            2.0;
             }
             for (const canary::ModeIndex m : canary::mode_indices(0, mode_count)) {
                 expect(std::abs(got.vt[m.value()] - s.vt[m.value()]) <=
@@ -1725,14 +1726,15 @@ void test_multi_temperature_kinetics()
             };
             T cv_scale = T(0.0);
             for (const auto& c : exchange.chemistry_vibration) {
-                cv_scale =
-                  cv_scale + T(boltzmann * c.dissociation_temperature.value() *
-                               (q.forward[c.reaction].value() + q.backward[c.reaction].value()));
+                cv_scale = cv_scale + T(boltzmann * c.dissociation_temperature.value() *
+                                        (q.forward[c.reaction.value()].value() +
+                                         q.backward[c.reaction.value()].value()));
             }
             T ce_scale = T(0.0);
             for (const auto& c : exchange.electron_impact_ionisation) {
-                ce_scale = ce_scale + T(c.ionisation_energy * (q.forward[c.reaction].value() +
-                                                               q.backward[c.reaction].value()));
+                ce_scale =
+                  ce_scale + T(c.ionisation_energy * (q.forward[c.reaction.value()].value() +
+                                                      q.backward[c.reaction.value()].value()));
             }
             out[outputs] = magnitude(out[0]);
             out[outputs + 1] = cv_scale;

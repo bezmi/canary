@@ -285,10 +285,10 @@ void test_energy_exchange()
         expect(n2_n2.correction_exponent == 1.5_d);
 
         const auto& n2 = exchange.chemistry_vibration[0];
-        expect(n2.reaction == 0_ul && n2.species == canary::SpeciesIndex {0});
+        expect(n2.reaction == canary::ReactionIndex {0} && n2.species == canary::SpeciesIndex {0});
         expect(relative(n2.dissociation_temperature.value(), 945360.0 / ru, 1.0e-15));
         expect(n2.vibrational_temperature.value() == 3393.44_d);
-        expect(exchange.chemistry_vibration[2].reaction == 2_ul);
+        expect(exchange.chemistry_vibration[2].reaction == canary::ReactionIndex {2});
         expect(exchange.chemistry_vibration[2].species == canary::SpeciesIndex {4});
         expect(exchange.boltzmann.value() == boltzmann);
     };
@@ -779,11 +779,16 @@ void test_energy_exchange()
                   const double g =
                     boltzmann *
                     (c.dissociation_temperature.value() - c.vibrational_temperature.value()) / 2.0;
-                  const double dnu = coefficient_change(mech, c.reaction, c.species.value());
-                  expected +=
-                    dnu * (q.forward[c.reaction].value() - q.backward[c.reaction].value()) * g;
+                  const double dnu =
+                    coefficient_change(mech, c.reaction.value(), c.species.value());
+                  expected += dnu *
+                              (q.forward[c.reaction.value()].value() -
+                               q.backward[c.reaction.value()].value()) *
+                              g;
                   scale += std::abs(dnu) *
-                           (q.forward[c.reaction].value() + q.backward[c.reaction].value()) * g;
+                           (q.forward[c.reaction.value()].value() +
+                            q.backward[c.reaction.value()].value()) *
+                           g;
               }
               expect(std::abs(cv - expected) <= 1.0e-14 * scale) << s.temp << cv << expected;
           }
@@ -898,8 +903,8 @@ void test_energy_exchange()
                     out[scales + species_count + 1] =
                       out[scales + species_count + 1] +
                       T(boltzmann * coupling.dissociation_temperature.value() *
-                        (q.forward[coupling.reaction].value() +
-                         q.backward[coupling.reaction].value()));
+                        (q.forward[coupling.reaction.value()].value() +
+                         q.backward[coupling.reaction.value()].value()));
                 }
                 return out;
             };

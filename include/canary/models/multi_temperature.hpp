@@ -1812,6 +1812,25 @@ CANARY_HOST_DEVICE constexpr OptionalModeIndex
     return {};
 }
 
+// The mode holding bound-electronic excitation, or absence for an unassigned
+// species or a free electron. Membership does not depend on the level count.
+template <std::floating_point P,
+          UnitSystem U,
+          std::size_t N,
+          std::size_t M,
+          std::size_t S,
+          std::size_t L>
+CANARY_HOST_DEVICE constexpr OptionalModeIndex
+  species_electronic_mode(const MultiTemperatureMixture<P, U, N, M, S, L>& gas,
+                          SpeciesIndex index) noexcept
+{
+    if (index.value() >= N) { return {}; }
+    for (const ModeIndex m : mode_indices(0, M)) {
+        if (gas.components(m, index).electronic) { return OptionalModeIndex {m}; }
+    }
+    return {};
+}
+
 // The free-electron species index resolved from host metadata, or absence.
 template <std::floating_point P,
           UnitSystem U,

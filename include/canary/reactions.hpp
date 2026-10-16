@@ -50,6 +50,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <iterator>
 #include <limits>
 #include <map>
 #include <string_view>
@@ -57,6 +58,92 @@
 
 namespace canary
 {
+
+// A reaction identity, separate from species and mode identities and
+// array extents. The containing mechanism determines the reaction-count bound.
+// Default construction denotes reaction 0; value() is the storage-access boundary.
+class ReactionIndex
+{
+  public:
+    CANARY_HOST_DEVICE constexpr ReactionIndex() noexcept {}
+    CANARY_HOST_DEVICE constexpr explicit ReactionIndex(std::size_t value) noexcept : value_(value)
+    {
+    }
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr std::size_t value() const noexcept { return value_; }
+    friend CANARY_HOST_DEVICE constexpr bool operator==(ReactionIndex,
+                                                        ReactionIndex) noexcept = default;
+
+  private:
+    std::size_t value_ {0};
+};
+
+// Consecutive reaction identities in [first, last). The endpoint may be SIZE_MAX;
+// it is never yielded. Iteration retains a native-size position.
+class ReactionIndexRange
+{
+  public:
+    struct sentinel {
+        std::size_t last {0};
+    };
+    class iterator
+    {
+      public:
+        using value_type = ReactionIndex;
+        using difference_type = std::ptrdiff_t;
+        using iterator_concept = std::forward_iterator_tag;
+        CANARY_HOST_DEVICE constexpr iterator() noexcept {}
+        [[nodiscard]] CANARY_HOST_DEVICE constexpr ReactionIndex operator*() const noexcept
+        { return ReactionIndex {position_}; }
+        CANARY_HOST_DEVICE constexpr iterator& operator++() noexcept
+        {
+            CANARY_ASSERT(position_ < std::numeric_limits<std::size_t>::max());
+            ++position_;
+            return *this;
+        }
+        CANARY_HOST_DEVICE constexpr iterator operator++(int) noexcept
+        {
+            const iterator previous = *this;
+            ++*this;
+            return previous;
+        }
+        friend CANARY_HOST_DEVICE constexpr bool operator==(iterator a, iterator b) noexcept
+        { return a.position_ == b.position_; }
+        friend CANARY_HOST_DEVICE constexpr bool operator==(iterator a, sentinel b) noexcept
+        { return a.position_ >= b.last; }
+
+      private:
+        CANARY_HOST_DEVICE constexpr explicit iterator(std::size_t position) noexcept :
+            position_(position)
+        {
+        }
+        friend class ReactionIndexRange;
+        std::size_t position_ {0};
+    };
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr iterator begin() const noexcept
+    { return iterator {first_}; }
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr sentinel end() const noexcept { return {last_}; }
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr std::size_t size() const noexcept
+    { return last_ - first_; }
+
+  private:
+    CANARY_HOST_DEVICE constexpr ReactionIndexRange(std::size_t first, std::size_t last) noexcept :
+        first_(first), last_(last)
+    {
+    }
+    friend CANARY_HOST_DEVICE constexpr ReactionIndexRange
+      reaction_indices(std::size_t first, std::size_t last) noexcept;
+    std::size_t first_;
+    std::size_t last_;
+};
+
+// Reaction identities from first up to, excluding, last. Requires first <= last.
+// Equal bounds produce an empty range. No allocation or throwing access.
+[[nodiscard]] CANARY_HOST_DEVICE constexpr ReactionIndexRange
+  reaction_indices(std::size_t first, std::size_t last) noexcept
+{
+    CANARY_ASSERT(first <= last);
+    return {first, last};
+}
 
 // Host input of an Arrhenius rate constant k = A T_c^n exp(-theta / T_c), in
 // SI per mole: A in (m^3/mol)^(order - 1) / s with T_c in K, where order is
@@ -177,6 +264,7 @@ struct Reaction {
 template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t R>
     requires(N > 0 && R > 0)
 struct ReactionMechanism {
+    static constexpr std::size_t reaction_count = R;
     using parameter_type = P;
     using units = U;
 
@@ -776,6 +864,7 @@ concept HasSpeciesProperties =
 template <Scalar T, UnitSystem U, std::size_t R>
     requires(R > 0)
 struct RatesOfProgress {
+    static constexpr std::size_t reaction_count = R;
     std::array<NumberRateDensity<T, U>, R> forward;
     std::array<NumberRateDensity<T, U>, R> backward;
 };
@@ -961,8 +1050,8 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
     }
 
     RatesOfProgress<T, U, R> out {};
-    for (std::size_t k = 0; k < R; ++k) {
-        const Reaction<P, U, N>& r = mech.reactions[k];
+    for (const ReactionIndex k : reaction_indices(0, R)) {
+        const Reaction<P, U, N>& r = mech.reactions[k.value()];
         // ln(k_f / A) at T_l, and at the rate-controlling temperature.
         const T forward_exponent = arrhenius_exponent(r.forward, ln_t, inv_t);
         T controlled_exponent = forward_exponent;
@@ -1008,8 +1097,8 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
             for (int c = 0; c < r.reactants[i.value()]; ++c) { q_f = q_f * n[i.value()]; }
             for (int c = 0; c < r.products[i.value()]; ++c) { q_b = q_b * n[i.value()]; }
         }
-        out.forward[k] = NumberRateDensity<T, U> {q_f};
-        out.backward[k] = NumberRateDensity<T, U> {q_b};
+        out.forward[k.value()] = NumberRateDensity<T, U> {q_f};
+        out.backward[k.value()] = NumberRateDensity<T, U> {q_b};
     }
     return out;
 }
@@ -1025,9 +1114,9 @@ CANARY_HOST_DEVICE std::array<MassProductionRate<T, U>, N>
     using V = ScalarTraits<T>::value_type;
     std::array<T, N> net {};
     net.fill(T(V(0)));
-    for (std::size_t k = 0; k < R; ++k) {
-        const Reaction<P, U, N>& r = mech.reactions[k];
-        const T rate = q.forward[k].value() - q.backward[k].value();
+    for (const ReactionIndex k : reaction_indices(0, R)) {
+        const Reaction<P, U, N>& r = mech.reactions[k.value()];
+        const T rate = q.forward[k.value()].value() - q.backward[k.value()].value();
         for (const SpeciesIndex i : species_indices(0, N)) {
             const int dnu = r.products[i.value()] - r.reactants[i.value()];
             if (dnu != 0) { net[i.value()] = net[i.value()] + T(V(dnu) * rate); }

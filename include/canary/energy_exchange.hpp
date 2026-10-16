@@ -220,7 +220,7 @@ template <std::floating_point P, UnitSystem U> struct VibrationTranslationPair {
 // One chemistry-vibration coupling in model units: the reaction index, the
 // species index, theta_D = D / R_u and theta_v.
 template <std::floating_point P, UnitSystem U> struct ChemistryVibrationCoupling {
-    std::size_t reaction;
+    ReactionIndex reaction;
     SpeciesIndex species;
     Temperature<P, U> dissociation_temperature;
     Temperature<P, U> vibrational_temperature;
@@ -374,9 +374,9 @@ ChemistryVibrationCoupling<P, U>
         throw ParameterError(
           std::format("reaction index must be between 0 and {}, got {}", R - 1, input.reaction));
     }
-    coupling.reaction = static_cast<std::size_t>(input.reaction);
+    coupling.reaction = ReactionIndex {static_cast<std::size_t>(input.reaction)};
     coupling.species = known_species(names, input.species, "species");
-    const Reaction<P, U, N>& r = mechanism.reactions[coupling.reaction];
+    const Reaction<P, U, N>& r = mechanism.reactions[coupling.reaction.value()];
     if (r.products[coupling.species.value()] == r.reactants[coupling.species.value()]) {
         throw ParameterError(std::format("species \"{}\" has no net change in reaction {}",
                                          input.species,
@@ -731,13 +731,13 @@ CANARY_HOST_DEVICE T coupling_energy_rate(const ChemistryVibrationCoupling<P, U>
     const Real x_value = ScalarTraits<T>::value(x);
     const T x_derivative = x - T(x_value);
     // NOLINTNEXTLINE(misc-static-assert): run-time reaction index
-    CANARY_ASSERT(coupling.reaction < R);
-    const Reaction<P, U, N>& r = mechanism.reactions[coupling.reaction];
+    CANARY_ASSERT(coupling.reaction.value() < R);
+    const Reaction<P, U, N>& r = mechanism.reactions[coupling.reaction.value()];
     const int dnu = r.products[coupling.species.value()] - r.reactants[coupling.species.value()];
     const auto made = static_cast<Real>(dnu > 0 ? dnu : 0);
     const auto destroyed = static_cast<Real>(dnu < 0 ? -dnu : 0);
-    const T q_f = rates.forward[coupling.reaction].value();
-    const T q_b = rates.backward[coupling.reaction].value();
+    const T q_f = rates.forward[coupling.reaction.value()].value();
+    const T q_b = rates.backward[coupling.reaction.value()].value();
     const T production = T(made * q_f) + T(destroyed * q_b);
     const T loss = T(destroyed * q_f) + T(made * q_b);
     const auto theta_v = static_cast<Real>(coupling.vibrational_temperature.value());
@@ -961,7 +961,7 @@ template <std::floating_point P, UnitSystem U> struct VibrationElectronCoupling 
 // index of the ionised species and its ionisation energy per particle,
 // I / N_A, in the energy unit of U.
 template <std::floating_point P, UnitSystem U> struct ElectronImpactIonisationCoupling {
-    std::size_t reaction;
+    ReactionIndex reaction;
     SpeciesIndex species;
     P ionisation_energy;
 };
@@ -1158,7 +1158,7 @@ ElectronImpactIonisationCoupling<P, U>
         throw ParameterError(
           std::format("reaction index must be between 0 and {}, got {}", R - 1, input.reaction));
     }
-    coupling.reaction = static_cast<std::size_t>(input.reaction);
+    coupling.reaction = ReactionIndex {static_cast<std::size_t>(input.reaction)};
     coupling.species = known_species(names, input.species, "species");
     if (coupling.species == electron) {
         throw ParameterError("the ionised species must be a heavy species");
@@ -1170,7 +1170,7 @@ ElectronImpactIonisationCoupling<P, U>
     if (!std::isfinite(electron_charge) || !(electron_charge < P(0))) {
         throw ParameterError("the electron charge must be finite and negative");
     }
-    const Reaction<P, U, N>& r = mechanism.reactions[coupling.reaction];
+    const Reaction<P, U, N>& r = mechanism.reactions[coupling.reaction.value()];
     // Widen before subtraction so malformed stored coefficients cannot overflow.
     const auto net = [&](SpeciesIndex i) {
         return std::int64_t {r.products[i.value()]} - std::int64_t {r.reactants[i.value()]};
@@ -1824,9 +1824,9 @@ CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M> electron_impact_ionisation_
     for (const ElectronImpactIonisationCoupling<P, U>& coupling :
          exchange.electron_impact_ionisation) {
         // NOLINTNEXTLINE(misc-static-assert): run-time reaction index
-        CANARY_ASSERT(coupling.reaction < R);
-        const T net =
-          T(rates.forward[coupling.reaction].value() - rates.backward[coupling.reaction].value());
+        CANARY_ASSERT(coupling.reaction.value() < R);
+        const T net = T(rates.forward[coupling.reaction.value()].value() -
+                        rates.backward[coupling.reaction.value()].value());
         q = q - T(net * coupling.ionisation_energy);
     }
     out[(*exchange.electron_mode).value()] = PowerDensity<T, U> {q};

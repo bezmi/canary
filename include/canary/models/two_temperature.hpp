@@ -699,6 +699,14 @@ CANARY_HOST_DEVICE constexpr OptionalModeIndex
     return i < N ? OptionalModeIndex {ModeIndex {0}} : OptionalModeIndex {};
 }
 
+// The mode holding bound-electronic excitation of a species. Every species
+// belongs to the single vibrational-electronic mode, including unexcited atoms.
+template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
+CANARY_HOST_DEVICE constexpr OptionalModeIndex
+  species_electronic_mode(const TwoTemperatureMixture<P, U, N, S>& /*gas*/,
+                          SpeciesIndex index) noexcept
+{ return index.value() < N ? OptionalModeIndex {ModeIndex {0}} : OptionalModeIndex {}; }
+
 // The model has no free-electron species.
 template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t S>
 CANARY_HOST_DEVICE constexpr OptionalSpeciesIndex

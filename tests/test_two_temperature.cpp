@@ -160,6 +160,8 @@ const double gas_constant_ratio = canary::constants::universal_gas_constant<doub
 
 static_assert(noexcept(canary::species_vibration_mode(std::declval<const Air&>(),
                                                       canary::SpeciesIndex {0})));
+static_assert(noexcept(canary::species_electronic_mode(std::declval<const Air&>(),
+                                                       canary::SpeciesIndex {0})));
 static_assert(noexcept(canary::electron_species_index(std::declval<const Air&>())));
 static_assert(noexcept(canary::electron_energy_mode(std::declval<const Air&>())));
 
@@ -194,6 +196,27 @@ void test_two_temperature()
     const Air& gas = built.model;
     const AirSingle single = canary::make_air5<double>(canary::UnitScales<double, si> {}).model;
     const double r = gas_constant_ratio;
+
+    "bound-electronic membership in two-temperature models"_test = [] {
+        const auto check =
+          []<std::floating_point P, canary::UnitSystem U>(const canary::UnitScales<P, U>& scales) {
+              const auto model = canary::make_air5_two_temperature<P>(scales).model;
+              for (const auto i : canary::species_indices(0, 5)) {
+                  expect(canary::species_electronic_mode(model, i) ==
+                         canary::OptionalModeIndex {canary::ModeIndex {0}});
+              }
+              expect(!canary::species_electronic_mode(model, canary::SpeciesIndex {5}));
+              expect(!canary::species_electronic_mode(
+                model,
+                canary::SpeciesIndex {std::numeric_limits<std::uint32_t>::max() - 1}));
+          };
+        check(canary::UnitScales<float, si> {});
+        check(canary::UnitScales<double, si> {});
+        check(canary::UnitScales<float, scaled> {
+          {.mass = 4.65e-26, .density = 1.0e-3, .temperature = 1000.0, .length = 1.0}});
+        check(canary::UnitScales<double, scaled> {
+          {.mass = 4.65e-26, .density = 1.0e-3, .temperature = 1000.0, .length = 1.0}});
+    };
 
     "typed mode views preserve two-temperature closures"_test = [&] {
         const std::array<double, 3> data {4000, -1, 5000};

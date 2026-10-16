@@ -575,6 +575,8 @@ void check_derivatives(const G& gas,
 
 static_assert(noexcept(canary::species_vibration_mode(std::declval<const Air11&>(),
                                                       canary::SpeciesIndex {0})));
+static_assert(noexcept(canary::species_electronic_mode(std::declval<const Air11&>(),
+                                                       canary::SpeciesIndex {0})));
 static_assert(noexcept(canary::electron_species_index(std::declval<const Air11&>())));
 static_assert(noexcept(canary::electron_energy_mode(std::declval<const Air11&>())));
 
@@ -631,6 +633,56 @@ void test_multi_temperature()
     const Air11& air11 = built11.model;
     const auto single5 = canary::make_air5<double>(si_scales).model;
     const auto single11 = canary::make_air11<double>(si_scales).model;
+
+    "bound-electronic membership follows configuration and mode permutations"_test = [] {
+        const auto check =
+          []<std::floating_point P, canary::UnitSystem U>(const canary::UnitScales<P, U>& scales) {
+              std::array<canary::EnergyModeInput<2>, 3> modes {{
+                {1, {{{"N2", canary::ModeComponent::vibration}, {}}}},
+                {2,
+                 {{{"N2", canary::ModeComponent::electronic},
+                   {"N", canary::ModeComponent::electronic}}}},
+                {2,
+                 {{{"O2", canary::ModeComponent::electronic},
+                   {"e-", canary::ModeComponent::electron}}}},
+              }};
+              // An empty level list retains the configured bound-electronic mode.
+              const std::array<canary::ElectronicLevelsInput<1>, 0> levels {};
+              const auto build = [&] {
+                  return canary::make_multi_temperature_mixture(canary::air11_species,
+                                                                canary::air11_rotational_degrees,
+                                                                levels,
+                                                                modes,
+                                                                scales)
+                    .model;
+              };
+              const auto gas = build();
+              std::swap(modes[0], modes[1]);
+              const auto reordered = build();
+              for (const auto i : canary::species_indices(0, 11)) {
+                  const auto expected = i.value() == 0 || i.value() == 2
+                                          ? canary::OptionalModeIndex {canary::ModeIndex {1}}
+                                        : i.value() == 1
+                                          ? canary::OptionalModeIndex {canary::ModeIndex {2}}
+                                          : canary::OptionalModeIndex {};
+                  const auto after = i.value() == 0 || i.value() == 2
+                                       ? canary::OptionalModeIndex {canary::ModeIndex {0}}
+                                       : expected;
+                  expect(canary::species_electronic_mode(gas, i) == expected);
+                  expect(canary::species_electronic_mode(reordered, i) == after);
+              }
+              expect(!canary::species_electronic_mode(gas, canary::SpeciesIndex {11}));
+              expect(!canary::species_electronic_mode(
+                gas,
+                canary::SpeciesIndex {std::numeric_limits<std::uint32_t>::max() - 1}));
+          };
+        check(canary::UnitScales<float, si> {});
+        check(canary::UnitScales<double, si> {});
+        check(canary::UnitScales<float, scaled> {
+          {.mass = 4.65e-26, .density = 1.0e-3, .temperature = 1000.0, .length = 1.0}});
+        check(canary::UnitScales<double, scaled> {
+          {.mass = 4.65e-26, .density = 1.0e-3, .temperature = 1000.0, .length = 1.0}});
+    };
 
     "mode membership unions retain frozen components and survive copying"_test = [] {
         const auto check =

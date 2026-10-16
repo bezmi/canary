@@ -20,6 +20,7 @@
 #include <limits>
 #include <mdspan/mdspan.hpp>
 #include <random>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -183,6 +184,31 @@ static_assert(std::is_trivially_copyable_v<canary::Air5KimJo<float, scaled>>);
 static_assert(std::is_trivially_copyable_v<canary::RatesOfProgress<D, si, 13>>);
 static_assert(canary::air5_kim_jo.reactions.size() == 13);
 
+static_assert(Mechanism::reaction_count == reaction_count);
+static_assert(canary::RatesOfProgress<D, si, 13>::reaction_count == reaction_count);
+static_assert(sizeof(canary::ReactionIndex) == sizeof(std::size_t));
+static_assert(std::is_trivially_copyable_v<canary::ReactionIndex>);
+static_assert(std::is_standard_layout_v<canary::ReactionIndex>);
+static_assert(std::is_nothrow_default_constructible_v<canary::ReactionIndex>);
+static_assert(std::is_nothrow_constructible_v<canary::ReactionIndex, std::size_t>);
+static_assert(!std::convertible_to<std::size_t, canary::ReactionIndex>);
+static_assert(!std::convertible_to<canary::ReactionIndex, std::size_t>);
+static_assert(!std::constructible_from<canary::ReactionIndex, canary::SpeciesIndex>);
+static_assert(!std::constructible_from<canary::ReactionIndex, canary::ModeIndex>);
+static_assert(!std::constructible_from<canary::SpeciesIndex, canary::ReactionIndex>);
+static_assert(!std::constructible_from<canary::ModeIndex, canary::ReactionIndex>);
+static_assert(canary::ReactionIndex {} == canary::ReactionIndex {0});
+static_assert(canary::ReactionIndex {std::numeric_limits<std::size_t>::max()}.value() ==
+              std::numeric_limits<std::size_t>::max());
+static_assert(std::ranges::forward_range<canary::ReactionIndexRange>);
+static_assert(std::ranges::sized_range<canary::ReactionIndexRange>);
+static_assert(
+  std::same_as<std::ranges::range_value_t<canary::ReactionIndexRange>, canary::ReactionIndex>);
+static_assert(noexcept(canary::reaction_indices(0, 1)));
+static_assert(noexcept(++std::declval<canary::ReactionIndexRange::iterator&>()));
+static_assert(canary::reaction_indices(4, 4).size() == 0);
+static_assert(canary::reaction_indices(4, 7).size() == 3);
+
 void test_reactions()
 {
     using namespace boost::ut;
@@ -191,6 +217,22 @@ void test_reactions()
     const Air& gas = built.model;
     const Mechanism mech =
       canary::make_air5_kim_jo(si_scales, canary::Pressure<double, si> {atmosphere});
+
+    "reaction indices preserve identity and half-open endpoints"_test = [] {
+        std::size_t expected = 3;
+        for (const auto k : canary::reaction_indices(3, 6)) { expect(k.value() == expected++); }
+        expect(expected == std::size_t {6});
+        const auto empty = canary::reaction_indices(6, 6);
+        expect(empty.begin() == empty.end());
+        const auto last = std::numeric_limits<std::size_t>::max();
+        const auto range = canary::reaction_indices(last - 2, last);
+        auto it = range.begin();
+        const auto original = it++;
+        expect((*original).value() == last - 2);
+        expect((*it).value() == last - 1);
+        ++it;
+        expect(it == range.end());
+    };
 
     "the builder converts rate constants to per-particle units"_test = [&] {
         // N2 + N2 <=> N + N + N2: order 2. NO + M <=> N + O + M: order 2.
