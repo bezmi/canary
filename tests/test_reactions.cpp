@@ -26,6 +26,7 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace
 {
@@ -316,10 +317,322 @@ consteval bool reaction_view_contracts()
 static_assert(reaction_view_contracts<double, si, double>());
 static_assert(reaction_view_contracts<float, scaled, float>());
 static_assert(reaction_view_contracts<double, scaled, D>());
+// Reference traversal retains original reaction order and independent source
+// caches, permitting exact comparison with grouped execution.
+namespace schedule_reference
+{
+using namespace canary;
+using namespace canary::detail;
+template <std::size_t M,
+          Scalar T,
+          std::floating_point P,
+          UnitSystem U,
+          std::size_t N,
+          std::size_t R,
+          typename G>
+    requires ReactingModel<G, T, P, N> && std::same_as<typename G::units, U>
+CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
+  original_rates_of_progress_at(const ReactionMechanism<P, U, N, R>& mech,
+                                const G& gas,
+                                const NormalisedComposition<T, U, N>& mix,
+                                Density<T, U> rho,
+                                T t,
+                                const std::array<T, M>& other)
+{
+    using V = ScalarTraits<T>::value_type;
+    const auto records = mech.reactions();
+    const T ln_t = math::log(t);
+    const T inv_t = T(V(1)) / t;
+    const EquilibriumTerms<T, N> at_t = equilibrium_terms(mech, gas, t);
+
+    // Number densities n_i.
+    std::array<T, N> n {};
+    for (const SpeciesIndex i : species_indices(0, N)) {
+        n[i.value()] = T(rho.value() * mix.fractions[i.value()].value() / mech.mass()[i].value());
+    }
+
+    // ln(T_o / T_l) of every other temperature and, at each other
+    // temperature that has equilibrium backward rates, ln T_o, 1 / T_o and
+    // the equilibrium terms.
+    std::array<T, M> ln_ratio {};
+    std::array<T, M> ln_other {};
+    std::array<T, M> inv_other {};
+    std::array<EquilibriumTerms<T, N>, M> at_other {};
+    if constexpr (M > 0) {
+        std::array<bool, M> used {};
+        for (const ReactionIndex k : reaction_indices(0, R)) {
+            const auto& r = records[k];
+            if (r.backward_model == BackwardRateModel::equilibrium &&
+                r.equilibrium_at_other_temperature) {
+                used[(*r.backward.other_mode).value()] = true;
+            }
+        }
+        for (const ModeIndex m : mode_indices(0, M)) {
+            ln_ratio[m.value()] = math::log(T(other[m.value()] / t));
+            if (!used[m.value()]) { continue; }
+            ln_other[m.value()] = math::log(other[m.value()]);
+            inv_other[m.value()] = T(V(1)) / other[m.value()];
+            at_other[m.value()] = equilibrium_terms(mech, gas, other[m.value()]);
+        }
+    }
+
+    RatesOfProgress<T, U, R> out {};
+    for (const ReactionIndex k : reaction_indices(0, R)) {
+        const Reaction<P, U, N>& r = records[k];
+        // ln(k_f / A) at T_l, and at the rate-controlling temperature.
+        const T forward_exponent = arrhenius_exponent(r.forward, ln_t, inv_t);
+        T controlled_exponent = forward_exponent;
+        if constexpr (M > 0) {
+            if (r.forward.other_mode && r.forward.translational_exponent != P(1)) {
+                controlled_exponent = arrhenius_exponent(r.forward,
+                                                         ln_t,
+                                                         inv_t,
+                                                         ln_ratio[(*r.forward.other_mode).value()]);
+            }
+        }
+        const T k_f = T(r.forward.A * math::exp(controlled_exponent));
+        T k_b = k_f;
+        if (r.backward_model == BackwardRateModel::equilibrium) {
+            bool at_other_temperature = false;
+            if constexpr (M > 0) { at_other_temperature = r.equilibrium_at_other_temperature; }
+            T exponent = forward_exponent;
+            if (at_other_temperature) {
+                const ModeIndex m = (*r.backward.other_mode);
+                exponent = equilibrium_exponent(
+                  r,
+                  arrhenius_exponent(r.forward, ln_other[m.value()], inv_other[m.value()]),
+                  at_other[m.value()]);
+            } else {
+                exponent = equilibrium_exponent(r, forward_exponent, at_t);
+            }
+            k_b = T(r.forward.A * math::exp(exponent));
+        } else {
+            k_b = T(r.backward.A * math::exp(rate_exponent<M>(r.backward, ln_t, inv_t, ln_ratio)));
+        }
+        T q_f = k_f;
+        T q_b = k_b;
+        if (r.third_body) {
+            T m = T(r.efficiencies()[SpeciesIndex {0}] * n[0]);
+            for (const SpeciesIndex i : species_indices(1, N)) {
+                m = m + T(r.efficiencies()[i] * n[i.value()]);
+            }
+            q_f = q_f * m;
+            q_b = q_b * m;
+        }
+        for (const SpeciesIndex i : species_indices(0, N)) {
+            for (int c = 0; c < r.reactants()[i]; ++c) { q_f = q_f * n[i.value()]; }
+            for (int c = 0; c < r.products()[i]; ++c) { q_b = q_b * n[i.value()]; }
+        }
+        out.forward()[k] = NumberRateDensity<T, U> {q_f};
+        out.backward()[k] = NumberRateDensity<T, U> {q_b};
+    }
+    return out;
+}
+
+}  // namespace schedule_reference
+
+template <typename G> struct CountedReactionGas {
+    using parameter_type = typename G::parameter_type;
+    using units = typename G::units;
+    static constexpr std::size_t mode_count = G::mode_count;
+    G model;
+    std::vector<double>* calls;
+};
+template <typename G, canary::Scalar T>
+auto species_properties(const CountedReactionGas<G>& gas,
+                        canary::Temperature<T, typename G::units> t)
+{
+    gas.calls->push_back(static_cast<double>(canary::ScalarTraits<T>::value(t.value())));
+    return species_properties(gas.model, t);
+}
+
+auto interleaved_reaction_inputs()
+{
+    using namespace canary;
+    MechanismInput<22, 1> input {.temperature_lower = 300.0,
+                                 .temperature_upper = 30000.0,
+                                 .reactions = {}};
+    for (std::size_t k = 0; k < input.reactions.size(); ++k) {
+        const std::size_t behavior = (k * 7) % 20;
+        const bool equilibrium = behavior >= 8;
+        const bool f = equilibrium ? (behavior % 4 >= 2) : (behavior >= 4);
+        const bool b = !equilibrium && (behavior % 4 >= 2);
+        auto& r = input.reactions[k];
+        r.equation = "N2 <=> N + N";
+        r.reactants = {.count = 1, .entries = {{{.name = "N2", .value = 1.0}}}};
+        r.products = {.count = 1, .entries = {{{.name = "N", .value = 2.0}}}};
+        r.forward = {.A = 1e7 + 1e5 * static_cast<double>(k),
+                     .n = 0.5,
+                     .activation_temperature = 10000.0 + 20.0 * static_cast<double>(k),
+                     .translational_exponent = 0.5,
+                     .other_temperature =
+                       f ? PhysicalTemperatureInput {VibrationTemperatureInput {"N2"}}
+                         : PhysicalTemperatureInput {TranslationTemperatureInput {}}};
+        r.third_body = behavior % 2 != 0;
+        if (equilibrium) {
+            r.backward_model = BackwardRateModel::equilibrium;
+            r.equilibrium_temperature =
+              behavior < 12   ? PhysicalTemperatureInput {TranslationTemperatureInput {}}
+              : behavior < 16 ? PhysicalTemperatureInput {VibrationTemperatureInput {"N2"}}
+                              : PhysicalTemperatureInput {FreeElectronTemperatureInput {}};
+        } else {
+            r.backward_model = BackwardRateModel::arrhenius;
+            r.backward = {.A = 2e6 + 1e4 * static_cast<double>(k),
+                          .n = -0.25,
+                          .activation_temperature = 3000.0,
+                          .translational_exponent = 0.25,
+                          .other_temperature =
+                            b ? PhysicalTemperatureInput {FreeElectronTemperatureInput {}}
+                              : PhysicalTemperatureInput {TranslationTemperatureInput {}}};
+        }
+    }
+    return input;
+}
+
+void check_prepared_reactions()
+{
+    using namespace boost::ut;
+    using namespace canary;
+    "prepared rates preserve outputs for interleaved behaviors and original identities"_test = [] {
+        const auto input = interleaved_reaction_inputs();
+        const auto check = [&]<typename P, typename U>(const UnitScales<P, U>& scales) {
+            const auto built = make_air11_three_temperature(scales);
+            const auto& gas = built.model;
+            const auto mechanism =
+              make_reaction_mechanism(input,
+                                      reaction_species(air11_species),
+                                      scales,
+                                      convert<U>(Pressure<P, si> {P(101325)}, scales),
+                                      gas);
+            static_assert(std::is_trivially_copyable_v<decltype(mechanism)>);
+            auto copy = mechanism;
+            copy = mechanism;
+            const auto evaluate = [&]<typename T>() {
+                std::array<T, 11> y {};
+                y[0] = T(0.5);
+                y[2] = T(0.5);
+                const auto mix = mixture(gas,
+                                         as_kind<kind::mass_fraction>(
+                                           Kokkos::mdspan<const T, Extents>(y.data(), y.size())));
+                for (const double density : {1e-3, 1e-2, 1e-1, 1.0}) {
+                    const auto rho = convert<U>(Density<T, si> {T(density)}, scales);
+                    const T t = convert<U>(Temperature<T, si> {T(8000)}, scales).value();
+                    std::array<T, 2> other {
+                      convert<U>(Temperature<T, si> {T(5000)}, scales).value(),
+                      convert<U>(Temperature<T, si> {T(11000)}, scales).value()};
+                    if constexpr (std::same_as<T, D>) {
+                        other[0] = D(t.real(), 1.0);
+                        other[1] = D(t.real(), 2.0);
+                    }
+                    const auto same = [&](const auto& a, const auto& b) {
+                        for (const auto k : reaction_indices(0, input.reactions.size())) {
+                            if constexpr (std::same_as<T, D>) {
+                                expect(a.forward()[k].value().real() ==
+                                       b.forward()[k].value().real());
+                                expect(a.forward()[k].value().dual() ==
+                                       b.forward()[k].value().dual());
+                                expect(a.backward()[k].value().real() ==
+                                       b.backward()[k].value().real());
+                                expect(a.backward()[k].value().dual() ==
+                                       b.backward()[k].value().dual());
+                            } else {
+                                expect(a.forward()[k] == b.forward()[k]) << k.value();
+                                expect(a.backward()[k] == b.backward()[k]) << k.value();
+                            }
+                        }
+                    };
+                    const std::array temperatures {ModeTemperature<T, U> {other[0]},
+                                                   ModeTemperature<T, U> {other[1]}};
+                    same(
+                      rates_of_progress(copy, gas, mix, rho, Temperature<T, U> {t}, temperatures),
+                      schedule_reference::original_rates_of_progress_at<2>(mechanism,
+                                                                           gas,
+                                                                           mix,
+                                                                           rho,
+                                                                           t,
+                                                                           other));
+                    same(rates_of_progress(copy, gas, mix, rho, Temperature<T, U> {t}),
+                         schedule_reference::original_rates_of_progress_at<0>(mechanism,
+                                                                              gas,
+                                                                              mix,
+                                                                              rho,
+                                                                              t,
+                                                                              std::array<T, 0> {}));
+                }
+            };
+            evaluate.template operator()<double>();
+            if constexpr (std::same_as<P, double>) { evaluate.template operator()<D>(); }
+        };
+        check(UnitScales<double, si> {});
+        check(UnitScales<float, si> {});
+        check(UnitScales<double, scaled> {
+          {.mass = 4.65e-26, .density = 1e-3, .temperature = 1000, .length = 1}});
+    };
+    "prepared rates request only their equilibrium temperature sources"_test = [] {
+        const UnitScales<double, si> scales {};
+        const auto built = make_air11_three_temperature(scales);
+        const auto& gas = built.model;
+        const std::array<double, 11> y {0.5, 0, 0.5, 0, 0, 0, 0, 0, 0, 0, 0};
+        const auto mix = mixture(
+          gas,
+          as_kind<kind::mass_fraction>(Kokkos::mdspan<const double, Extents>(y.data(), y.size())));
+        std::vector<double> calls;
+        const CountedReactionGas counted {gas, &calls};
+        auto input = interleaved_reaction_inputs();
+        const auto run = [&](bool collapse) {
+            const auto mechanism = make_reaction_mechanism(input,
+                                                           reaction_species(air11_species),
+                                                           scales,
+                                                           Pressure<double, si> {101325},
+                                                           gas);
+            calls.clear();
+            if (collapse) {
+                (void)rates_of_progress(mechanism,
+                                        counted,
+                                        mix,
+                                        Density<double, si> {0.01},
+                                        Temperature<double, si> {8000});
+            } else {
+                const std::array other {ModeTemperature<double, si> {5000},
+                                        ModeTemperature<double, si> {11000}};
+                (void)rates_of_progress(mechanism,
+                                        counted,
+                                        mix,
+                                        Density<double, si> {0.01},
+                                        Temperature<double, si> {8000},
+                                        other);
+            }
+        };
+        run(false);
+        expect(calls == std::vector<double> {8000, 5000, 11000});
+        run(true);
+        expect(calls == std::vector<double> {8000});
+        for (auto& r : input.reactions) {
+            if (r.backward_model == BackwardRateModel::equilibrium) {
+                r.equilibrium_temperature = FreeElectronTemperatureInput {};
+            }
+        }
+        run(false);
+        expect(calls == std::vector<double> {11000});
+        run(true);
+        expect(calls == std::vector<double> {8000});
+        for (auto& r : input.reactions) {
+            r.backward_model = BackwardRateModel::arrhenius;
+            r.backward = r.forward;
+            r.equilibrium_temperature.reset();
+        }
+        run(false);
+        expect(calls.empty());
+        run(true);
+        expect(calls.empty());
+    };
+}
+
 }  // namespace
 
 void test_reactions()
 {
+    check_prepared_reactions();
     using namespace boost::ut;
     const canary::UnitScales<double, si> si_scales {};
     const auto built = canary::make_air5<double>(si_scales);

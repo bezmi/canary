@@ -35,6 +35,7 @@
 // model, and p0 the standard pressure. With T_eq = T_l, k_b does not depend
 // on T_o.
 
+#include <algorithm>
 #include <array>
 #include <canary/build.hpp>
 #include <canary/config.hpp>
@@ -56,6 +57,7 @@
 #include <map>
 #include <mdspan/mdspan.hpp>
 #include <string_view>
+#include <tuple>
 #include <type_traits>
 #include <variant>
 
@@ -320,6 +322,47 @@ struct ReactionMechanism;
 
 namespace detail
 {
+// Behavior is fixed after parameter conversion. Temperature identities are
+// separate from the arithmetic selected for a homogeneous reaction block.
+enum class RateBehavior : std::uint8_t {
+    ArrheniusTranslationTranslation,
+    ArrheniusTranslationTranslationThirdBody,
+    ArrheniusTranslationOther,
+    ArrheniusTranslationOtherThirdBody,
+    ArrheniusOtherTranslation,
+    ArrheniusOtherTranslationThirdBody,
+    ArrheniusOtherOther,
+    ArrheniusOtherOtherThirdBody,
+    EquilibriumForwardTranslation,
+    EquilibriumForwardTranslationThirdBody,
+    EquilibriumForwardOther,
+    EquilibriumForwardOtherThirdBody,
+};
+struct RateBlock {
+    std::size_t end {};
+    OptionalModeIndex equilibrium_mode {};
+    RateBehavior behavior {};
+};
+template <std::size_t R> struct RateSchedule {
+    std::array<ReactionIndex, R> order {};
+    std::array<RateBlock, R> blocks {};
+    std::size_t block_count {};
+    std::size_t explicit_end {};
+    std::size_t translation_end {};
+};
+template <std::size_t R> struct RateModeReferences {
+    std::array<ModeIndex, R> forward {};
+    std::array<ModeIndex, R> backward_only {};
+    std::size_t forward_count {};
+    std::size_t backward_only_count {};
+};
+template <std::size_t M, std::floating_point P, UnitSystem U, std::size_t N, std::size_t R>
+CANARY_HOST_DEVICE constexpr const RateSchedule<R>&
+  reaction_schedule(const ReactionMechanism<P, U, N, R>& mechanism) noexcept;
+template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t R>
+CANARY_HOST_DEVICE constexpr const RateModeReferences<R>&
+  reaction_mode_references(const ReactionMechanism<P, U, N, R>& mechanism) noexcept;
+
 template <std::floating_point P,
           UnitSystem U,
           std::size_t N,
@@ -352,6 +395,8 @@ struct ReactionMechanism {
     std::array<Reaction<P, U, N>, R> reactions_;
     std::array<ParticleMass<P, U>, N> mass_;
     std::size_t configured_mode_count_ {};
+    detail::RateSchedule<R> schedule_ {};
+    detail::RateModeReferences<R> controlling_modes_ {};
 
   public:
     Temperature<P, U> temperature_lower;
@@ -379,6 +424,12 @@ struct ReactionMechanism {
 
   private:
     ReactionMechanism() = default;
+    template <std::size_t M, std::floating_point Q, UnitSystem V, std::size_t Ns, std::size_t Rs>
+    friend CANARY_HOST_DEVICE constexpr const detail::RateSchedule<Rs>&
+      detail::reaction_schedule(const ReactionMechanism<Q, V, Ns, Rs>&) noexcept;
+    template <std::floating_point Q, UnitSystem V, std::size_t Ns, std::size_t Rs>
+    friend CANARY_HOST_DEVICE constexpr const detail::RateModeReferences<Rs>&
+      detail::reaction_mode_references(const ReactionMechanism<Q, V, Ns, Rs>&) noexcept;
     template <std::floating_point Q, UnitSystem V, std::size_t Ns, std::size_t Rs>
     friend CANARY_HOST_DEVICE constexpr std::size_t
       detail::reaction_mode_count(const ReactionMechanism<Q, V, Ns, Rs>&) noexcept;
@@ -404,6 +455,113 @@ template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t R>
 CANARY_HOST_DEVICE constexpr std::size_t
   reaction_mode_count(const ReactionMechanism<P, U, N, R>& mechanism) noexcept
 { return mechanism.configured_mode_count_; }
+
+template <std::size_t M, std::floating_point P, UnitSystem U, std::size_t N, std::size_t R>
+CANARY_HOST_DEVICE constexpr const RateSchedule<R>&
+  reaction_schedule(const ReactionMechanism<P, U, N, R>& mechanism) noexcept
+{ return mechanism.schedule_; }
+template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t R>
+CANARY_HOST_DEVICE constexpr const RateModeReferences<R>&
+  reaction_mode_references(const ReactionMechanism<P, U, N, R>& mechanism) noexcept
+{ return mechanism.controlling_modes_; }
+
+template <std::floating_point P, UnitSystem U>
+bool internal_rate_control(const ArrheniusRate<P, U>& rate) noexcept
+{ return rate.other_mode.has_value() && rate.translational_exponent != P(1); }
+
+template <std::floating_point P, UnitSystem U, std::size_t N>
+RateBehavior rate_behavior(const Reaction<P, U, N>& r) noexcept
+{
+    const bool forward = internal_rate_control(r.forward);
+    if (r.backward_model == BackwardRateModel::equilibrium) {
+        if (forward) {
+            return r.third_body ? RateBehavior::EquilibriumForwardOtherThirdBody
+                                : RateBehavior::EquilibriumForwardOther;
+        }
+        return r.third_body ? RateBehavior::EquilibriumForwardTranslationThirdBody
+                            : RateBehavior::EquilibriumForwardTranslation;
+    }
+    const bool backward = internal_rate_control(r.backward);
+    if (forward && backward) {
+        return r.third_body ? RateBehavior::ArrheniusOtherOtherThirdBody
+                            : RateBehavior::ArrheniusOtherOther;
+    }
+    if (forward) {
+        return r.third_body ? RateBehavior::ArrheniusOtherTranslationThirdBody
+                            : RateBehavior::ArrheniusOtherTranslation;
+    }
+    if (backward) {
+        return r.third_body ? RateBehavior::ArrheniusTranslationOtherThirdBody
+                            : RateBehavior::ArrheniusTranslationOther;
+    }
+    return r.third_body ? RateBehavior::ArrheniusTranslationTranslationThirdBody
+                        : RateBehavior::ArrheniusTranslationTranslation;
+}
+
+// The total sort key preserves original order within equal source/behavior
+// groups. Only indices are permuted; coefficients remain in public record order.
+template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t R>
+RateSchedule<R> prepare_rate_schedule(const std::array<Reaction<P, U, N>, R>& records)
+{
+    RateSchedule<R> out {};
+    const auto key = [&](ReactionIndex i) {
+        const auto& r = records[i.value()];
+        const bool equilibrium = r.backward_model == BackwardRateModel::equilibrium;
+        const auto mode = equilibrium ? r.backward.other_mode : OptionalModeIndex {};
+        return std::tuple {equilibrium ? (mode ? 2 : 1) : 0,
+                           mode ? (*mode).value() : 0U,
+                           rate_behavior(r),
+                           i.value()};
+    };
+    for (const ReactionIndex i : reaction_indices(0, R)) { out.order[i.value()] = i; }
+    std::sort(out.order.begin(), out.order.end(), [&](ReactionIndex a, ReactionIndex b) {
+        return key(a) < key(b);
+    });
+    for (std::size_t position = 0; position < R; ++position) {
+        const auto& r = records[out.order[position].value()];
+        const bool equilibrium = r.backward_model == BackwardRateModel::equilibrium;
+        const auto mode = equilibrium ? r.backward.other_mode : OptionalModeIndex {};
+        const auto behavior = rate_behavior(r);
+        if (out.block_count == 0 || out.blocks[out.block_count - 1].behavior != behavior ||
+            out.blocks[out.block_count - 1].equilibrium_mode != mode) {
+            out.blocks[out.block_count++] = {.end = position + 1,
+                                             .equilibrium_mode = mode,
+                                             .behavior = behavior};
+        } else {
+            out.blocks[out.block_count - 1].end = position + 1;
+        }
+        if (!equilibrium) { out.explicit_end = out.block_count; }
+        if (!equilibrium || !mode) { out.translation_end = out.block_count; }
+    }
+    return out;
+}
+
+template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t R>
+RateModeReferences<R> prepare_rate_mode_references(const std::array<Reaction<P, U, N>, R>& records)
+{
+    RateModeReferences<R> out {};
+    const auto less = [](ModeIndex a, ModeIndex b) { return a.value() < b.value(); };
+    for (const auto& r : records) {
+        if (internal_rate_control(r.forward)) {
+            out.forward[out.forward_count++] = *r.forward.other_mode;
+        }
+    }
+    const auto first = out.forward.begin();
+    std::sort(first, first + out.forward_count, less);
+    out.forward_count =
+      static_cast<std::size_t>(std::unique(first, first + out.forward_count) - first);
+    for (const auto& r : records) {
+        if (r.backward_model == BackwardRateModel::arrhenius && internal_rate_control(r.backward) &&
+            !std::binary_search(first, first + out.forward_count, *r.backward.other_mode, less)) {
+            out.backward_only[out.backward_only_count++] = *r.backward.other_mode;
+        }
+    }
+    const auto reverse = out.backward_only.begin();
+    std::sort(reverse, reverse + out.backward_only_count, less);
+    out.backward_only_count =
+      static_cast<std::size_t>(std::unique(reverse, reverse + out.backward_only_count) - reverse);
+    return out;
+}
 
 // Checks the entry count of a list and the names of its first count
 // entries: each known and listed once. Returns the species indices.
@@ -880,6 +1038,8 @@ ReactionMechanism<P, U, N, R> build_mechanism(const MechanismInput<R, K>& input,
     }
     mech.standard_pressure = standard_pressure;
     mech.boltzmann = boltzmann_constant(scales);
+    mech.schedule_ = prepare_rate_schedule(mech.reactions_);
+    mech.controlling_modes_ = prepare_rate_mode_references(mech.reactions_);
     return mech;
 }
 
@@ -1216,12 +1376,175 @@ CANARY_HOST_DEVICE T equilibrium_exponent(const Reaction<P, U, N>& r,
     return exponent;
 }
 
-// Rates of progress at the clamped translational temperature t (T_l) and
-// the M other temperatures other (unclamped): T_ve of a two-temperature
-// evaluation (M = 1) or the mode temperatures; with M = 0 every rate is
-// evaluated at T_l. The gas model is called once at t and once at each
-// other temperature at which some reaction has its equilibrium backward
-// rate.
+// Explicit reverse blocks carry no equilibrium storage. An equilibrium source
+// borrows the single terms object owned by its source traversal.
+struct ArrheniusReverseSource {};
+template <Scalar T, std::size_t N> struct EquilibriumRateSource {
+    const EquilibriumTerms<T, N>& terms;
+    T ln_temperature;
+    T inverse_temperature;
+};
+
+template <bool ForwardOther,
+          bool BackwardOther,
+          bool ThirdBody,
+          bool EquilibriumOther,
+          std::size_t M,
+          Scalar T,
+          std::floating_point P,
+          UnitSystem U,
+          std::size_t N,
+          std::size_t R,
+          typename Source>
+CANARY_HOST_DEVICE void evaluate_rate_block(const ReactionMechanism<P, U, N, R>& mech,
+                                            const RateSchedule<R>& schedule,
+                                            std::size_t begin,
+                                            std::size_t end,
+                                            T ln_t,
+                                            T inv_t,
+                                            const std::array<T, M>& ln_ratio,
+                                            const std::array<T, N>& n,
+                                            const Source& source,
+                                            RatesOfProgress<T, U, R>& out)
+{
+    constexpr bool equilibrium = !std::same_as<Source, ArrheniusReverseSource>;
+    const auto records = mech.reactions();
+    for (std::size_t position = begin; position < end; ++position) {
+        const ReactionIndex k = schedule.order[position];
+        const auto& r = records[k];
+        const T forward_exponent = arrhenius_exponent(r.forward, ln_t, inv_t);
+        T controlled_exponent = forward_exponent;
+        if constexpr (ForwardOther && M > 0) {
+            controlled_exponent =
+              arrhenius_exponent(r.forward, ln_t, inv_t, ln_ratio[(*r.forward.other_mode).value()]);
+        }
+        const T k_f = T(r.forward.A * math::exp(controlled_exponent));
+        T k_b = k_f;
+        if constexpr (equilibrium) {
+            T exponent = forward_exponent;
+            if constexpr (EquilibriumOther && M > 0) {
+                exponent = equilibrium_exponent(
+                  r,
+                  arrhenius_exponent(r.forward, source.ln_temperature, source.inverse_temperature),
+                  source.terms);
+            } else {
+                exponent = equilibrium_exponent(r, forward_exponent, source.terms);
+            }
+            k_b = T(r.forward.A * math::exp(exponent));
+        } else {
+            const T exponent = [&] {
+                if constexpr (BackwardOther && M > 0) {
+                    return arrhenius_exponent(r.backward,
+                                              ln_t,
+                                              inv_t,
+                                              ln_ratio[(*r.backward.other_mode).value()]);
+                } else {
+                    return arrhenius_exponent(r.backward, ln_t, inv_t);
+                }
+            }();
+            k_b = T(r.backward.A * math::exp(exponent));
+        }
+        T q_f = k_f;
+        T q_b = k_b;
+        if constexpr (ThirdBody) {
+            T m = T(r.efficiencies()[SpeciesIndex {0}] * n[0]);
+            for (const SpeciesIndex i : species_indices(1, N)) {
+                m = m + T(r.efficiencies()[i] * n[i.value()]);
+            }
+            q_f = q_f * m;
+            q_b = q_b * m;
+        }
+        for (const SpeciesIndex i : species_indices(0, N)) {
+            for (int c = 0; c < r.reactants()[i]; ++c) { q_f = q_f * n[i.value()]; }
+            for (int c = 0; c < r.products()[i]; ++c) { q_b = q_b * n[i.value()]; }
+        }
+        out.forward()[k] = NumberRateDensity<T, U> {q_f};
+        out.backward()[k] = NumberRateDensity<T, U> {q_b};
+    }
+}
+
+template <bool EquilibriumOther,
+          std::size_t M,
+          Scalar T,
+          std::floating_point P,
+          UnitSystem U,
+          std::size_t N,
+          std::size_t R,
+          typename Source>
+CANARY_HOST_DEVICE void dispatch_rate_block(const ReactionMechanism<P, U, N, R>& mech,
+                                            const RateSchedule<R>& schedule,
+                                            std::size_t block,
+                                            T ln_t,
+                                            T inv_t,
+                                            const std::array<T, M>& ln_ratio,
+                                            const std::array<T, N>& n,
+                                            const Source& source,
+                                            RatesOfProgress<T, U, R>& out)
+{
+    const std::size_t begin = block == 0 ? 0 : schedule.blocks[block - 1].end;
+    const std::size_t end = schedule.blocks[block].end;
+    const auto evaluate = [&]<bool F, bool B, bool Third>() {
+        evaluate_rate_block<F && (M > 0), B && (M > 0), Third, EquilibriumOther>(mech,
+                                                                                 schedule,
+                                                                                 begin,
+                                                                                 end,
+                                                                                 ln_t,
+                                                                                 inv_t,
+                                                                                 ln_ratio,
+                                                                                 n,
+                                                                                 source,
+                                                                                 out);
+    };
+    if constexpr (std::same_as<Source, ArrheniusReverseSource>) {
+        switch (schedule.blocks[block].behavior) {
+        case RateBehavior::ArrheniusTranslationTranslation:
+            evaluate.template operator()<false, false, false>();
+            break;
+        case RateBehavior::ArrheniusTranslationTranslationThirdBody:
+            evaluate.template operator()<false, false, true>();
+            break;
+        case RateBehavior::ArrheniusTranslationOther:
+            evaluate.template operator()<false, true, false>();
+            break;
+        case RateBehavior::ArrheniusTranslationOtherThirdBody:
+            evaluate.template operator()<false, true, true>();
+            break;
+        case RateBehavior::ArrheniusOtherTranslation:
+            evaluate.template operator()<true, false, false>();
+            break;
+        case RateBehavior::ArrheniusOtherTranslationThirdBody:
+            evaluate.template operator()<true, false, true>();
+            break;
+        case RateBehavior::ArrheniusOtherOther:
+            evaluate.template operator()<true, true, false>();
+            break;
+        case RateBehavior::ArrheniusOtherOtherThirdBody:
+            evaluate.template operator()<true, true, true>();
+            break;
+        default: CANARY_ASSERT(false); break;
+        }
+    } else {
+        switch (schedule.blocks[block].behavior) {
+        case RateBehavior::EquilibriumForwardTranslation:
+            evaluate.template operator()<false, false, false>();
+            break;
+        case RateBehavior::EquilibriumForwardTranslationThirdBody:
+            evaluate.template operator()<false, false, true>();
+            break;
+        case RateBehavior::EquilibriumForwardOther:
+            evaluate.template operator()<true, false, false>();
+            break;
+        case RateBehavior::EquilibriumForwardOtherThirdBody:
+            evaluate.template operator()<true, false, true>();
+            break;
+        default: CANARY_ASSERT(false); break;
+        }
+    }
+}
+
+// Rates at clamped primary temperature t and sampled, unclamped internal
+// temperatures. Only prepared dependencies are evaluated. Each equilibrium
+// source owns one Gibbs array while all of its behavior blocks are consumed.
 template <std::size_t M,
           Scalar T,
           std::floating_point P,
@@ -1239,91 +1562,67 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
                        const std::array<T, M>& other)
 {
     using V = ScalarTraits<T>::value_type;
-    const auto records = mech.reactions();
+    const auto& schedule = reaction_schedule<M>(mech);
     const T ln_t = math::log(t);
     const T inv_t = T(V(1)) / t;
-    const EquilibriumTerms<T, N> at_t = equilibrium_terms(mech, gas, t);
-
-    // Number densities n_i.
     std::array<T, N> n {};
     for (const SpeciesIndex i : species_indices(0, N)) {
         n[i.value()] = T(rho.value() * mix.fractions[i.value()].value() / mech.mass()[i].value());
     }
-
-    // ln(T_o / T_l) of every other temperature and, at each other
-    // temperature that has equilibrium backward rates, ln T_o, 1 / T_o and
-    // the equilibrium terms.
     std::array<T, M> ln_ratio {};
-    std::array<T, M> ln_other {};
-    std::array<T, M> inv_other {};
-    std::array<EquilibriumTerms<T, N>, M> at_other {};
     if constexpr (M > 0) {
-        std::array<bool, M> used {};
-        for (const ReactionIndex k : reaction_indices(0, R)) {
-            const auto& r = records[k];
-            if (r.backward_model == BackwardRateModel::equilibrium &&
-                r.equilibrium_at_other_temperature) {
-                used[(*r.backward.other_mode).value()] = true;
+        const auto& references = reaction_mode_references(mech);
+        if constexpr (M == 1) {
+            if (references.forward_count != 0 || references.backward_only_count != 0) {
+                ln_ratio[0] = math::log(T(other[0] / t));
             }
-        }
-        for (const ModeIndex m : mode_indices(0, M)) {
-            ln_ratio[m.value()] = math::log(T(other[m.value()] / t));
-            if (!used[m.value()]) { continue; }
-            ln_other[m.value()] = math::log(other[m.value()]);
-            inv_other[m.value()] = T(V(1)) / other[m.value()];
-            at_other[m.value()] = equilibrium_terms(mech, gas, other[m.value()]);
+        } else {
+            for (std::size_t j = 0; j < references.forward_count; ++j) {
+                const ModeIndex m = references.forward[j];
+                ln_ratio[m.value()] = math::log(T(other[m.value()] / t));
+            }
+            for (std::size_t j = 0; j < references.backward_only_count; ++j) {
+                const ModeIndex m = references.backward_only[j];
+                ln_ratio[m.value()] = math::log(T(other[m.value()] / t));
+            }
         }
     }
-
     RatesOfProgress<T, U, R> out {};
-    for (const ReactionIndex k : reaction_indices(0, R)) {
-        const Reaction<P, U, N>& r = records[k];
-        // ln(k_f / A) at T_l, and at the rate-controlling temperature.
-        const T forward_exponent = arrhenius_exponent(r.forward, ln_t, inv_t);
-        T controlled_exponent = forward_exponent;
-        if constexpr (M > 0) {
-            if (r.forward.other_mode && r.forward.translational_exponent != P(1)) {
-                controlled_exponent = arrhenius_exponent(r.forward,
-                                                         ln_t,
-                                                         inv_t,
-                                                         ln_ratio[(*r.forward.other_mode).value()]);
-            }
+    for (std::size_t b = 0; b < schedule.explicit_end; ++b) {
+        dispatch_rate_block<false>(mech,
+                                   schedule,
+                                   b,
+                                   ln_t,
+                                   inv_t,
+                                   ln_ratio,
+                                   n,
+                                   ArrheniusReverseSource {},
+                                   out);
+    }
+    // Explicit single-temperature evaluation shares primary properties across
+    // all equilibrium blocks, retaining their original prepared permutation.
+    const std::size_t primary_end = M == 0 ? schedule.block_count : schedule.translation_end;
+    if (schedule.explicit_end < primary_end) {
+        const auto terms = equilibrium_terms(mech, gas, t);
+        const EquilibriumRateSource<T, N> source {terms, ln_t, inv_t};
+        for (std::size_t b = schedule.explicit_end; b < primary_end; ++b) {
+            dispatch_rate_block<false>(mech, schedule, b, ln_t, inv_t, ln_ratio, n, source, out);
         }
-        const T k_f = T(r.forward.A * math::exp(controlled_exponent));
-        T k_b = k_f;
-        if (r.backward_model == BackwardRateModel::equilibrium) {
-            bool at_other_temperature = false;
-            if constexpr (M > 0) { at_other_temperature = r.equilibrium_at_other_temperature; }
-            T exponent = forward_exponent;
-            if (at_other_temperature) {
-                const ModeIndex m = (*r.backward.other_mode);
-                exponent = equilibrium_exponent(
-                  r,
-                  arrhenius_exponent(r.forward, ln_other[m.value()], inv_other[m.value()]),
-                  at_other[m.value()]);
-            } else {
-                exponent = equilibrium_exponent(r, forward_exponent, at_t);
-            }
-            k_b = T(r.forward.A * math::exp(exponent));
-        } else {
-            k_b = T(r.backward.A * math::exp(rate_exponent<M>(r.backward, ln_t, inv_t, ln_ratio)));
+    }
+    if constexpr (M > 0) {
+        std::size_t b = schedule.translation_end;
+        while (b < schedule.block_count) {
+            const auto mode = schedule.blocks[b].equilibrium_mode;
+            const T temperature = other[(*mode).value()];
+            const T ln_other = math::log(temperature);
+            const T inv_other = T(V(1)) / temperature;
+            const auto terms = equilibrium_terms(mech, gas, temperature);
+            const EquilibriumRateSource<T, N> source {terms, ln_other, inv_other};
+            do {
+                dispatch_rate_block<true>(mech, schedule, b, ln_t, inv_t, ln_ratio, n, source, out);
+                ++b;
+            } while (b < schedule.block_count && schedule.blocks[b].equilibrium_mode == mode);
         }
-        T q_f = k_f;
-        T q_b = k_b;
-        if (r.third_body) {
-            T m = T(r.efficiencies()[SpeciesIndex {0}] * n[0]);
-            for (const SpeciesIndex i : species_indices(1, N)) {
-                m = m + T(r.efficiencies()[i] * n[i.value()]);
-            }
-            q_f = q_f * m;
-            q_b = q_b * m;
-        }
-        for (const SpeciesIndex i : species_indices(0, N)) {
-            for (int c = 0; c < r.reactants()[i]; ++c) { q_f = q_f * n[i.value()]; }
-            for (int c = 0; c < r.products()[i]; ++c) { q_b = q_b * n[i.value()]; }
-        }
-        out.forward()[k] = NumberRateDensity<T, U> {q_f};
-        out.backward()[k] = NumberRateDensity<T, U> {q_b};
     }
     return out;
 }
