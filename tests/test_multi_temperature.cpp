@@ -599,6 +599,26 @@ static_assert(std::is_trivially_copyable_v<Air11Scaled>);
 static_assert(std::is_trivially_copyable_v<Air11::State<D>>);
 static_assert(std::is_trivially_copyable_v<Air11::Mixture<D>>);
 
+template <typename... Indices>
+concept AcceptsComponents = requires(const Air11& gas, Indices... indices) {
+    { gas.components(indices...) } -> std::same_as<canary::ModeComponentSet>;
+};
+
+static_assert(AcceptsComponents<canary::ModeIndex, canary::SpeciesIndex>);
+static_assert(AcceptsComponents<canary::SpeciesIndex>);
+static_assert(!AcceptsComponents<canary::SpeciesIndex, canary::ModeIndex>);
+static_assert(!AcceptsComponents<std::size_t, std::size_t>);
+static_assert(!AcceptsComponents<canary::ModeIndex>);
+static_assert(!AcceptsComponents<std::size_t>);
+static_assert(!std::is_aggregate_v<Air11>);
+static_assert(!std::is_default_constructible_v<Air11>);
+static_assert(std::is_trivially_copy_assignable_v<Air11>);
+static_assert(noexcept(std::declval<const Air11&>().components(canary::SpeciesIndex {0})));
+static_assert(noexcept(std::declval<const Air11&>().components(canary::ModeIndex {0},
+                                                               canary::SpeciesIndex {0})));
+static_assert(noexcept(std::declval<const Air11&>().electron()));
+static_assert(noexcept(std::declval<const Air11&>().electron_mode()));
+
 void test_multi_temperature()
 {
     using namespace boost::ut;
@@ -611,6 +631,61 @@ void test_multi_temperature()
     const Air11& air11 = built11.model;
     const auto single5 = canary::make_air5<double>(si_scales).model;
     const auto single11 = canary::make_air11<double>(si_scales).model;
+
+    "mode membership unions retain frozen components and survive copying"_test = [] {
+        const auto check =
+          []<std::floating_point P, canary::UnitSystem U>(const canary::UnitScales<P, U>& scales) {
+              // N2 vibration and electronic excitation occupy distinct modes;
+              // O2 electronic excitation and the free electron share a mode.
+              const std::array<canary::EnergyModeInput<2>, 3> modes {{
+                {1, {{{"N2", canary::ModeComponent::vibration}, {}}}},
+                {1, {{{"N2", canary::ModeComponent::electronic}, {}}}},
+                {2,
+                 {{{"O2", canary::ModeComponent::electronic},
+                   {"e-", canary::ModeComponent::electron}}}},
+              }};
+              auto gas = canary::make_multi_temperature_mixture(canary::air11_species,
+                                                                canary::air11_rotational_degrees,
+                                                                canary::air11_electronic_levels,
+                                                                modes,
+                                                                scales)
+                           .model;
+              auto copied = gas;
+              auto reordered = modes;
+              std::swap(reordered[0], reordered[2]);
+              gas = canary::make_multi_temperature_mixture(canary::air11_species,
+                                                           canary::air11_rotational_degrees,
+                                                           canary::air11_electronic_levels,
+                                                           reordered,
+                                                           scales)
+                      .model;
+              expect(copied.electron_mode() == canary::OptionalModeIndex {canary::ModeIndex {2}});
+              expect(gas.electron_mode() == canary::OptionalModeIndex {canary::ModeIndex {0}});
+              for (const canary::SpeciesIndex i : canary::species_indices(0, 11)) {
+                  const auto all = copied.components(i);
+                  expect(all.vibration == (i.value() == 0));
+                  expect(all.electronic == (i.value() == 0 || i.value() == 1));
+                  expect(all.electron == (i.value() == 10));
+                  const auto after = gas.components(i);
+                  expect(all.vibration == after.vibration && all.electronic == after.electronic &&
+                         all.electron == after.electron);
+              }
+              expect(copied.components(canary::ModeIndex {0}, canary::SpeciesIndex {0}).vibration);
+              expect(!gas.components(canary::ModeIndex {0}, canary::SpeciesIndex {0}).vibration);
+              auto detached = copied.components(canary::SpeciesIndex {0});
+              detached.vibration = false;
+              expect(!detached.vibration && copied.components(canary::SpeciesIndex {0}).vibration);
+              copied = gas;
+              expect(copied.electron_mode() == gas.electron_mode());
+              expect(!copied.components(canary::ModeIndex {0}, canary::SpeciesIndex {0}).vibration);
+          };
+        check(canary::UnitScales<float, si> {});
+        check(canary::UnitScales<double, si> {});
+        check(canary::UnitScales<float, scaled> {
+          {.mass = 4.65e-26, .density = 1.0e-3, .temperature = 1000.0, .length = 1.0}});
+        check(canary::UnitScales<double, scaled> {
+          {.mass = 4.65e-26, .density = 1.0e-3, .temperature = 1000.0, .length = 1.0}});
+    };
 
     "multi-temperature acoustics follow heavy and shared electron pressure work"_test = [] {
         const auto run = []<std::floating_point V, canary::UnitSystem U>(
@@ -768,7 +843,7 @@ void test_multi_temperature()
             const V cold =
               canary::convert<U>(canary::ModeTemperature<V, si> {V(10)}, scales).value();
             const std::array<V, 2> cold_modes {te, cold};
-            for (const auto index : {canary::SpeciesIndex {0}, *shared.electron}) {
+            for (const auto index : {canary::SpeciesIndex {0}, *shared.electron()}) {
                 std::array<V, 11> pure {};
                 pure[index.value()] = V(1);
                 const auto pure_mix = mixture(shared, fractions(pure));
@@ -1054,10 +1129,10 @@ void test_multi_temperature()
     "multi-temperature: the builder holds the single-temperature model, levels and modes"_test =
       [&] {
           expect(built11.species.n == 11_i);
-          expect(!air4.electron);
-          expect(!air4.electron_mode);
-          expect(air11.electron == canary::OptionalSpeciesIndex {canary::SpeciesIndex {10}});
-          expect(air11.electron_mode == canary::OptionalModeIndex {canary::ModeIndex {1}});
+          expect(!air4.electron());
+          expect(!air4.electron_mode());
+          expect(air11.electron() == canary::OptionalSpeciesIndex {canary::SpeciesIndex {10}});
+          expect(air11.electron_mode() == canary::OptionalModeIndex {canary::ModeIndex {1}});
           for (std::size_t i = 0; i < 11; ++i) {
               expect(air11.thermally_perfect.gas_constant[i] == single11.gas_constant[i]);
               const double r_i = single11.gas_constant[i].value();
@@ -1075,8 +1150,8 @@ void test_multi_temperature()
                   expect(air11.electronic_levels[i].degeneracies[k] ==
                          static_cast<double>(input.degeneracies[k]));
               }
-              const auto& vib = air11.mode_components[0][i];
-              const auto& el = air11.mode_components[1][i];
+              const auto& vib = air11.components(canary::ModeIndex {0}, canary::SpeciesIndex {i});
+              const auto& el = air11.components(canary::ModeIndex {1}, canary::SpeciesIndex {i});
               expect(vib.vibration == (canary::air11_rotational_degrees[i] > 0));
               expect(!vib.electronic && !vib.electron);
               expect(el.electronic == (i != 10));
@@ -1085,9 +1160,12 @@ void test_multi_temperature()
           }
           // Mode O2 of the four-temperature model: O2 vibration and
           // electronic, O electronic.
-          expect(air4.mode_components[1][1].vibration && air4.mode_components[1][1].electronic);
-          expect(air4.mode_components[1][3].electronic && !air4.mode_components[1][3].vibration);
-          expect(!canary::detail::holds_any(air4.mode_components[1][0]));
+          expect(air4.components(canary::ModeIndex {1}, canary::SpeciesIndex {1}).vibration &&
+                 air4.components(canary::ModeIndex {1}, canary::SpeciesIndex {1}).electronic);
+          expect(air4.components(canary::ModeIndex {1}, canary::SpeciesIndex {3}).electronic &&
+                 !air4.components(canary::ModeIndex {1}, canary::SpeciesIndex {3}).vibration);
+          expect(!canary::detail::holds_any(
+            air4.components(canary::ModeIndex {1}, canary::SpeciesIndex {0})));
       };
 
     "multi-temperature: species roles are independent of names and ordering"_test = [] {
@@ -1120,11 +1198,14 @@ void test_multi_temperature()
                                                      levels,
                                                      modes,
                                                      canary::UnitScales<double, si> {});
-            expect(result.model.electron ==
+            expect(result.model.electron() ==
                    canary::OptionalSpeciesIndex {canary::SpeciesIndex {electron}});
-            expect(result.model.electron_mode == canary::OptionalModeIndex {canary::ModeIndex {1}});
-            expect(result.model.mode_components[1][electron].electron);
-            expect(!result.model.mode_components[1][2].electron);
+            expect(result.model.electron_mode() ==
+                   canary::OptionalModeIndex {canary::ModeIndex {1}});
+            expect(result.model.components(canary::ModeIndex {1}, canary::SpeciesIndex {electron})
+                     .electron);
+            expect(
+              !result.model.components(canary::ModeIndex {1}, canary::SpeciesIndex {2}).electron);
         }
         species = canary::air11_species;
         degrees = canary::air11_rotational_degrees;

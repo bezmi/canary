@@ -55,6 +55,7 @@ struct SpeciesQueryModel {
     using units = si;
     static constexpr std::size_t mode_count = Gas::mode_count;
     Gas thermo;
+    canary::OptionalSpeciesIndex returned_electron;
 };
 
 canary::OptionalModeIndex species_vibration_mode(const SpeciesQueryModel& gas,
@@ -65,7 +66,7 @@ canary::OptionalModeIndex electron_energy_mode(const SpeciesQueryModel& gas)
 { return canary::electron_energy_mode(gas.thermo); }
 
 canary::OptionalSpeciesIndex electron_species_index(const SpeciesQueryModel& gas)
-{ return canary::electron_species_index(gas.thermo); }
+{ return gas.returned_electron; }
 
 // Raw integer query results do not satisfy the typed mode contract.
 struct RawModeQueryModel {
@@ -938,7 +939,7 @@ void test_multi_temperature_kinetics()
         electrons.electron_translation[0] =
           canary::air11_kim_jo_exchange_electrons.electron_translation[0];
         electrons.electron_translation[0].partner = "e-";
-        const SpeciesQueryModel custom {gas};
+        const SpeciesQueryModel custom {gas, canary::electron_species_index(gas)};
         const auto result = canary::make_multi_temperature_exchange(input,
                                                                     electrons,
                                                                     renamed,
@@ -963,7 +964,7 @@ void test_multi_temperature_kinetics()
         auto invalid = custom;
         for (const std::size_t index :
              {std::size_t(11), std::size_t(std::numeric_limits<std::uint32_t>::max()) - 1}) {
-            invalid.thermo.electron = canary::OptionalSpeciesIndex {canary::SpeciesIndex {index}};
+            invalid.returned_electron = canary::OptionalSpeciesIndex {canary::SpeciesIndex {index}};
             expect(error_message([&] {
                        canary::make_multi_temperature_exchange(input,
                                                                electrons,
