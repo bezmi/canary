@@ -350,6 +350,10 @@ template <std::size_t R> struct RateSchedule {
     std::size_t explicit_end {};
     std::size_t translation_end {};
 };
+// Storage selected at compile time by rates_of_progress_at: both directional
+// rates (RatesOfProgress), or only the net rate q_f - q_b of each reaction for
+// consumers that need nothing else.
+enum class RateOutput : std::uint8_t { Directional, Net };
 template <std::size_t R> struct RateModeReferences {
     std::array<ModeIndex, R> forward {};
     std::array<ModeIndex, R> backward_only {};
@@ -1382,7 +1386,14 @@ template <Scalar T, std::size_t N> struct EquilibriumRateSource {
     T inverse_temperature;
 };
 
-template <bool ForwardOther,
+// The owning result of rates_of_progress_at for each RateOutput.
+template <RateOutput Output, Scalar T, UnitSystem U, std::size_t R>
+using RateOutputOf = std::conditional_t<Output == RateOutput::Directional,
+                                        RatesOfProgress<T, U, R>,
+                                        std::array<NumberRateDensity<T, U>, R>>;
+
+template <RateOutput Output,
+          bool ForwardOther,
           bool BackwardOther,
           bool ThirdBody,
           bool EquilibriumOther,
@@ -1402,7 +1413,7 @@ CANARY_HOST_DEVICE void evaluate_rate_block(const ReactionMechanism<P, U, N, R>&
                                             const std::array<T, M>& ln_ratio,
                                             const std::array<T, N>& n,
                                             const Source& source,
-                                            RatesOfProgress<T, U, R>& out)
+                                            RateOutputOf<Output, T, U, R>& out)
 {
     constexpr bool equilibrium = !std::same_as<Source, ArrheniusReverseSource>;
     const auto records = mech.reactions();
@@ -1455,12 +1466,19 @@ CANARY_HOST_DEVICE void evaluate_rate_block(const ReactionMechanism<P, U, N, R>&
             for (int c = 0; c < r.reactants()[i]; ++c) { q_f = q_f * n[i.value()]; }
             for (int c = 0; c < r.products()[i]; ++c) { q_b = q_b * n[i.value()]; }
         }
-        out.forward()[k] = NumberRateDensity<T, U> {q_f};
-        out.backward()[k] = NumberRateDensity<T, U> {q_b};
+        if constexpr (Output == RateOutput::Directional) {
+            out.forward()[k] = NumberRateDensity<T, U> {q_f};
+            out.backward()[k] = NumberRateDensity<T, U> {q_b};
+        } else {
+            as_indexed<ReactionIndex>(
+              Kokkos::mdspan<NumberRateDensity<T, U>, Kokkos::extents<std::size_t, R>>(
+                out.data()))[k] = NumberRateDensity<T, U> {T(q_f - q_b)};
+        }
     }
 }
 
-template <bool EquilibriumOther,
+template <RateOutput Output,
+          bool EquilibriumOther,
           std::size_t M,
           Scalar T,
           std::floating_point P,
@@ -1476,21 +1494,21 @@ CANARY_HOST_DEVICE void dispatch_rate_block(const ReactionMechanism<P, U, N, R>&
                                             const std::array<T, M>& ln_ratio,
                                             const std::array<T, N>& n,
                                             const Source& source,
-                                            RatesOfProgress<T, U, R>& out)
+                                            RateOutputOf<Output, T, U, R>& out)
 {
     const std::size_t begin = block == 0 ? 0 : schedule.blocks[block - 1].end;
     const std::size_t end = schedule.blocks[block].end;
     const auto evaluate = [&]<bool F, bool B, bool Third>() {
-        evaluate_rate_block<F && (M > 0), B && (M > 0), Third, EquilibriumOther>(mech,
-                                                                                 schedule,
-                                                                                 begin,
-                                                                                 end,
-                                                                                 ln_t,
-                                                                                 inv_t,
-                                                                                 ln_ratio,
-                                                                                 n,
-                                                                                 source,
-                                                                                 out);
+        evaluate_rate_block<Output, F && (M > 0), B && (M > 0), Third, EquilibriumOther>(mech,
+                                                                                         schedule,
+                                                                                         begin,
+                                                                                         end,
+                                                                                         ln_t,
+                                                                                         inv_t,
+                                                                                         ln_ratio,
+                                                                                         n,
+                                                                                         source,
+                                                                                         out);
     };
     if constexpr (std::same_as<Source, ArrheniusReverseSource>) {
         switch (schedule.blocks[block].behavior) {
@@ -1540,9 +1558,12 @@ CANARY_HOST_DEVICE void dispatch_rate_block(const ReactionMechanism<P, U, N, R>&
 }
 
 // Rates at clamped primary temperature t and sampled, unclamped internal
-// temperatures. Only prepared dependencies are evaluated. Each equilibrium
-// source owns one Gibbs array while all of its behavior blocks are consumed.
+// temperatures, returned as the storage selected by Output. Only prepared
+// dependencies are evaluated. Each equilibrium source owns one Gibbs array
+// while all of its behavior blocks are consumed. Every reaction is written
+// once, at its original index.
 template <std::size_t M,
+          RateOutput Output,
           Scalar T,
           std::floating_point P,
           UnitSystem U,
@@ -1550,7 +1571,7 @@ template <std::size_t M,
           std::size_t R,
           typename G>
     requires ReactingModel<G, T, P, N> && std::same_as<typename G::units, U>
-CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
+CANARY_HOST_DEVICE RateOutputOf<Output, T, U, R>
   rates_of_progress_at(const ReactionMechanism<P, U, N, R>& mech,
                        const G& gas,
                        const NormalisedComposition<T, U, N>& mix,
@@ -1584,17 +1605,17 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
             }
         }
     }
-    RatesOfProgress<T, U, R> out {};
+    RateOutputOf<Output, T, U, R> out {};
     for (std::size_t b = 0; b < schedule.explicit_end; ++b) {
-        dispatch_rate_block<false>(mech,
-                                   schedule,
-                                   b,
-                                   ln_t,
-                                   inv_t,
-                                   ln_ratio,
-                                   n,
-                                   ArrheniusReverseSource {},
-                                   out);
+        dispatch_rate_block<Output, false>(mech,
+                                           schedule,
+                                           b,
+                                           ln_t,
+                                           inv_t,
+                                           ln_ratio,
+                                           n,
+                                           ArrheniusReverseSource {},
+                                           out);
     }
     // Explicit single-temperature evaluation shares primary properties across
     // all equilibrium blocks, retaining their original prepared permutation.
@@ -1603,7 +1624,8 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
         const auto terms = equilibrium_terms(mech, gas, t);
         const EquilibriumRateSource<T, N> source {terms, ln_t, inv_t};
         for (std::size_t b = schedule.explicit_end; b < primary_end; ++b) {
-            dispatch_rate_block<false>(mech, schedule, b, ln_t, inv_t, ln_ratio, n, source, out);
+            dispatch_rate_block<Output,
+                                false>(mech, schedule, b, ln_t, inv_t, ln_ratio, n, source, out);
         }
     }
     if constexpr (M > 0) {
@@ -1616,7 +1638,8 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
             const auto terms = equilibrium_terms(mech, gas, temperature);
             const EquilibriumRateSource<T, N> source {terms, ln_other, inv_other};
             do {
-                dispatch_rate_block<true>(mech, schedule, b, ln_t, inv_t, ln_ratio, n, source, out);
+                dispatch_rate_block<Output,
+                                    true>(mech, schedule, b, ln_t, inv_t, ln_ratio, n, source, out);
                 ++b;
             } while (b < schedule.block_count && schedule.blocks[b].equilibrium_mode == mode);
         }
@@ -1624,21 +1647,36 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
     return out;
 }
 
-// omega_i = m_i sum_r (nu''_ir - nu'_ir) (q_f,r - q_b,r) from the rates of
-// progress q of mech.
-template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::size_t R>
-    requires ScalarWith<T, P>
-CANARY_HOST_DEVICE CANARY_FORCE_INLINE std::array<MassProductionRate<T, U>, N>
-  mass_production_rates(const ReactionMechanism<P, U, N, R>& mech,
-                        const RatesOfProgress<T, U, R>& q)
+// Read-only view of the net rates of RateOutput::Net, indexed by reaction.
+template <Scalar T, UnitSystem U, std::size_t R>
+using NetRateView =
+  IndexedView<ReactionIndex,
+              Kokkos::mdspan<const NumberRateDensity<T, U>, Kokkos::extents<std::size_t, R>>>;
+
+// q_f - q_b of reaction k, from both directional rates or from a stored net rate.
+template <Scalar T, UnitSystem U, std::size_t R>
+CANARY_HOST_DEVICE T net_rate(const RatesOfProgress<T, U, R>& q, ReactionIndex k)
+{ return q.forward()[k].value() - q.backward()[k].value(); }
+template <Scalar T, UnitSystem U, std::size_t R>
+CANARY_HOST_DEVICE T net_rate(NetRateView<T, U, R> q, ReactionIndex k)
+{ return q[k].value(); }
+
+// omega_i = m_i sum_r (nu''_ir - nu'_ir) (q_f,r - q_b,r) from the rates q of
+// mech, either RatesOfProgress or a NetRateView, reduced in reaction order.
+template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t R, typename Q>
+    requires requires(const Q& q, ReactionIndex k) { net_rate(q, k); } &&
+             ScalarWith<decltype(net_rate(std::declval<const Q&>(), ReactionIndex {})), P>
+CANARY_HOST_DEVICE CANARY_FORCE_INLINE auto
+  mass_production_rates(const ReactionMechanism<P, U, N, R>& mech, const Q& q)
 {
+    using T = decltype(net_rate(q, ReactionIndex {}));
     using V = ScalarTraits<T>::value_type;
     const auto records = mech.reactions();
     std::array<T, N> net {};
     net.fill(T(V(0)));
     for (const ReactionIndex k : reaction_indices(0, R)) {
         const Reaction<P, U, N>& r = records[k];
-        const T rate = q.forward()[k].value() - q.backward()[k].value();
+        const T rate = net_rate(q, k);
         for (const SpeciesIndex i : species_indices(0, N)) {
             const int dnu = r.products()[i] - r.reactants()[i];
             if (dnu != 0) { net[i.value()] = net[i.value()] + T(V(dnu) * rate); }
@@ -1649,6 +1687,103 @@ CANARY_HOST_DEVICE CANARY_FORCE_INLINE std::array<MassProductionRate<T, U>, N>
         out[i.value()] = MassProductionRate<T, U> {T(mech.mass()[i].value() * net[i.value()])};
     }
     return out;
+}
+
+// Read-only view of the net rates owned by net; net must outlive the view.
+template <Scalar T, UnitSystem U, std::size_t R>
+CANARY_HOST_DEVICE constexpr NetRateView<T, U, R>
+  net_rate_view(const std::array<NumberRateDensity<T, U>, R>& net) noexcept
+{
+    return NetRateView<T, U, R> {
+      Kokkos::mdspan<const NumberRateDensity<T, U>, Kokkos::extents<std::size_t, R>>(net.data())};
+}
+template <Scalar T, UnitSystem U, std::size_t R>
+void net_rate_view(const std::array<NumberRateDensity<T, U>, R>&& net) = delete;
+
+// The inputs of the public rate and production calls, normalised for
+// rates_of_progress_at: temp clamped to the limits of mech and the internal
+// temperatures copied in mode order. Mode extents and the mechanism's
+// configured mode count are asserted before any input is read.
+template <RateOutput Output,
+          Scalar T,
+          std::floating_point P,
+          UnitSystem U,
+          std::size_t N,
+          std::size_t R,
+          typename G>
+    requires ReactingModel<G, T, P, N> && std::same_as<typename G::units, U> && HasModeCount<G> &&
+             (G::mode_count == 1)
+CANARY_HOST_DEVICE RateOutputOf<Output, T, U, R>
+  rates_of_progress_as(const ReactionMechanism<P, U, N, R>& mech,
+                       const G& gas,
+                       const NormalisedComposition<T, U, N>& mix,
+                       Density<T, U> rho,
+                       Temperature<T, U> temp,
+                       Temperature<T, U> temp_ve)
+{
+    CANARY_ASSERT(reaction_mode_count(mech) == 1);
+    return rates_of_progress_at<1, Output>(mech,
+                                           gas,
+                                           mix,
+                                           rho,
+                                           clamped_temperature(mech, temp),
+                                           std::array<T, 1> {temp_ve.value()});
+}
+
+template <RateOutput Output,
+          Scalar T,
+          std::floating_point P,
+          UnitSystem U,
+          std::size_t N,
+          std::size_t R,
+          typename G,
+          typename V>
+    requires ReactingModel<G, T, P, N> && std::same_as<typename G::units, U> && HasModeCount<G> &&
+             ModeRangeOf<V, kind::mode_temperature, T, U>
+CANARY_HOST_DEVICE RateOutputOf<Output, T, U, R>
+  rates_of_progress_as(const ReactionMechanism<P, U, N, R>& mech,
+                       const G& gas,
+                       const NormalisedComposition<T, U, N>& mix,
+                       Density<T, U> rho,
+                       Temperature<T, U> temp,
+                       const V& mode_temp)
+{
+    constexpr std::size_t modes = G::mode_count;
+    CANARY_ASSERT(static_cast<std::size_t>(mode_temp.extent(0)) == modes);
+    CANARY_ASSERT(reaction_mode_count(mech) == modes);
+    std::array<T, modes> other {};
+    for (const ModeIndex m : mode_indices(0, modes)) {
+        other[m.value()] = mode_at(mode_temp, m).value();
+    }
+    return rates_of_progress_at<modes, Output>(mech,
+                                               gas,
+                                               mix,
+                                               rho,
+                                               clamped_temperature(mech, temp),
+                                               other);
+}
+
+template <RateOutput Output,
+          Scalar T,
+          std::floating_point P,
+          UnitSystem U,
+          std::size_t N,
+          std::size_t R,
+          typename G>
+    requires ReactingModel<G, T, P, N> && std::same_as<typename G::units, U>
+CANARY_HOST_DEVICE RateOutputOf<Output, T, U, R>
+  rates_of_progress_as(const ReactionMechanism<P, U, N, R>& mech,
+                       const G& gas,
+                       const NormalisedComposition<T, U, N>& mix,
+                       Density<T, U> rho,
+                       Temperature<T, U> temp)
+{
+    return rates_of_progress_at<0, Output>(mech,
+                                           gas,
+                                           mix,
+                                           rho,
+                                           clamped_temperature(mech, temp),
+                                           std::array<T, 0> {});
 }
 
 }  // namespace detail
@@ -1678,13 +1813,12 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
                     Temperature<T, U> temp,
                     Temperature<T, U> temp_ve)
 {
-    CANARY_ASSERT(detail::reaction_mode_count(mech) == 1);
-    return detail::rates_of_progress_at<1>(mech,
-                                           gas,
-                                           mix,
-                                           rho,
-                                           detail::clamped_temperature(mech, temp),
-                                           std::array<T, 1> {temp_ve.value()});
+    return detail::rates_of_progress_as<detail::RateOutput::Directional>(mech,
+                                                                         gas,
+                                                                         mix,
+                                                                         rho,
+                                                                         temp,
+                                                                         temp_ve);
 }
 
 // Mode temperatures borrow the caller's storage. The extent must equal
@@ -1707,19 +1841,12 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
                     Temperature<T, U> temp,
                     const V& mode_temp)
 {
-    constexpr std::size_t modes = G::mode_count;
-    CANARY_ASSERT(static_cast<std::size_t>(mode_temp.extent(0)) == modes);
-    CANARY_ASSERT(detail::reaction_mode_count(mech) == modes);
-    std::array<T, modes> other {};
-    for (const ModeIndex m : mode_indices(0, modes)) {
-        other[m.value()] = detail::mode_at(mode_temp, m).value();
-    }
-    return detail::rates_of_progress_at<modes>(mech,
-                                               gas,
-                                               mix,
-                                               rho,
-                                               detail::clamped_temperature(mech, temp),
-                                               other);
+    return detail::rates_of_progress_as<detail::RateOutput::Directional>(mech,
+                                                                         gas,
+                                                                         mix,
+                                                                         rho,
+                                                                         temp,
+                                                                         mode_temp);
 }
 
 // Rates of progress with the M mode temperatures mode_temp of the cell
@@ -1761,18 +1888,12 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
                     const NormalisedComposition<T, U, N>& mix,
                     Density<T, U> rho,
                     Temperature<T, U> temp)
-{
-    return detail::rates_of_progress_at<0>(mech,
-                                           gas,
-                                           mix,
-                                           rho,
-                                           detail::clamped_temperature(mech, temp),
-                                           std::array<T, 0> {});
-}
+{ return detail::rates_of_progress_as<detail::RateOutput::Directional>(mech, gas, mix, rho, temp); }
 
 // Mass production rate of every species, omega_i = m_i sum_r (nu''_ir -
 // nu'_ir) (q_f,r - q_b,r), from the rates of progress of rates_of_progress
-// with the same arguments.
+// with the same arguments. Only the net rate of each reaction is stored; the
+// result equals the reduction of the rates_of_progress result.
 template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::size_t R, typename G>
     requires ReactingModel<G, T, P, N> && std::same_as<typename G::units, U> &&
              detail::HasModeCount<G> && (G::mode_count == 1)
@@ -1784,8 +1905,9 @@ CANARY_HOST_DEVICE std::array<MassProductionRate<T, U>, N>
                    Temperature<T, U> temp,
                    Temperature<T, U> temp_ve)
 {
-    return detail::mass_production_rates(mech,
-                                         rates_of_progress(mech, gas, mix, rho, temp, temp_ve));
+    const auto net =
+      detail::rates_of_progress_as<detail::RateOutput::Net>(mech, gas, mix, rho, temp, temp_ve);
+    return detail::mass_production_rates(mech, detail::net_rate_view(net));
 }
 
 // Production rates using a borrowed mode-temperature view of G::mode_count entries.
@@ -1806,8 +1928,9 @@ CANARY_HOST_DEVICE std::array<MassProductionRate<T, U>, N>
                    Temperature<T, U> temp,
                    const V& mode_temp)
 {
-    return detail::mass_production_rates(mech,
-                                         rates_of_progress(mech, gas, mix, rho, temp, mode_temp));
+    const auto net =
+      detail::rates_of_progress_as<detail::RateOutput::Net>(mech, gas, mix, rho, temp, mode_temp);
+    return detail::mass_production_rates(mech, detail::net_rate_view(net));
 }
 
 // As above with the M mode temperatures of the cell.
@@ -1828,8 +1951,10 @@ CANARY_HOST_DEVICE std::array<MassProductionRate<T, U>, N>
                    Temperature<T, U> temp,
                    const std::array<ModeTemperature<T, U>, M>& mode_temp)
 {
-    return detail::mass_production_rates(mech,
-                                         rates_of_progress(mech, gas, mix, rho, temp, mode_temp));
+    const auto view = as_indexed<ModeIndex>(
+      Kokkos::mdspan<const ModeTemperature<T, U>, Kokkos::extents<std::size_t, M>>(
+        mode_temp.data()));
+    return production_rates(mech, gas, mix, rho, temp, view);
 }
 
 // As above at one temperature.
@@ -1841,7 +1966,11 @@ CANARY_HOST_DEVICE std::array<MassProductionRate<T, U>, N>
                    const NormalisedComposition<T, U, N>& mix,
                    Density<T, U> rho,
                    Temperature<T, U> temp)
-{ return detail::mass_production_rates(mech, rates_of_progress(mech, gas, mix, rho, temp)); }
+{
+    const auto net =
+      detail::rates_of_progress_as<detail::RateOutput::Net>(mech, gas, mix, rho, temp);
+    return detail::mass_production_rates(mech, detail::net_rate_view(net));
+}
 
 namespace detail
 {

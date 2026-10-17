@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <boost/ut.hpp>
 #include <canary/build.hpp>
 #include <canary/data/air11_kim_jo.hpp>
@@ -626,7 +627,93 @@ void check_prepared_reactions()
         run(true);
         expect(calls.empty());
     };
+    "production from stored net rates equals the reduction of both directional rates"_test = [] {
+        const auto input = interleaved_reaction_inputs();
+        const auto check = [&]<typename P, typename U>(const UnitScales<P, U>& scales) {
+            const auto built = make_air11_three_temperature(scales);
+            const auto& gas = built.model;
+            const auto mechanism =
+              make_reaction_mechanism(input,
+                                      reaction_species(air11_species),
+                                      scales,
+                                      convert<U>(Pressure<P, si> {P(101325)}, scales),
+                                      gas);
+            const auto evaluate = [&]<typename T>() {
+                std::array<T, 11> y {};
+                y[0] = T(0.5);
+                y[2] = T(0.5);
+                const auto mix = mixture(gas,
+                                         as_kind<kind::mass_fraction>(
+                                           Kokkos::mdspan<const T, Extents>(y.data(), y.size())));
+                // Bit patterns, so that equal non-finite results also compare equal.
+                const auto bits = [](double x) { return std::bit_cast<std::uint64_t>(x); };
+                const auto same = [&](const auto& a, const auto& b) {
+                    for (std::size_t i = 0; i < a.size(); ++i) {
+                        if constexpr (std::same_as<T, D>) {
+                            expect(bits(a[i].value().real()) == bits(b[i].value().real()) &&
+                                   bits(a[i].value().dual()) == bits(b[i].value().dual()))
+                              << i;
+                        } else {
+                            expect(bits(a[i].value()) == bits(b[i].value())) << i;
+                        }
+                    }
+                };
+                for (const double density : {1e-3, 1e-2, 1e-1, 1.0}) {
+                    for (const double temperature : {100.0, 8000.0, 90000.0}) {
+                        const auto rho = convert<U>(Density<T, si> {T(density)}, scales);
+                        const auto t = convert<U>(Temperature<T, si> {T(temperature)}, scales);
+                        std::array modes {
+                          ModeTemperature<T, U> {
+                            convert<U>(Temperature<T, si> {T(5000)}, scales).value()},
+                          ModeTemperature<T, U> {
+                            convert<U>(Temperature<T, si> {T(11000)}, scales).value()}};
+                        if constexpr (std::same_as<T, D>) {
+                            modes[0] = ModeTemperature<T, U> {D(t.value().real(), 1.0)};
+                            modes[1] = ModeTemperature<T, U> {D(t.value().real(), 2.0)};
+                        }
+                        const auto view = as_indexed<ModeIndex>(
+                          Kokkos::mdspan<const ModeTemperature<T, U>, Extents>(modes.data(), 2));
+                        same(production_rates(mechanism, gas, mix, rho, t, modes),
+                             canary::detail::mass_production_rates(
+                               mechanism,
+                               rates_of_progress(mechanism, gas, mix, rho, t, modes)));
+                        same(production_rates(mechanism, gas, mix, rho, t, view),
+                             canary::detail::mass_production_rates(
+                               mechanism,
+                               rates_of_progress(mechanism, gas, mix, rho, t, view)));
+                        same(production_rates(mechanism, gas, mix, rho, t),
+                             canary::detail::mass_production_rates(
+                               mechanism,
+                               rates_of_progress(mechanism, gas, mix, rho, t)));
+                    }
+                }
+            };
+            evaluate.template operator()<double>();
+            if constexpr (std::same_as<P, double>) { evaluate.template operator()<D>(); }
+        };
+        check(UnitScales<double, si> {});
+        check(UnitScales<float, si> {});
+        check(UnitScales<double, scaled> {
+          {.mass = 4.65e-26, .density = 1e-3, .temperature = 1000, .length = 1}});
+    };
 }
+
+// Net-rate storage is owned by the producing call and read through a const view.
+template <typename A>
+concept BorrowsNetRates =
+  requires(A&& net) { canary::detail::net_rate_view(std::forward<A>(net)); };
+using NetRates = std::array<canary::NumberRateDensity<double, canary::si>, 3>;
+static_assert(BorrowsNetRates<const NetRates&>);
+static_assert(!BorrowsNetRates<NetRates&&>);
+static_assert(std::is_const_v<decltype(canary::detail::net_rate_view(
+                std::declval<const NetRates&>()))::element_type>);
+static_assert(
+  std::same_as<canary::detail::RateOutputOf<canary::detail::RateOutput::Net, double, canary::si, 3>,
+               NetRates>);
+static_assert(
+  std::same_as<
+    canary::detail::RateOutputOf<canary::detail::RateOutput::Directional, double, canary::si, 3>,
+    canary::RatesOfProgress<double, canary::si, 3>>);
 
 }  // namespace
 
