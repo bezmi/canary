@@ -80,7 +80,21 @@
             "cacheVariables": {
                 "CANARY_BUILD_BENCHMARKS": "OFF",
                 "CANARY_BUILD_CUDA_CHECKS": "ON",
-                "CANARY_BUILD_HIP_CHECKS": "OFF"
+                "CANARY_BUILD_HIP_CHECKS": "OFF",
+                "CANARY_BUILD_CUDA_RUNTIME_TESTS": "OFF",
+                "CANARY_BUILD_HIP_RUNTIME_TESTS": "OFF"
+            }
+        },
+        {
+            "name": "cuda-runtime",
+            "inherits": "release",
+            "description": "Release host validation plus CUDA compilation and execution of the numerical device checks on the current device; set CMAKE_CUDA_ARCHITECTURES for that device",
+            "cacheVariables": {
+                "CANARY_BUILD_BENCHMARKS": "OFF",
+                "CANARY_BUILD_CUDA_CHECKS": "ON",
+                "CANARY_BUILD_CUDA_RUNTIME_TESTS": "ON",
+                "CANARY_BUILD_HIP_CHECKS": "OFF",
+                "CANARY_BUILD_HIP_RUNTIME_TESTS": "OFF"
             }
         },
         {
@@ -90,7 +104,21 @@
             "cacheVariables": {
                 "CANARY_BUILD_BENCHMARKS": "OFF",
                 "CANARY_BUILD_CUDA_CHECKS": "OFF",
-                "CANARY_BUILD_HIP_CHECKS": "ON"
+                "CANARY_BUILD_HIP_CHECKS": "ON",
+                "CANARY_BUILD_CUDA_RUNTIME_TESTS": "OFF",
+                "CANARY_BUILD_HIP_RUNTIME_TESTS": "OFF"
+            }
+        },
+        {
+            "name": "hip-runtime",
+            "inherits": "release",
+            "description": "Release host validation plus HIP compilation and execution of the numerical device checks on the current device; set CMAKE_HIP_ARCHITECTURES for that device",
+            "cacheVariables": {
+                "CANARY_BUILD_BENCHMARKS": "OFF",
+                "CANARY_BUILD_HIP_CHECKS": "ON",
+                "CANARY_BUILD_HIP_RUNTIME_TESTS": "ON",
+                "CANARY_BUILD_CUDA_CHECKS": "OFF",
+                "CANARY_BUILD_CUDA_RUNTIME_TESTS": "OFF"
             }
         }
     ],
@@ -138,9 +166,21 @@
             "jobs": 20
         },
         {
+            "name": "build-cuda-runtime",
+            "configurePreset": "cuda-runtime",
+            "description": "Build host validation, the CUDA device checks and their runtime executable; 20 jobs by default, override with --parallel",
+            "jobs": 20
+        },
+        {
             "name": "build-hip-compile",
             "configurePreset": "hip-compile",
             "description": "Build host validation and the HIP device checks; 20 jobs by default, override with --parallel",
+            "jobs": 20
+        },
+        {
+            "name": "build-hip-runtime",
+            "configurePreset": "hip-runtime",
+            "description": "Build host validation, the HIP device checks and their runtime executable; 20 jobs by default, override with --parallel",
             "jobs": 20
         }
     ],
@@ -265,6 +305,23 @@
             ]
         },
         {
+            "name": "cuda-runtime",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "cuda-runtime"
+                },
+                {
+                    "type": "build",
+                    "name": "build-cuda-runtime"
+                },
+                {
+                    "type": "test",
+                    "name": "test-cuda-runtime"
+                }
+            ]
+        },
+        {
             "name": "hip-compile",
             "steps": [
                 {
@@ -278,6 +335,23 @@
                 {
                     "type": "test",
                     "name": "test-hip-compile"
+                }
+            ]
+        },
+        {
+            "name": "hip-runtime",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "hip-runtime"
+                },
+                {
+                    "type": "build",
+                    "name": "build-hip-runtime"
+                },
+                {
+                    "type": "test",
+                    "name": "test-hip-runtime"
                 }
             ]
         }
@@ -368,9 +442,33 @@
             }
         },
         {
+            "name": "test-cuda-runtime",
+            "configurePreset": "cuda-runtime",
+            "description": "Run the host tests and the four CUDA device tests. One job; override with --parallel",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "jobs": 1,
+                "noTestsAction": "error"
+            }
+        },
+        {
             "name": "test-hip-compile",
             "configurePreset": "hip-compile",
             "description": "Run the host tests; the HIP checks are compiled, not executed. One job; override with --parallel",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "jobs": 1,
+                "noTestsAction": "error"
+            }
+        },
+        {
+            "name": "test-hip-runtime",
+            "configurePreset": "hip-runtime",
+            "description": "Run the host tests and the four HIP device tests. One job; override with --parallel",
             "output": {
                 "outputOnFailure": true
             },

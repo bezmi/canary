@@ -1,0 +1,64 @@
+// @CANARY_CHECK_LANGUAGE@ runtime executable of the numerical checks, generated
+// by tests/device/CMakeLists.txt. Usage: <executable> <subsystem>, where
+// subsystem is thermodynamics, reactions, exchange or transport. Runs every
+// group instance of that subsystem on the current device and prints the
+// combined report. Exit status 0 when every check passed, 1 when a check
+// failed, was open or unevaluated, or the device failed, and 2 for an unknown
+// subsystem or a wrong argument count.
+@CANARY_CHECK_ANNOTATION@
+#include "@CANARY_CHECK_BACKEND@"
+#include "check_groups.hpp"
+
+#include <array>
+#include <exception>
+#include <iostream>
+#include <string>
+#include <string_view>
+
+namespace
+{
+
+struct GroupInstance {
+    std::string_view subsystem;
+    std::string_view name;
+    canary::test::Report (*run)();
+};
+
+constexpr std::array instances {
+@CANARY_RUNTIME_INSTANCES@
+};
+
+}  // namespace
+
+int main(int argc, char** argv)
+{
+    if (argc != 2) {
+        std::cerr << "usage: " << argv[0] << " <thermodynamics|reactions|exchange|transport>\n";
+        return 2;
+    }
+    const std::string_view subsystem = argv[1];
+    bool known = false;
+    for (const GroupInstance& instance : instances) { known = known || instance.subsystem == subsystem; }
+    if (!known) {
+        std::cerr << "unknown subsystem " << subsystem << '\n';
+        return 2;
+    }
+    canary::test::Report report;
+    try {
+        std::cout << canary::test::backend::description() << '\n';
+    } catch (const std::exception& error) {
+        report.error(error.what());
+    }
+    // A failing group is reported and the remaining groups still run.
+    for (const GroupInstance& instance : instances) {
+        if (instance.subsystem != subsystem) { continue; }
+        std::cout << "running " << instance.name << '\n';
+        try {
+            report.merge(instance.run());
+        } catch (const std::exception& error) {
+            report.error(std::string(instance.name) + ": " + error.what());
+        }
+    }
+    report.print(std::cout);
+    return report.passed() ? 0 : 1;
+}

@@ -2,9 +2,10 @@
 
 These targets compile Canary's public numerical operations as CUDA or HIP
 kernels, and the same sources as ordinary host functions. A successful build
-shows that the operations compile for the selected device toolchain. It does not
-run a device and does not check numerical results. Installed consumers never
-build these targets and need no device toolchain.
+shows that the operations compile for the selected device toolchain. The
+optional runtime tests also run every kernel on the current device and check
+the results (see [Running the checks](#running-the-checks)). Installed
+consumers never build these targets and need no device toolchain.
 
 ## Selecting a backend
 
@@ -12,8 +13,11 @@ build these targets and need no device toolchain.
 | --- | --- |
 | `CANARY_BUILD_CUDA_CHECKS=ON` | Enables the CUDA language and builds `canary_cuda_check` and `canary_device_host_check`. |
 | `CANARY_BUILD_HIP_CHECKS=ON` | Enables the HIP language and builds `canary_hip_check` and `canary_device_host_check`. |
+| `CANARY_BUILD_CUDA_RUNTIME_TESTS=ON` | Also builds `canary_cuda_runtime_tests` and registers its CTest tests. Requires `CANARY_BUILD_CUDA_CHECKS=ON`. |
+| `CANARY_BUILD_HIP_RUNTIME_TESTS=ON` | Also builds `canary_hip_runtime_tests` and registers its CTest tests. Requires `CANARY_BUILD_HIP_CHECKS=ON`. |
 
-Both default to `OFF` and are independent of `CANARY_BUILD_TESTS`,
+All default to `OFF`. A runtime option without its check option is a
+configuration error. The options are independent of `CANARY_BUILD_TESTS`,
 `CANARY_BUILD_DATABASE` and `CANARY_BUILD_BENCHMARKS`. A selected backend is
 required: if its compiler or toolkit is missing, configuration fails instead of
 skipping the checks.
@@ -43,7 +47,10 @@ Each check reads one cell from caller storage, builds the views the public
 operation accepts and writes the complete result to a one-element output view.
 `cell_inputs.hpp` holds the shared input preparation. `thermodynamics_cases.hpp`,
 `reactions_cases.hpp`, `exchange_cases.hpp` and `transport_cases.hpp` hold the
-check entries and required-instance lists of each subsystem. `CMakeLists.txt`
+check entries of each subsystem and, in one group function per subsystem part,
+the fixtures they are evaluated at: each group builds its models and inputs on
+the host, runs every entry through `native_runtime.hpp` and checks the result.
+A group compiles exactly the entries it runs. `CMakeLists.txt`
 lists the required instances once and generates one source per instance from
 `check.in` for each language (host `.cpp`, CUDA `.cu`, HIP `.hip`), covering:
 
@@ -71,3 +78,34 @@ entropy are compiled for the models that provide them.
 
 Exchange and transport cases read compositions from contiguous storage, except
 where noted; the storage forms themselves are compiled by the other groups.
+
+## Running the checks
+
+With a runtime option selected, the check objects of the backend are linked
+with a generated `main` into `canary_cuda_runtime_tests` or
+`canary_hip_runtime_tests`. The executable takes one subsystem name
+(`thermodynamics`, `reactions`, `exchange` or `transport`), runs every group
+instance of that subsystem on the current device (one thread per evaluation)
+and prints a report. CTest registers one test per subsystem,
+`canary.device.<cuda|hip>.<subsystem>`, with the labels `canary.device` and the
+backend name, and the resource lock `canary_device_runtime` so that device
+tests do not run concurrently within one `ctest` invocation.
+
+```sh
+cmake --workflow --preset cuda-runtime
+ctest --test-dir build/cuda-runtime -L canary.device --output-on-failure
+```
+
+Each fixture state is evaluated once without a derivative seed and, for Dual
+state scalars, once per seeded input (see `host_inputs.hpp`). The report lists:
+
+| Entry | Meaning | Test result |
+| --- | --- | --- |
+| error | A device call failed or a group could not run. | Fail |
+| mismatch | An exact field (status, reason, diagnostic mode) differs from the fixture's declared value. | Fail |
+| unevaluated | An entry is compiled for a group that has no fixture inputs for it yet. | Fail |
+| open | A numerical field has no acceptance interval yet. | Fail |
+
+A test passes only when at least one evaluation ran and nothing is listed. A
+missing device, a device error or a missing acceptance criterion is a failure,
+never a skip.

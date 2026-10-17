@@ -6,6 +6,7 @@
 // progress as input; the combined sources evaluate their own.
 
 #include "cell_inputs.hpp"
+#include "check_groups.hpp"
 
 #include <array>
 #include <canary/energy_exchange.hpp>
@@ -174,48 +175,53 @@ CANARY_CHECK_ENTRY void multi_temperature_sources_check(
 // Required instances; see thermodynamics_cases.hpp for the convention.
 
 template <std::size_t N, typename M, typename X, typename G, typename T>
-void require_two_temperature_exchange()
+void require_two_temperature_exchange(Report& report)
 {
-    (void)&two_temperature_vibration_translation_check<N, X, G, T>;
-    (void)&two_temperature_chemistry_vibration_check<X, M, T>;
-    (void)&two_temperature_sources_check<N, M, X, G, T>;
+    unevaluated<&two_temperature_vibration_translation_check<N, X, G, T>>(report);
+    unevaluated<&two_temperature_chemistry_vibration_check<X, M, T>>(report);
+    unevaluated<&two_temperature_sources_check<N, M, X, G, T>>(report);
 }
 
 template <StateForm F, std::size_t N, typename M, typename X, typename G, typename T>
-void require_state_terms()
+void require_state_terms(Report& report)
 {
-    (void)&vibration_translation_check<F, N, X, G, T>;
-    (void)&chemistry_vibration_check<F, X, M, G, T>;
-    (void)&electron_translation_check<F, N, X, G, T>;
-    (void)&vibration_electron_check<F, N, X, G, T>;
-    (void)&multi_temperature_sources_check<F, N, M, X, G, T>;
+    unevaluated<&vibration_translation_check<F, N, X, G, T>>(report);
+    unevaluated<&chemistry_vibration_check<F, X, M, G, T>>(report);
+    unevaluated<&electron_translation_check<F, N, X, G, T>>(report);
+    unevaluated<&vibration_electron_check<F, N, X, G, T>>(report);
+    unevaluated<&multi_temperature_sources_check<F, N, M, X, G, T>>(report);
 }
 
 template <std::size_t N, typename M, typename X, typename G, typename T>
-void require_multi_temperature_exchange()
+void require_multi_temperature_exchange(Report& report)
 {
-    require_state_terms<StateForm::Owning, N, M, X, G, T>();
-    (void)&electron_impact_ionisation_check<X, M, G, T>;
+    require_state_terms<StateForm::Owning, N, M, X, G, T>(report);
+    unevaluated<&electron_impact_ionisation_check<X, M, G, T>>(report);
 }
 
 // Exchange configurations: the full named exchange, every process configured
 // empty, and each process alone, so that zero and nonzero counts of every
 // process are compiled.
-template <std::floating_point P, typename T, UnitSystem U> void exchange_checks()
+template <std::floating_point P, typename T, UnitSystem U> Report exchange_checks()
 {
+    Report report;
     using Park = ReactionMechanism<P, U, 5, 5>;
     using TwoTemperature = TwoTemperatureMixture<P, U, 5, 4>;
-    require_two_temperature_exchange<5, Park, EnergyExchange<P, U, 5, 15, 3>, TwoTemperature, T>();
-    require_two_temperature_exchange<5, Park, EnergyExchange<P, U, 5, 0, 0>, TwoTemperature, T>();
-    require_two_temperature_exchange<5, Park, EnergyExchange<P, U, 5, 1, 0>, TwoTemperature, T>();
-    require_two_temperature_exchange<5, Park, EnergyExchange<P, U, 5, 0, 1>, TwoTemperature, T>();
+    require_two_temperature_exchange<5, Park, EnergyExchange<P, U, 5, 15, 3>, TwoTemperature, T>(
+      report);
+    require_two_temperature_exchange<5, Park, EnergyExchange<P, U, 5, 0, 0>, TwoTemperature, T>(
+      report);
+    require_two_temperature_exchange<5, Park, EnergyExchange<P, U, 5, 1, 0>, TwoTemperature, T>(
+      report);
+    require_two_temperature_exchange<5, Park, EnergyExchange<P, U, 5, 0, 1>, TwoTemperature, T>(
+      report);
 
     using KimJo = ReactionMechanism<P, U, 11, 40>;
     using ThreeTemperature = MultiTemperatureMixture<P, U, 11, 2, 4, 8>;
     using Full = MultiTemperatureExchange<P, U, 11, 2, 30, 21, 10, 1, 2>;
-    require_multi_temperature_exchange<11, KimJo, Full, ThreeTemperature, T>();
-    require_state_terms<StateForm::Borrowed, 11, KimJo, Full, ThreeTemperature, T>();
-    const auto only = [](auto v, auto c, auto e, auto ve, auto i) {
+    require_multi_temperature_exchange<11, KimJo, Full, ThreeTemperature, T>(report);
+    require_state_terms<StateForm::Borrowed, 11, KimJo, Full, ThreeTemperature, T>(report);
+    const auto only = [&report](auto v, auto c, auto e, auto ve, auto i) {
         using X = MultiTemperatureExchange<P,
                                            U,
                                            11,
@@ -225,7 +231,7 @@ template <std::floating_point P, typename T, UnitSystem U> void exchange_checks(
                                            decltype(e)::value,
                                            decltype(ve)::value,
                                            decltype(i)::value>;
-        require_multi_temperature_exchange<11, KimJo, X, ThreeTemperature, T>();
+        require_multi_temperature_exchange<11, KimJo, X, ThreeTemperature, T>(report);
     };
     using Zero = std::integral_constant<std::size_t, 0>;
     using One = std::integral_constant<std::size_t, 1>;
@@ -241,7 +247,8 @@ template <std::floating_point P, typename T, UnitSystem U> void exchange_checks(
                                        Park,
                                        MultiTemperatureExchange<P, U, 5, 3, 15, 3, 0, 0, 0>,
                                        MultiTemperatureMixture<P, U, 5, 3, 4, 8>,
-                                       T>();
+                                       T>(report);
+    return report;
 }
 
 }  // namespace canary::test
