@@ -45,3 +45,9 @@ cmake --build /path/to/consumer-build --parallel 2
 `find_package(canary)` requires the separately installed `mdspan::mdspan` target.
 The Canary installation can be moved to another prefix; update the consumer's
 `CMAKE_PREFIX_PATH` to the new location. No package version is declared yet.
+
+## Numerical device checks
+
+CUDA and HIP compilation checks of the numerical operations are opt-in test
+targets; see [tests/device/README.md](../tests/device/README.md). They are not
+installed and add no requirement to consumers.

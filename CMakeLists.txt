@@ -10,9 +10,20 @@ option(CANARY_BUILD_BENCHMARKS "Build the canary benchmarks" ${PROJECT_IS_TOP_LE
 option(CANARY_BUILD_DATABASE "Build the species database library (C++23, glaze)" ${PROJECT_IS_TOP_LEVEL})
 option(CANARY_REQUIRE_VALIDATION "Require all test targets and validation dependencies" OFF)
 option(CANARY_FIND_MDSPAN "Use an installed mdspan found with find_package instead of fetching it" OFF)
+option(CANARY_BUILD_CUDA_CHECKS "Compile the numerical device checks with CUDA" OFF)
+option(CANARY_BUILD_HIP_CHECKS "Compile the numerical device checks with HIP" OFF)
 
 if(CANARY_REQUIRE_VALIDATION AND (NOT CANARY_BUILD_TESTS OR NOT CANARY_BUILD_DATABASE))
   message(FATAL_ERROR "CANARY_REQUIRE_VALIDATION requires CANARY_BUILD_TESTS and CANARY_BUILD_DATABASE")
+endif()
+
+# Each requested native language is required: a missing compiler fails
+# configuration rather than disabling the request.
+if(CANARY_BUILD_CUDA_CHECKS)
+  enable_language(CUDA)
+endif()
+if(CANARY_BUILD_HIP_CHECKS)
+  enable_language(HIP)
 endif()
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/cmake)
@@ -51,6 +62,12 @@ if(CANARY_BUILD_TESTS)
   enable_testing()
   include(CanarySetupBoostUT)
   add_subdirectory(tests)
+endif()
+
+# Numerical device checks are independent of the host tests, database and
+# benchmarks.
+if(CANARY_BUILD_CUDA_CHECKS OR CANARY_BUILD_HIP_CHECKS)
+  add_subdirectory(tests/device)
 endif()
 
 if(CANARY_BUILD_BENCHMARKS)

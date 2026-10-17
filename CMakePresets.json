@@ -72,6 +72,26 @@
                 "reldeb"
             ],
             "description": "RelWithDeb build (clang)"
+        },
+        {
+            "name": "cuda-compile",
+            "inherits": "release",
+            "description": "Release host validation plus CUDA compilation of the numerical device checks (no device execution); set CMAKE_CUDA_ARCHITECTURES for the target device",
+            "cacheVariables": {
+                "CANARY_BUILD_BENCHMARKS": "OFF",
+                "CANARY_BUILD_CUDA_CHECKS": "ON",
+                "CANARY_BUILD_HIP_CHECKS": "OFF"
+            }
+        },
+        {
+            "name": "hip-compile",
+            "inherits": "release",
+            "description": "Release host validation plus HIP compilation of the numerical device checks (no device execution); set CMAKE_HIP_ARCHITECTURES for the target device",
+            "cacheVariables": {
+                "CANARY_BUILD_BENCHMARKS": "OFF",
+                "CANARY_BUILD_CUDA_CHECKS": "OFF",
+                "CANARY_BUILD_HIP_CHECKS": "ON"
+            }
         }
     ],
     "buildPresets": [
@@ -110,6 +130,18 @@
             "configurePreset": "reldeb-clang",
             "description": "Build RelWithDebInfo (clang); two jobs by default, override with --parallel",
             "jobs": 2
+        },
+        {
+            "name": "build-cuda-compile",
+            "configurePreset": "cuda-compile",
+            "description": "Build host validation and the CUDA device checks; 16 jobs (about 1.2 GB each) by default, override with --parallel",
+            "jobs": 16
+        },
+        {
+            "name": "build-hip-compile",
+            "configurePreset": "hip-compile",
+            "description": "Build host validation and the HIP device checks; 16 jobs by default, override with --parallel",
+            "jobs": 16
         }
     ],
     "workflowPresets": [
@@ -214,6 +246,40 @@
                     "name": "test-reldeb-clang"
                 }
             ]
+        },
+        {
+            "name": "cuda-compile",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "cuda-compile"
+                },
+                {
+                    "type": "build",
+                    "name": "build-cuda-compile"
+                },
+                {
+                    "type": "test",
+                    "name": "test-cuda-compile"
+                }
+            ]
+        },
+        {
+            "name": "hip-compile",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "hip-compile"
+                },
+                {
+                    "type": "build",
+                    "name": "build-hip-compile"
+                },
+                {
+                    "type": "test",
+                    "name": "test-hip-compile"
+                }
+            ]
         }
     ],
     "testPresets": [
@@ -286,6 +352,30 @@
             },
             "execution": {
                 "jobs": 2,
+                "noTestsAction": "error"
+            }
+        },
+        {
+            "name": "test-cuda-compile",
+            "configurePreset": "cuda-compile",
+            "description": "Run the host tests; the CUDA checks are compiled, not executed. One job; override with --parallel",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "jobs": 1,
+                "noTestsAction": "error"
+            }
+        },
+        {
+            "name": "test-hip-compile",
+            "configurePreset": "hip-compile",
+            "description": "Run the host tests; the HIP checks are compiled, not executed. One job; override with --parallel",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "jobs": 1,
                 "noTestsAction": "error"
             }
         }
