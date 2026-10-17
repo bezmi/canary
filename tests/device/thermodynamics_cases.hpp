@@ -1,16 +1,11 @@
 #ifndef CANARY_TESTS_DEVICE_THERMODYNAMICS_CASES_HPP
 #define CANARY_TESTS_DEVICE_THERMODYNAMICS_CASES_HPP
 
-// Input preparation shared by the host and native thermodynamic checks. Each
-// check reads one cell from caller storage, builds the borrowed views the public
-// operation accepts, and calls that operation in the entry file. Storage stays
-// with the caller; nothing here owns or copies a result. Define
-// CANARY_HOST_DEVICE before including this header.
+// Thermodynamic checks for the host and native compilations (see cell_inputs.hpp).
 
-#include "../dual.hpp"
+#include "cell_inputs.hpp"
 
 #include <array>
-#include <canary/indexed_view.hpp>
 #include <canary/models/calorically_perfect.hpp>
 #include <canary/models/multi_temperature.hpp>
 #include <canary/models/thermally_perfect.hpp>
@@ -18,86 +13,16 @@
 #include <canary/nasa9.hpp>
 #include <canary/quantity.hpp>
 #include <canary/scalar.hpp>
-#include <canary/species.hpp>
 #include <canary/state.hpp>
 #include <canary/thermo.hpp>
 #include <concepts>
 #include <cstddef>
-#include <cstdint>
-#include <mdspan/mdspan.hpp>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 
 namespace canary::test
 {
-
-// The single complete result of one check, written by the native kernel.
-template <typename Result> using Output = Kokkos::mdspan<Result, Kokkos::extents<std::size_t, 1>>;
-
-// Storage of the C components (species or modes) of the selected cell:
-// - Contiguous: C consecutive values at the address;
-// - LayoutRight / LayoutLeft: the middle row of a [3, C] grid in that layout,
-//   whose first element follows one padding element at the address.
-enum class Storage : std::uint8_t { Contiguous, LayoutRight, LayoutLeft };
-
-// The components of the selected cell: a contiguous rank-one mdspan, or a
-// strided slice whose offset and stride come from the grid mapping.
-template <Storage S, std::size_t C, typename V>
-CANARY_HOST_DEVICE auto cell_components(const V* data)
-{
-    using Extents = Kokkos::extents<std::size_t, C>;
-    if constexpr (S == Storage::Contiguous) {
-        return Kokkos::mdspan<const V, Extents>(data);
-    } else {
-        using Layout =
-          std::conditional_t<S == Storage::LayoutRight, Kokkos::layout_right, Kokkos::layout_left>;
-        const Kokkos::mdspan<const V, Kokkos::extents<std::size_t, 3, C>, Layout> grid(data + 1);
-        using Slice = Kokkos::mdspan<const V, Extents, Kokkos::layout_stride>;
-        return Slice(
-          data + 1 + grid.mapping()(1, 0),
-          typename Slice::mapping_type(Extents {}, std::array<std::size_t, 1> {grid.stride(1)}));
-    }
-}
-
-// The composition of the selected cell as a public closure accepts it: raw mass
-// fractions, a mixture prepared from them, or partial densities (with the
-// density supplied separately to the closure).
-enum class Composition : std::uint8_t { Fractions, Mixture, PartialDensities };
-
-template <Composition F, Storage S, std::size_t N, typename G, typename T>
-CANARY_HOST_DEVICE auto cell_composition(const G& gas, const T* data)
-{
-    const auto values = cell_components<S, N>(data);
-    if constexpr (F == Composition::Fractions) {
-        return as_kind<kind::mass_fraction>(values);
-    } else if constexpr (F == Composition::Mixture) {
-        return mixture(gas, as_kind<kind::mass_fraction>(values));
-    } else {
-        return as_kind<kind::density, typename G::units>(values);
-    }
-}
-
-// The M mode inputs (mode temperatures or mode energy densities, kind K) of the
-// selected cell: an owning array, a quantity mdspan, or a ModeIndex view.
-enum class ModeForm : std::uint8_t { Owning, Quantities, Indexed };
-
-template <ModeForm F, Storage S, KindTag K, UnitSystem U, std::size_t M, typename T>
-    requires(F != ModeForm::Owning || S == Storage::Contiguous)
-CANARY_HOST_DEVICE auto cell_modes(const T* data)
-{
-    if constexpr (F == ModeForm::Owning) {
-        std::array<Quantity<K, T, U>, M> modes {};
-        for (const ModeIndex m : mode_indices(0, M)) {
-            modes[m.value()] = Quantity<K, T, U> {data[m.value()]};
-        }
-        return modes;
-    } else if constexpr (F == ModeForm::Quantities) {
-        return as_kind<K, U>(cell_components<S, M>(data));
-    } else {
-        return as_indexed<ModeIndex>(as_kind<K, U>(cell_components<S, M>(data)));
-    }
-}
 
 // Checks. The including file defines CANARY_CHECK_ENTRY as the function
 // specifier of an entry: __global__ for a native kernel, empty for the host

@@ -2,22 +2,31 @@
 # kernels (CUDA, HIP) and, with the same sources, as ordinary host functions.
 # Compilation only; no target here runs a device. See README.md.
 
-# Required instances, as group|P|T|units. Each becomes its own translation unit
-# per language, so a parallel build compiles them concurrently.
-set(canary_device_thermodynamic_instances)
-foreach(group IN ITEMS thermodynamic_single_checks thermodynamic_modal_checks)
-  foreach(units IN ITEMS si scaled)
-    foreach(scalars IN ITEMS "float|float" "float|canary::test::Dual<float>"
-                             "double|double" "double|canary::test::Dual<double>")
-      list(APPEND canary_device_thermodynamic_instances "${group}|${scalars}|${units}")
+# Required instances, as header|group|P|T|units. Each becomes its own
+# translation unit per language, so a parallel build compiles them concurrently.
+set(canary_device_same_precision "float|float" "float|canary::test::Dual<float>"
+                                 "double|double" "double|canary::test::Dual<double>")
+set(canary_device_mixed_precision "double|float" "double|canary::test::Dual<float>"
+                                  "float|double" "float|canary::test::Dual<double>")
+set(canary_device_check_instances)
+foreach(units IN ITEMS si scaled)
+  foreach(scalars IN LISTS canary_device_same_precision)
+    foreach(group IN ITEMS
+            "thermodynamics_cases.hpp|thermodynamic_single_checks"
+            "thermodynamics_cases.hpp|thermodynamic_modal_checks"
+            "reactions_cases.hpp|reaction_checks"
+            "exchange_cases.hpp|exchange_checks"
+            "transport_cases.hpp|transport_checks")
+      list(APPEND canary_device_check_instances "${group}|${scalars}|${units}")
     endforeach()
   endforeach()
-endforeach()
-foreach(units IN ITEMS si scaled)
-  foreach(scalars IN ITEMS "double|float" "double|canary::test::Dual<float>"
-                           "float|double" "float|canary::test::Dual<double>")
-    list(APPEND canary_device_thermodynamic_instances
-         "thermodynamic_mixed_checks|${scalars}|${units}")
+  foreach(scalars IN LISTS canary_device_mixed_precision)
+    foreach(group IN ITEMS
+            "thermodynamics_cases.hpp|thermodynamic_mixed_checks"
+            "reactions_cases.hpp|reaction_mixed_checks"
+            "transport_cases.hpp|transport_structural_checks")
+      list(APPEND canary_device_check_instances "${group}|${scalars}|${units}")
+    endforeach()
   endforeach()
 endforeach()
 
@@ -26,17 +35,18 @@ endforeach()
 function(canary_device_check_sources out_var language extension annotation entry)
   set(sources)
   set(index 0)
-  foreach(instance IN LISTS canary_device_thermodynamic_instances)
+  foreach(instance IN LISTS canary_device_check_instances)
     string(REPLACE "|" ";" parts "${instance}")
-    list(GET parts 0 CANARY_CHECK_GROUP)
-    list(GET parts 1 CANARY_CHECK_P)
-    list(GET parts 2 CANARY_CHECK_T)
-    list(GET parts 3 CANARY_CHECK_UNITS)
+    list(GET parts 0 CANARY_CHECK_HEADER)
+    list(GET parts 1 CANARY_CHECK_GROUP)
+    list(GET parts 2 CANARY_CHECK_P)
+    list(GET parts 3 CANARY_CHECK_T)
+    list(GET parts 4 CANARY_CHECK_UNITS)
     set(CANARY_CHECK_LANGUAGE "${language}")
     set(CANARY_CHECK_ANNOTATION "${annotation}")
     set(CANARY_CHECK_ENTRY "${entry}")
-    set(source "${CMAKE_CURRENT_BINARY_DIR}/${language}/thermodynamics_${index}.${extension}")
-    configure_file(thermodynamics.in "${source}" @ONLY)
+    set(source "${CMAKE_CURRENT_BINARY_DIR}/${language}/${CANARY_CHECK_GROUP}_${index}.${extension}")
+    configure_file(check.in "${source}" @ONLY)
     list(APPEND sources "${source}")
     math(EXPR index "${index} + 1")
   endforeach()

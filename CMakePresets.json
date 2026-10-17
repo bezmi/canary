@@ -134,14 +134,14 @@
         {
             "name": "build-cuda-compile",
             "configurePreset": "cuda-compile",
-            "description": "Build host validation and the CUDA device checks; 16 jobs (about 1.2 GB each) by default, override with --parallel",
-            "jobs": 16
+            "description": "Build host validation and the CUDA device checks; 20 jobs (about 1.1 GB each) by default, override with --parallel",
+            "jobs": 20
         },
         {
             "name": "build-hip-compile",
             "configurePreset": "hip-compile",
-            "description": "Build host validation and the HIP device checks; 16 jobs by default, override with --parallel",
-            "jobs": 16
+            "description": "Build host validation and the HIP device checks; 20 jobs by default, override with --parallel",
+            "jobs": 20
         }
     ],
     "workflowPresets": [
