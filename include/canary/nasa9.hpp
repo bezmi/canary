@@ -129,6 +129,11 @@ class Nasa9Curve
     Nasa9Curve() = default;
     void check() const;
 
+    // Number of fitted segments. make_nasa9_curve guarantees 1 <= segments <= S;
+    // the bound by S also lets compilers see that indices stay inside the arrays.
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr std::size_t segment_count() const noexcept
+    { return std::min(static_cast<std::size_t>(segments), S); }
+
     // Selection uses the scalar value; all transition arithmetic retains T.
     struct Region {
         std::size_t lower;
@@ -139,13 +144,14 @@ class Nasa9Curve
 
     template <std::floating_point V> CANARY_HOST_DEVICE Region region(V t) const noexcept
     {
-        for (std::size_t i = 1; i < static_cast<std::size_t>(segments); ++i) {
+        const std::size_t n = segment_count();
+        for (std::size_t i = 1; i < n; ++i) {
             const P start = breaks[i] - blends[i - 1] / P(2);
             const P end = breaks[i] + blends[i - 1] / P(2);
             if (t < start) { return {i - 1, start, end, false}; }
             if (t <= end) { return {i - 1, start, end, true}; }
         }
-        return {static_cast<std::size_t>(segments - 1), P(0), P(0), false};
+        return {n - 1, P(0), P(0), false};
     }
 
     template <HasLog T>
@@ -199,7 +205,7 @@ CANARY_HOST_DEVICE Nasa9CpH<T> nasa9_cp_h(const Nasa9Curve<P, S>& curve, T t, T 
 {
     using V = ScalarTraits<T>::value_type;
     const V tv = ScalarTraits<T>::value(t);
-    const auto last = static_cast<std::size_t>(curve.segments);
+    const auto last = curve.segment_count();
     if (tv < curve.breaks[0] || tv > curve.breaks[last]) {
         const bool below = tv < curve.breaks[0];
         const Nasa9Values<P>& end = below ? curve.low : curve.high;
@@ -218,7 +224,7 @@ template <Scalar T, std::floating_point P, std::size_t S>
 CANARY_HOST_DEVICE T nasa9_s(const Nasa9Curve<P, S>& curve, T t, T ln_t) noexcept
 {
     const auto tv = ScalarTraits<T>::value(t);
-    const auto last = static_cast<std::size_t>(curve.segments);
+    const auto last = curve.segment_count();
     if (tv < curve.breaks[0] || tv > curve.breaks[last]) {
         const bool below = tv < curve.breaks[0];
         const Nasa9Values<P>& end = below ? curve.low : curve.high;
@@ -302,7 +308,7 @@ template <std::floating_point P, std::size_t S>
 void Nasa9Curve<P, S>::check() const
 {
     using namespace detail;
-    const auto n = static_cast<std::size_t>(segments);
+    const auto n = segment_count();
     for (std::size_t i = 0; i <= n; ++i) {
         if (!(breaks[i] > P(0)) || (i > 0 && !(breaks[i] > breaks[i - 1]))) {
             throw ParameterError(

@@ -1,6 +1,7 @@
 #ifndef CANARY_MODELS_MULTI_TEMPERATURE_HPP
 #define CANARY_MODELS_MULTI_TEMPERATURE_HPP
 
+#include <algorithm>
 #include <array>
 #include <canary/build.hpp>
 #include <canary/config.hpp>
@@ -260,7 +261,8 @@ CANARY_HOST_DEVICE EnergyAndCv<W> electronic_energy(const ElectronicLevels<P, U,
 {
     using V = ScalarTraits<W>::value_type;
     if (levels.levels <= 0) { return {.e = W(V(0)), .cv = W(V(0))}; }
-    const auto n = static_cast<std::size_t>(levels.levels);
+    // At most the L stored levels are read.
+    const auto n = std::min(static_cast<std::size_t>(levels.levels), L);
     const W inv_t = W(V(1)) / t;
     std::array<W, L> weight {};
     weight[0] = W(static_cast<V>(levels.degeneracies[0]));
