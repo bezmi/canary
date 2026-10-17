@@ -8,10 +8,10 @@
 // const V&, as in Ibis::Dual, so a parameter of another floating-point type
 // converts to V on the call.
 
-#include <cmath>
-#include <concepts>
 #include <canary/config.hpp>
 #include <canary/scalar.hpp>
+#include <cmath>
+#include <concepts>
 
 namespace canary::test
 {
@@ -19,7 +19,7 @@ namespace canary::test
 template <std::floating_point V> class Dual
 {
   public:
-    CANARY_HOST_DEVICE constexpr Dual() = default;
+    constexpr Dual() = default;
     CANARY_HOST_DEVICE constexpr Dual(V real, V dual) : real_(real), dual_(dual) {}
     // Implicit, as in Ibis::Dual.
     CANARY_HOST_DEVICE constexpr Dual(V real) : real_(real) {}  // NOLINT(*-explicit-constructor)
@@ -79,18 +79,23 @@ template <std::floating_point V> class Dual
     friend CANARY_HOST_DEVICE constexpr Dual operator/(const V& num, const Dual& den)
     { return {num / den.real_, -den.dual_ * num / (den.real_ * den.real_)}; }
 
-    CANARY_HOST_DEVICE constexpr Dual& operator+=(const Dual& other) { return *this = *this + other; }
+    CANARY_HOST_DEVICE constexpr Dual& operator+=(const Dual& other)
+    { return *this = *this + other; }
     CANARY_HOST_DEVICE constexpr Dual& operator+=(const V& other) { return *this = *this + other; }
-    CANARY_HOST_DEVICE constexpr Dual& operator-=(const Dual& other) { return *this = *this - other; }
+    CANARY_HOST_DEVICE constexpr Dual& operator-=(const Dual& other)
+    { return *this = *this - other; }
     CANARY_HOST_DEVICE constexpr Dual& operator-=(const V& other) { return *this = *this - other; }
-    CANARY_HOST_DEVICE constexpr Dual& operator*=(const Dual& other) { return *this = *this * other; }
+    CANARY_HOST_DEVICE constexpr Dual& operator*=(const Dual& other)
+    { return *this = *this * other; }
     CANARY_HOST_DEVICE constexpr Dual& operator*=(const V& other) { return *this = *this * other; }
-    CANARY_HOST_DEVICE constexpr Dual& operator/=(const Dual& other) { return *this = *this / other; }
+    CANARY_HOST_DEVICE constexpr Dual& operator/=(const Dual& other)
+    { return *this = *this / other; }
     CANARY_HOST_DEVICE constexpr Dual& operator/=(const V& other) { return *this = *this / other; }
 
     [[nodiscard]] CANARY_HOST_DEVICE constexpr V real() const { return real_; }
     [[nodiscard]] CANARY_HOST_DEVICE constexpr V dual() const { return dual_; }
-    [[nodiscard]] CANARY_HOST_DEVICE constexpr Dual abs() const { return real_ < V(0) ? -*this : *this; }
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr Dual abs() const
+    { return real_ < V(0) ? -*this : *this; }
     [[nodiscard]] CANARY_HOST_DEVICE constexpr Dual conjugate() const { return {real_, -dual_}; }
 
   private:
@@ -104,7 +109,8 @@ template <std::floating_point V> CANARY_HOST_DEVICE Dual<V> sqrt(const Dual<V>& 
     return {real, d.dual() / (V(2) * real)};
 }
 
-template <std::floating_point V> CANARY_HOST_DEVICE Dual<V> pow(const Dual<V>& base, const Dual<V>& power)
+template <std::floating_point V>
+CANARY_HOST_DEVICE Dual<V> pow(const Dual<V>& base, const Dual<V>& power)
 {
     const V real = std::pow(base.real(), power.real());
     const V dual = (base.dual() * power.real() * std::pow(base.real(), power.real() - V(1))) +
@@ -121,16 +127,19 @@ template <std::floating_point V> CANARY_HOST_DEVICE Dual<V> exp(const Dual<V>& d
 template <std::floating_point V> CANARY_HOST_DEVICE Dual<V> log(const Dual<V>& d)
 { return {std::log(d.real()), d.dual() / d.real()}; }
 
-template <std::floating_point V> CANARY_HOST_DEVICE Dual<V> abs(const Dual<V>& d) { return d.abs(); }
+template <std::floating_point V> CANARY_HOST_DEVICE Dual<V> abs(const Dual<V>& d)
+{ return d.abs(); }
 
-template <std::floating_point V> CANARY_HOST_DEVICE Dual<V> max(const Dual<V>& d1, const Dual<V>& d2)
+template <std::floating_point V>
+CANARY_HOST_DEVICE Dual<V> max(const Dual<V>& d1, const Dual<V>& d2)
 { return d1.real() > d2.real() ? d1 : d2; }
 template <std::floating_point V> CANARY_HOST_DEVICE Dual<V> max(const V& d1, const Dual<V>& d2)
 { return d1 > d2.real() ? Dual<V>(d1) : d2; }
 template <std::floating_point V> CANARY_HOST_DEVICE Dual<V> max(const Dual<V>& d1, const V& d2)
 { return d1.real() > d2 ? d1 : Dual<V>(d2); }
 
-template <std::floating_point V> CANARY_HOST_DEVICE Dual<V> min(const Dual<V>& d1, const Dual<V>& d2)
+template <std::floating_point V>
+CANARY_HOST_DEVICE Dual<V> min(const Dual<V>& d1, const Dual<V>& d2)
 { return d1.real() < d2.real() ? d1 : d2; }
 template <std::floating_point V> CANARY_HOST_DEVICE Dual<V> min(const V& d1, const Dual<V>& d2)
 { return d1 < d2.real() ? Dual<V>(d1) : d2; }
