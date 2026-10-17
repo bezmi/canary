@@ -536,30 +536,27 @@ RateSchedule<R> prepare_rate_schedule(const std::array<Reaction<P, U, N>, R>& re
     return out;
 }
 
-template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t R>
+// Modes of the M configured modes, in ascending order, that control a forward
+// Arrhenius rate, and those that control only an explicit backward rate. Each
+// listed mode controls at least one of the R reactions, so neither count
+// exceeds R.
+template <std::size_t M, std::floating_point P, UnitSystem U, std::size_t N, std::size_t R>
 RateModeReferences<R> prepare_rate_mode_references(const std::array<Reaction<P, U, N>, R>& records)
 {
     RateModeReferences<R> out {};
-    const auto less = [](ModeIndex a, ModeIndex b) { return a.value() < b.value(); };
-    for (const auto& r : records) {
-        if (internal_rate_control(r.forward)) {
-            out.forward[out.forward_count++] = *r.forward.other_mode;
+    for (const ModeIndex m : mode_indices(0, M)) {
+        const auto controls = [&](const ArrheniusRate<P, U>& rate) {
+            return internal_rate_control(rate) && *rate.other_mode == m;
+        };
+        if (std::ranges::any_of(records, [&](const auto& r) { return controls(r.forward); })) {
+            out.forward[out.forward_count++] = m;
+        } else if (std::ranges::any_of(records, [&](const auto& r) {
+                       return r.backward_model == BackwardRateModel::arrhenius &&
+                              controls(r.backward);
+                   })) {
+            out.backward_only[out.backward_only_count++] = m;
         }
     }
-    const auto first = out.forward.begin();
-    std::sort(first, first + out.forward_count, less);
-    out.forward_count =
-      static_cast<std::size_t>(std::unique(first, first + out.forward_count) - first);
-    for (const auto& r : records) {
-        if (r.backward_model == BackwardRateModel::arrhenius && internal_rate_control(r.backward) &&
-            !std::binary_search(first, first + out.forward_count, *r.backward.other_mode, less)) {
-            out.backward_only[out.backward_only_count++] = *r.backward.other_mode;
-        }
-    }
-    const auto reverse = out.backward_only.begin();
-    std::sort(reverse, reverse + out.backward_only_count, less);
-    out.backward_only_count =
-      static_cast<std::size_t>(std::unique(reverse, reverse + out.backward_only_count) - reverse);
     return out;
 }
 
@@ -1039,7 +1036,7 @@ ReactionMechanism<P, U, N, R> build_mechanism(const MechanismInput<R, K>& input,
     mech.standard_pressure = standard_pressure;
     mech.boltzmann = boltzmann_constant(scales);
     mech.schedule_ = prepare_rate_schedule(mech.reactions_);
-    mech.controlling_modes_ = prepare_rate_mode_references(mech.reactions_);
+    mech.controlling_modes_ = prepare_rate_mode_references<OtherMode::mode_count>(mech.reactions_);
     return mech;
 }
 
