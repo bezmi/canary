@@ -79,6 +79,25 @@ entropy are compiled for the models that provide them.
 Exchange and transport cases read compositions from contiguous storage, except
 where noted; the storage forms themselves are compiled by the other groups.
 
+## Fixtures and derived inputs
+
+`{thermodynamics,reactions,exchange,transport}_inputs.hpp` declare the fixture
+models and states as binary64 values in SI units; `host_inputs.hpp` holds the
+shared states, compositions, unit scales and seeding. A state input is rounded
+to the value type of the state scalar, then converted to the unit system.
+
+Inputs that a forward closure derives from a declared state (specific energy,
+pressure, mode energies, and the density of a state declared by pressure) and
+the rates of progress given to the standalone chemistry-coupled exchange terms
+are generated offline into `derived_inputs.hpp` by `derive_inputs.cpp`, with
+Canary's host closures in binary64 and SI units. They are inputs only, never
+expected values. After changing a fixture or a model the fixtures use,
+regenerate them in a tree configured with a check option and review the diff:
+
+```sh
+scripts/generate_device_inputs.sh build/cuda-compile
+```
+
 ## Running the checks
 
 With a runtime option selected, the check objects of the backend are linked
@@ -103,7 +122,6 @@ state scalars, once per seeded input (see `host_inputs.hpp`). The report lists:
 | --- | --- | --- |
 | error | A device call failed or a group could not run. | Fail |
 | mismatch | An exact field (status, reason, diagnostic mode) differs from the fixture's declared value. | Fail |
-| unevaluated | An entry is compiled for a group that has no fixture inputs for it yet. | Fail |
 | open | A numerical field has no acceptance interval yet. | Fail |
 
 A test passes only when at least one evaluation ran and nothing is listed. A

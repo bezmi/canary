@@ -128,13 +128,13 @@ template <typename T,
           typename U,
           typename F>
 void for_each_reaction_input(const std::string& name,
-                             const std::array<ReactionState<N, K>, C>& states,
+                             const std::array<FixtureState<N, K>, C>& states,
                              const UnitScales<P, U>& scales,
                              F&& evaluate)
 {
     for (std::size_t s = 0; s < C; ++s) {
         for_each_seed<T>([&](Seeds<T>& seeds) {
-            const ReactionState<N, K>& state = states[s];
+            const FixtureState<N, K>& state = states[s];
             ReactionInputs<T, U, N, K> inputs {
               .y = seeds.fractions("y", state.y),
               .rho = seeds.template quantity<kind::density>("rho", state.rho, scales),
@@ -164,7 +164,7 @@ void single_rates(Report& report,
                   const std::string& name,
                   const M& mechanism,
                   const G& gas,
-                  const std::array<ReactionState<N, K>, C>& states,
+                  const std::array<FixtureState<N, K>, C>& states,
                   const UnitScales<P, U>& scales)
 {
     for_each_reaction_input<T, false>(name, states, scales, [&](const auto& in) {
@@ -202,7 +202,7 @@ void modal_rates(Report& report,
                  const std::string& name,
                  const M& mechanism,
                  const G& gas,
-                 const std::array<ReactionState<N, K>, C>& states,
+                 const std::array<FixtureState<N, K>, C>& states,
                  const UnitScales<P, U>& scales)
 {
     for_each_reaction_input<T, true>(name, states, scales, [&](const auto& in) {
@@ -240,7 +240,7 @@ void borrowed_rates(Report& report,
                     const std::string& name,
                     const M& mechanism,
                     const G& gas,
-                    const std::array<ReactionState<N, K>, C>& states,
+                    const std::array<FixtureState<N, K>, C>& states,
                     const UnitScales<P, U>& scales)
 {
     modal_rates<ModeForm::Quantities, Storage::LayoutRight, T>(report,
@@ -367,7 +367,7 @@ template <std::floating_point P, typename T, UnitSystem U> Report reaction_check
                                                               "air5 Park four-temperature",
                                                               make_air5_park(scales, p0, gas),
                                                               gas,
-                                                              air5_four_temperature_states,
+                                                              four_temperature_states,
                                                               scales);
     }
     return report;

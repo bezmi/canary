@@ -1,9 +1,9 @@
 // @CANARY_CHECK_LANGUAGE@ runtime executable of the numerical checks, generated
 // by tests/device/CMakeLists.txt. Usage: <executable> <subsystem>, where
 // subsystem is thermodynamics, reactions, exchange or transport. Runs every
-// group instance of that subsystem on the current device and prints the
-// combined report. Exit status 0 when every check passed, 1 when a check
-// failed, was open or unevaluated, or the device failed, and 2 for an unknown
+// group instance of that subsystem on the current device and prints the report
+// of each and their total. Exit status 0 when every check passed, 1 when a
+// check failed or was open or the device failed, and 2 for an unknown
 // subsystem or a wrong argument count.
 @CANARY_CHECK_ANNOTATION@
 #include "@CANARY_CHECK_BACKEND@"
@@ -49,16 +49,21 @@ int main(int argc, char** argv)
     } catch (const std::exception& error) {
         report.error(error.what());
     }
-    // A failing group is reported and the remaining groups still run.
+    // Each group instance prints its own report; a failing group is reported
+    // and the remaining groups still run. The last line totals every group.
     for (const GroupInstance& instance : instances) {
         if (instance.subsystem != subsystem) { continue; }
-        std::cout << "running " << instance.name << '\n';
+        std::cout << "== " << instance.name << '\n';
+        canary::test::Report group;
         try {
-            report.merge(instance.run());
+            group = instance.run();
         } catch (const std::exception& error) {
-            report.error(std::string(instance.name) + ": " + error.what());
+            group.error(error.what());
         }
+        group.print(std::cout);
+        report.merge(group);
     }
+    std::cout << "== total\n";
     report.print(std::cout);
     return report.passed() ? 0 : 1;
 }

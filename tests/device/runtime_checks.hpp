@@ -24,9 +24,9 @@
 #include <canary/transport/transport.hpp>
 #include <concepts>
 #include <cstddef>
+#include <cstdio>
 #include <map>
 #include <ostream>
-#include <set>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -61,9 +61,6 @@ class Report
                               ", observed " + std::string(observed));
     }
 
-    // An operation compiled for this group without fixture inputs to evaluate it.
-    void unevaluated(const std::string& operation) { unevaluated_.insert(operation); }
-
     // A failure of the backend or of the group runner itself.
     void error(std::string message) { errors_.push_back(std::move(message)); }
 
@@ -75,27 +72,22 @@ class Report
         }
         evaluations_ += other.evaluations_;
         mismatches_.insert(mismatches_.end(), other.mismatches_.begin(), other.mismatches_.end());
-        unevaluated_.insert(other.unevaluated_.begin(), other.unevaluated_.end());
         errors_.insert(errors_.end(), other.errors_.begin(), other.errors_.end());
     }
 
     // True when at least one evaluation ran and every evaluated field met its
-    // criterion, with no unevaluated operation and no error.
+    // criterion, with no error.
     [[nodiscard]] bool passed() const
     {
         std::size_t open_numbers = 0;
         for (const auto& entry : open_) { open_numbers += entry.second.numbers; }
-        return evaluations_ > 0 && open_numbers == 0 && mismatches_.empty() &&
-               unevaluated_.empty() && errors_.empty();
+        return evaluations_ > 0 && open_numbers == 0 && mismatches_.empty() && errors_.empty();
     }
 
     void print(std::ostream& out) const
     {
         for (const std::string& error : errors_) { out << "error: " << error << '\n'; }
         for (const std::string& mismatch : mismatches_) { out << "mismatch: " << mismatch << '\n'; }
-        for (const std::string& operation : unevaluated_) {
-            out << "unevaluated (no fixture inputs): " << operation << '\n';
-        }
         std::size_t open_numbers = 0;
         for (const auto& [operation, open] : open_) {
             if (open.numbers > 0) {
@@ -106,8 +98,7 @@ class Report
             open_numbers += open.numbers;
         }
         out << evaluations_ << " evaluations, " << mismatches_.size() << " mismatches, "
-            << unevaluated_.size() << " unevaluated operations, " << open_numbers
-            << " open scalar components, " << errors_.size() << " errors\n";
+            << open_numbers << " open scalar components, " << errors_.size() << " errors\n";
     }
 
   private:
@@ -118,7 +109,6 @@ class Report
     std::map<std::string, Open> open_;
     std::size_t evaluations_ = 0;
     std::vector<std::string> mismatches_;
-    std::set<std::string> unevaluated_;
     std::vector<std::string> errors_;
 };
 
@@ -142,10 +132,6 @@ template <auto Entry> std::string entry_name()
     }
     return std::string(signature.substr(start + marker.size(), end - start - marker.size()));
 }
-
-// Compiles Entry for the group and records it as unevaluated: the group has no
-// fixture inputs for it yet.
-template <auto Entry> void unevaluated(Report& report) { report.unevaluated(entry_name<Entry>()); }
 
 // Numerical fields. for_each_number(result, name, visit) calls
 // visit(field_name, component, value) for every scalar component of result,
@@ -373,6 +359,10 @@ struct CompositionExpectation {
     CompositionReason reason = CompositionReason::None;
 };
 
+// Declares every numerical component of a result exactly zero, value and
+// derivative (either sign of zero).
+struct ZeroExpectation {};
+
 // Compares the exact fields of result with expected. Results without exact
 // fields take no expectation.
 template <typename S>
@@ -432,9 +422,30 @@ void check_exact(Report& report,
     }
 }
 
+template <typename Result>
+void check_exact(Report& report,
+                 const std::string& operation,
+                 std::string_view fixture,
+                 const Result& result,
+                 ZeroExpectation /*expected*/)
+{
+    auto zero = [&](const std::string& field, std::string_view component, double value) {
+        if (value != 0.0) {
+            char observed[32];
+            std::snprintf(observed, sizeof(observed), "%a", value);
+            report.mismatch(operation,
+                            fixture,
+                            field + " " + std::string(component),
+                            "0",
+                            observed);
+        }
+    };
+    for_each_number(result, "result", zero);
+}
+
 // Records one evaluation of result: its exact fields against expected (when
 // the result has any) and its numerical fields, which are all open until
-// acceptance intervals exist.
+// acceptance intervals exist, unless an expectation declares them exactly.
 template <typename Result, typename... Expected>
 void check_result(Report& report,
                   const std::string& operation,
@@ -444,8 +455,10 @@ void check_result(Report& report,
 {
     (check_exact(report, operation, fixture, result, expected), ...);
     std::size_t open = 0;
-    auto count = [&open](const std::string&, std::string_view, double) { ++open; };
-    for_each_number(result, "result", count);
+    if constexpr (!(std::same_as<Expected, ZeroExpectation> || ...)) {
+        auto count = [&open](const std::string&, std::string_view, double) { ++open; };
+        for_each_number(result, "result", count);
+    }
     report.evaluated(operation, open);
 }
 

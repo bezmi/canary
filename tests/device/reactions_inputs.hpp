@@ -6,6 +6,9 @@
 // units; no expected result is recorded here. Every mechanism uses the
 // standard pressure 101325 Pa.
 
+#include "host_inputs.hpp"
+#include "thermodynamics_inputs.hpp"
+
 #include <array>
 #include <canary/data/air11.hpp>
 #include <canary/data/air11_kim_jo.hpp>
@@ -23,18 +26,9 @@
 namespace canary::test
 {
 
-// One input state of a reaction fixture: raw mass fractions, density [kg/m^3],
-// translational temperature [K] and mode temperatures [K] in model mode order.
-template <std::size_t N, std::size_t M> struct ReactionState {
-    std::array<double, N> y;
-    double rho;
-    double temp;
-    std::array<double, M> modes;
-};
-
 // The input records of the single-temperature air5 Kim-Jo reference states
 // (tests/test_reactions.cpp).
-inline constexpr std::array<ReactionState<5, 0>, 5> air5_kim_jo_states {{
+inline constexpr std::array<FixtureState<5, 0>, 5> air5_kim_jo_states {{
   {.y = {0.767, 0.233, 0.0, 0.0, 0.0}, .rho = 0.006939829108798786, .temp = 5000.0, .modes = {}},
   {.y = {0.6, 0.1, 0.1, 0.15, 0.05}, .rho = 0.007037619261282653, .temp = 8000.0, .modes = {}},
   {.y = {0.3, 0.1, 0.3, 0.25, 0.05}, .rho = 0.0009537284289470741, .temp = 12000.0, .modes = {}},
@@ -44,10 +38,7 @@ inline constexpr std::array<ReactionState<5, 0>, 5> air5_kim_jo_states {{
 
 // The input records of the two-temperature air5 Park reference states
 // (tests/test_energy_exchange.cpp); the mode temperature is T_ve.
-inline constexpr std::array<double, 5> air5_mixed {0.6, 0.1, 0.1, 0.15, 0.05};
-inline constexpr std::array<double, 5> air5_dissociated {0.3, 0.1, 0.3, 0.25, 0.05};
-inline constexpr std::array<double, 5> air5_air {0.767, 0.233, 0.0, 0.0, 0.0};
-inline constexpr std::array<ReactionState<5, 1>, 8> air5_park_states {{
+inline constexpr std::array<FixtureState<5, 1>, 8> air5_park_states {{
   {.y = air5_mixed, .rho = 0.01, .temp = 10000.0, .modes = {3000.0}},
   {.y = air5_mixed, .rho = 0.001, .temp = 20000.0, .modes = {5000.0}},
   {.y = air5_dissociated, .rho = 0.01, .temp = 1500.0, .modes = {4000.0}},
@@ -58,46 +49,9 @@ inline constexpr std::array<ReactionState<5, 1>, 8> air5_park_states {{
   {.y = air5_dissociated, .rho = 0.1, .temp = 250.0, .modes = {2000.0}},
 }};
 
-// The four-temperature air5 states: air5 mixed and air at rho = 0.01 kg/m^3,
-// with nonequilibrium and equal mode temperatures.
-inline constexpr std::array<ReactionState<5, 3>, 4> air5_four_temperature_states {{
-  {.y = air5_mixed, .rho = 0.01, .temp = 8000.0, .modes = {3000.0, 4000.0, 5000.0}},
-  {.y = air5_mixed, .rho = 0.01, .temp = 8000.0, .modes = {8000.0, 8000.0, 8000.0}},
-  {.y = air5_air, .rho = 0.01, .temp = 8000.0, .modes = {3000.0, 4000.0, 5000.0}},
-  {.y = air5_air, .rho = 0.01, .temp = 8000.0, .modes = {8000.0, 8000.0, 8000.0}},
-}};
-
-// The weakly ionised air11 composition (tests/test_multi_temperature.cpp).
-inline constexpr std::array<double, 11> air11_weakly_ionised {
-  0.4999995398459613,
-  0.049999953984596134,
-  0.19999981593838453,
-  0.19999981593838453,
-  0.01999998159383845,
-  0.009999990796919225,
-  0.009999990796919225,
-  0.003999996318767691,
-  0.0019999981593838453,
-  0.003999996318767691,
-  9.203080774345904e-07,
-};
-inline constexpr std::array<double, 11> air11_strongly_ionised {
-  0.10100951469793618,
-  0.010100951469793618,
-  0.4040380587917447,
-  0.3030285440938085,
-  0.010100951469793618,
-  0.08080761175834894,
-  0.0606057088187617,
-  0.010100951469793618,
-  0.005050475734896809,
-  0.015151427204690425,
-  5.8044904318440994e-06,
-};
-
 // The input records of the three-temperature air11 Kim-Jo reference states
 // (tests/test_multi_temperature_kinetics.cpp); the modes are T_v and T_e.
-inline constexpr std::array<ReactionState<11, 2>, 4> air11_kim_jo_states {{
+inline constexpr std::array<FixtureState<11, 2>, 4> air11_kim_jo_states {{
   {.y = air11_weakly_ionised, .rho = 0.001, .temp = 12000.0, .modes = {5000.0, 8000.0}},
   {.y = air11_strongly_ionised, .rho = 0.0001, .temp = 10000.0, .modes = {9000.0, 14000.0}},
   {.y = air11_weakly_ionised, .rho = 0.01, .temp = 7000.0, .modes = {7000.0, 7000.0}},
@@ -105,7 +59,7 @@ inline constexpr std::array<ReactionState<11, 2>, 4> air11_kim_jo_states {{
 }};
 
 // The states of the interleaved four-mode mechanism.
-inline constexpr std::array<ReactionState<11, 4>, 2> interleaved_states {{
+inline constexpr std::array<FixtureState<11, 4>, 2> interleaved_states {{
   {.y = air11_weakly_ionised,
    .rho = 1.0e-3,
    .temp = 12000.0,

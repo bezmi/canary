@@ -67,6 +67,14 @@ set_target_properties(canary_device_host_check PROPERTIES
 target_compile_options(canary_device_host_check PRIVATE
   $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic -Werror>)
 
+# Generator of derived_inputs.hpp (see derive_inputs.cpp); built on request.
+add_executable(canary_device_derive_inputs EXCLUDE_FROM_ALL derive_inputs.cpp)
+target_link_libraries(canary_device_derive_inputs PRIVATE canary::canary)
+set_target_properties(canary_device_derive_inputs PROPERTIES
+  CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+target_compile_options(canary_device_derive_inputs PRIVATE
+  $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic -Werror>)
+
 set(native_annotation "#define CANARY_HOST_DEVICE __host__ __device__")
 
 if(CANARY_BUILD_CUDA_CHECKS)
