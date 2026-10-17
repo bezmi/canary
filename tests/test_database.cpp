@@ -335,9 +335,11 @@ int main()
                 canary::make_energy_exchange(owner, air5_names, gas5.species, mechanism5, scales);
               const auto reference =
                 canary::make_air5_park_exchange(gas5.species, mechanism5, scales);
-              expect(built.chemistry_vibration[0].species ==
-                     reference.chemistry_vibration[0].species);
-              expect(built.mass == reference.mass);
+              expect(built.chemistry_vibration()[0].species ==
+                     reference.chemistry_vibration()[0].species);
+              for (const auto i : canary::species_indices(0, 5)) {
+                  expect(built.mass()[i] == reference.mass()[i]) << i.value();
+              }
           });
         exercise(
           [] { return db::species_transport<3>(db::read_species_file(air5_path()), air5_names); },
@@ -403,7 +405,11 @@ int main()
                                                         mechanism11,
                                                         gas11.model,
                                                         scales);
-              expect(built.mass == gas11.species.mass && mixed.mass == built.mass);
+              for (const auto i : canary::species_indices(0, 11)) {
+                  expect(built.mass()[i] == gas11.species.mass[i.value()] &&
+                         mixed.mass()[i] == built.mass()[i])
+                    << i.value();
+              }
           });
     };
 

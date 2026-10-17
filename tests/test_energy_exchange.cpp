@@ -27,6 +27,7 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 namespace
 {
@@ -250,6 +251,36 @@ static_assert(std::is_trivially_copyable_v<canary::TwoTemperatureSources<D, si, 
 static_assert(canary::air5_park.reactions.size() == 5);
 static_assert(canary::air5_park_exchange.vibration_translation.size() == 15);
 
+// A built exchange is constructed only by its validated factory and is read-only:
+// record lists are const references, species data are const-element views
+// indexed only by SpeciesIndex, and borrowing from a temporary does not compile.
+template <typename X>
+concept BorrowsExchangeMass = requires { std::declval<X>().mass(); };
+template <typename X>
+concept BorrowsExchangeRecords = requires { std::declval<X>().vibration_translation(); };
+template <typename X>
+concept ReadsExchangeBoltzmann = requires { std::declval<X>().boltzmann(); };
+template <typename X, typename Index>
+concept ExchangeMassIndexedBy = requires(const X& x, Index i) { x.mass()[i]; };
+static_assert(!std::is_default_constructible_v<Exchange>);
+static_assert(std::is_copy_constructible_v<Exchange> && std::is_copy_assignable_v<Exchange>);
+static_assert(BorrowsExchangeMass<const Exchange&> && BorrowsExchangeRecords<const Exchange&>);
+static_assert(!BorrowsExchangeMass<Exchange&&> && !BorrowsExchangeMass<const Exchange&&>);
+static_assert(!BorrowsExchangeRecords<Exchange&&> && !BorrowsExchangeRecords<const Exchange&&>);
+static_assert(ReadsExchangeBoltzmann<Exchange&&>);
+static_assert(ExchangeMassIndexedBy<Exchange, canary::SpeciesIndex>);
+static_assert(!ExchangeMassIndexedBy<Exchange, std::size_t>);
+static_assert(!ExchangeMassIndexedBy<Exchange, canary::ModeIndex>);
+static_assert(std::is_const_v<decltype(std::declval<const Exchange&>().mass())::element_type>);
+static_assert(std::is_same_v<decltype(std::declval<const Exchange&>().vibration_translation()),
+                             const std::array<canary::VibrationTranslationPair<double, si>, 15>&>);
+static_assert(std::is_same_v<decltype(std::declval<const Exchange&>().chemistry_vibration()),
+                             const std::array<canary::ChemistryVibrationCoupling<double, si>, 3>&>);
+static_assert(noexcept(std::declval<const Exchange&>().mass()) &&
+              noexcept(std::declval<const Exchange&>().vibration_translation()) &&
+              noexcept(std::declval<const Exchange&>().chemistry_vibration()) &&
+              noexcept(std::declval<const Exchange&>().boltzmann()));
+
 void test_energy_exchange()
 {
     using namespace boost::ut;
@@ -273,11 +304,11 @@ void test_energy_exchange()
         expect(mech.temperature_upper.value() == 50000.0_d);
 
         // Pair 2 is N2-N2 and pair 12 NO-N.
-        const auto& n2_n2 = exchange.vibration_translation[2];
+        const auto& n2_n2 = exchange.vibration_translation()[2];
         expect(n2_n2.species == canary::SpeciesIndex {0} &&
                n2_n2.partner == canary::SpeciesIndex {0});
-        expect(exchange.vibration_translation[12].species == canary::SpeciesIndex {4});
-        expect(exchange.vibration_translation[12].partner == canary::SpeciesIndex {2});
+        expect(exchange.vibration_translation()[12].species == canary::SpeciesIndex {4});
+        expect(exchange.vibration_translation()[12].partner == canary::SpeciesIndex {2});
         expect(n2_n2.millikan_white_a == 221.0_d);
         expect(relative(n2_n2.millikan_white_offset,
                         std::log(atmosphere) - (221.0 * 0.029) - 18.42,
@@ -289,13 +320,13 @@ void test_energy_exchange()
         expect(relative(n2_n2.correction_coefficient, 1.0 / k, 1.0e-15));
         expect(n2_n2.correction_exponent == 1.5_d);
 
-        const auto& n2 = exchange.chemistry_vibration[0];
+        const auto& n2 = exchange.chemistry_vibration()[0];
         expect(n2.reaction == canary::ReactionIndex {0} && n2.species == canary::SpeciesIndex {0});
         expect(relative(n2.dissociation_temperature.value(), 945360.0 / ru, 1.0e-15));
         expect(n2.vibrational_temperature.value() == 3393.44_d);
-        expect(exchange.chemistry_vibration[2].reaction == canary::ReactionIndex {2});
-        expect(exchange.chemistry_vibration[2].species == canary::SpeciesIndex {4});
-        expect(exchange.boltzmann.value() == boltzmann);
+        expect(exchange.chemistry_vibration()[2].reaction == canary::ReactionIndex {2});
+        expect(exchange.chemistry_vibration()[2].species == canary::SpeciesIndex {4});
+        expect(exchange.boltzmann().value() == boltzmann);
     };
 
     "energy exchange: rates, species sources and energy sources equal the reference"_test = [&] {
@@ -753,9 +784,9 @@ void test_energy_exchange()
 
     "energy exchange: G is accurate for every x"_test = [&] {
         const auto& references = canary::test::oscillator_references;
-        expect(references.size() == exchange.chemistry_vibration.size());
+        expect(references.size() == exchange.chemistry_vibration().size());
         for (std::size_t i = 0; i < references.size(); ++i) {
-            const auto& coupling = exchange.chemistry_vibration.at(i);
+            const auto& coupling = exchange.chemistry_vibration().at(i);
             const auto& reference = references[i];
             const double theta_v = coupling.vibrational_temperature.value();
             const double theta_d = coupling.dissociation_temperature.value();
@@ -790,7 +821,7 @@ void test_energy_exchange()
               // Q_CV = sum_c dnu (q_f - q_b) G_appear.
               double expected = 0;
               double scale = 0;
-              for (const auto& c : exchange.chemistry_vibration) {
+              for (const auto& c : exchange.chemistry_vibration()) {
                   const double g =
                     boltzmann *
                     (c.dissociation_temperature.value() - c.vibrational_temperature.value()) / 2.0;
@@ -915,7 +946,7 @@ void test_energy_exchange()
                 }
                 out[scales + species_count] =
                   out[species_count] < T(0.0) ? T(-out[species_count]) : out[species_count];
-                for (const auto& coupling : exchange.chemistry_vibration) {
+                for (const auto& coupling : exchange.chemistry_vibration()) {
                     out[scales + species_count + 1] =
                       out[scales + species_count + 1] +
                       T(boltzmann * coupling.dissociation_temperature.value() *
@@ -987,8 +1018,8 @@ void test_energy_exchange()
                                              gas_f.species,
                                              mech_f,
                                              scales);
-              expect(accepted.chemistry_vibration[0].dissociation_temperature.value() >
-                     accepted.chemistry_vibration[0].vibrational_temperature.value());
+              expect(accepted.chemistry_vibration()[0].dissociation_temperature.value() >
+                     accepted.chemistry_vibration()[0].vibrational_temperature.value());
           };
           check_float(canary::UnitScales<float, si> {});
           check_float(canary::UnitScales<float, scaled> {

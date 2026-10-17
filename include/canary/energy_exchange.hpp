@@ -49,6 +49,7 @@
 #include <array>
 #include <canary/build.hpp>
 #include <canary/config.hpp>
+#include <canary/indexed_view.hpp>
 #include <canary/models/thermally_perfect.hpp>
 #include <canary/models/two_temperature.hpp>
 #include <canary/quantity.hpp>
@@ -226,20 +227,78 @@ template <std::floating_point P, UnitSystem U> struct ChemistryVibrationCoupling
     Temperature<P, U> vibrational_temperature;
 };
 
+template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t V, std::size_t C>
+    requires(N > 0)
+class EnergyExchange;
+
+template <std::floating_point P,
+          UnitSystem U,
+          std::size_t N,
+          std::size_t R,
+          std::size_t V,
+          std::size_t C>
+    requires(N > 0 && R > 0)
+EnergyExchange<P, U, N, V, C> make_energy_exchange(const EnergyExchangeInput<V, C>& input,
+                                                   const std::array<std::string_view, N>& names,
+                                                   const SpeciesData<P, U, N>& species,
+                                                   const ReactionMechanism<P, U, N, R>& mechanism,
+                                                   const UnitScales<P, U>& scales);
+
 // Energy exchange over the N species of a thermo model, in unit system U,
 // as derived by make_energy_exchange: V vibration-translation pairs, C
 // chemistry-vibration couplings, the particle mass of every species and the
-// Boltzmann constant.
+// Boltzmann constant. Only make_energy_exchange constructs a value, so every
+// stored record is validated. Record lists are read-only and keep their input
+// order; species data are read through views indexed by SpeciesIndex. Borrowed
+// lists and views refer to this object: reacquire them after moving or
+// replacing it.
 template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t V, std::size_t C>
     requires(N > 0)
-struct EnergyExchange {
+class EnergyExchange
+{
+  public:
     using parameter_type = P;
     using units = U;
 
-    std::array<VibrationTranslationPair<P, U>, V> vibration_translation;
-    std::array<ChemistryVibrationCoupling<P, U>, C> chemistry_vibration;
-    std::array<ParticleMass<P, U>, N> mass;
-    BoltzmannConstant<P, U> boltzmann;
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr const auto& vibration_translation() const& noexcept
+    { return vibration_translation_; }
+    auto vibration_translation() && = delete;
+    auto vibration_translation() const&& = delete;
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr const auto& chemistry_vibration() const& noexcept
+    { return chemistry_vibration_; }
+    auto chemistry_vibration() && = delete;
+    auto chemistry_vibration() const&& = delete;
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr auto mass() const& noexcept
+    {
+        return as_indexed<SpeciesIndex>(
+          Kokkos::mdspan<const ParticleMass<P, U>, Kokkos::extents<std::size_t, N>>(mass_.data()));
+    }
+    auto mass() && = delete;
+    auto mass() const&& = delete;
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr BoltzmannConstant<P, U> boltzmann() const noexcept
+    { return boltzmann_; }
+
+  private:
+    EnergyExchange() = default;
+
+    std::array<VibrationTranslationPair<P, U>, V> vibration_translation_;
+    std::array<ChemistryVibrationCoupling<P, U>, C> chemistry_vibration_;
+    std::array<ParticleMass<P, U>, N> mass_;
+    BoltzmannConstant<P, U> boltzmann_;
+
+    template <std::floating_point Q,
+              UnitSystem W,
+              std::size_t Ns,
+              std::size_t Rs,
+              std::size_t Vs,
+              std::size_t Cs>
+        requires(Ns > 0 && Rs > 0)
+    friend EnergyExchange<Q, W, Ns, Vs, Cs>
+      make_energy_exchange(const EnergyExchangeInput<Vs, Cs>& input,
+                           const std::array<std::string_view, Ns>& names,
+                           const SpeciesData<Q, W, Ns>& species,
+                           const ReactionMechanism<Q, W, Ns, Rs>& mechanism,
+                           const UnitScales<Q, W>& scales);
 };
 
 namespace detail
@@ -550,10 +609,10 @@ EnergyExchange<P, U, N, V, C> make_energy_exchange(const EnergyExchangeInput<V, 
       mechanism,
       scales,
       [](SpeciesIndex /*i*/) {},
-      exchange.vibration_translation,
-      exchange.chemistry_vibration);
-    exchange.mass = species.mass;
-    exchange.boltzmann = boltzmann_constant(scales);
+      exchange.vibration_translation_,
+      exchange.chemistry_vibration_);
+    exchange.mass_ = species.mass;
+    exchange.boltzmann_ = boltzmann_constant(scales);
     return exchange;
 }
 
@@ -756,17 +815,20 @@ template <Scalar T, std::size_t N> struct PartialDensities {
     std::array<T, N> number;
 };
 
+template <std::floating_point P, UnitSystem U, std::size_t N>
+using SpeciesMassView =
+  IndexedView<SpeciesIndex,
+              Kokkos::mdspan<const ParticleMass<P, U>, Kokkos::extents<std::size_t, N>>>;
+
 template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N>
     requires ScalarWith<T, P>
-CANARY_HOST_DEVICE PartialDensities<T, N>
-  partial_densities(const std::array<ParticleMass<P, U>, N>& mass,
-                    const NormalisedComposition<T, U, N>& mix,
-                    Density<T, U> rho)
+CANARY_HOST_DEVICE PartialDensities<T, N> partial_densities(
+  SpeciesMassView<P, U, N> mass, const NormalisedComposition<T, U, N>& mix, Density<T, U> rho)
 {
     PartialDensities<T, N> out {};
     for (const SpeciesIndex i : species_indices(0, N)) {
         out.mass[i.value()] = T(rho.value() * mix.fractions[i.value()].value());
-        out.number[i.value()] = T(out.mass[i.value()] / mass[i.value()].value());
+        out.number[i.value()] = T(out.mass[i.value()] / mass[i].value());
     }
     return out;
 }
@@ -775,9 +837,10 @@ CANARY_HOST_DEVICE PartialDensities<T, N>
 
 // Q_VT in a cell of density rho, translational temperature temp and
 // vibrational-electronic temperature temp_ve, with the normalised mass
-// fractions of mix (see the top of this file). The gas model is called
-// twice, through species_vibrational_electronic_energy at temp and at
-// temp_ve. The status of mix is not checked.
+// fractions of mix (see the top of this file). With V > 0 the gas model is
+// called twice, through species_vibrational_electronic_energy at temp and at
+// temp_ve; with V = 0 the result is zero and nothing is evaluated. The status
+// of mix is not checked.
 template <Scalar T,
           std::floating_point P,
           UnitSystem U,
@@ -795,10 +858,11 @@ CANARY_HOST_DEVICE PowerDensity<T, U>
                                Temperature<T, U> temp_ve)
 {
     using Real = ScalarTraits<T>::value_type;
-    const detail::PartialDensities<T, N> d = detail::partial_densities(exchange.mass, mix, rho);
+    if constexpr (V == 0) { return PowerDensity<T, U> {T(Real(0))}; }
+    const detail::PartialDensities<T, N> d = detail::partial_densities(exchange.mass(), mix, rho);
     const std::array<T, N> inverse_tau =
-      detail::inverse_relaxation_times(exchange.vibration_translation,
-                                       exchange.boltzmann,
+      detail::inverse_relaxation_times(exchange.vibration_translation(),
+                                       exchange.boltzmann(),
                                        d.number,
                                        temp.value(),
                                        temp.value());
@@ -835,11 +899,11 @@ CANARY_HOST_DEVICE PowerDensity<T, U>
 {
     using Real = ScalarTraits<T>::value_type;
     T q = T(Real(0));
-    for (const ChemistryVibrationCoupling<P, U>& coupling : exchange.chemistry_vibration) {
+    for (const ChemistryVibrationCoupling<P, U>& coupling : exchange.chemistry_vibration()) {
         q = q +
             detail::coupling_energy_rate(coupling, mechanism, rates, temp.value(), temp_ve.value());
     }
-    return PowerDensity<T, U> {T(exchange.boltzmann.value() * q)};
+    return PowerDensity<T, U> {T(exchange.boltzmann().value() * q)};
 }
 
 // Species mass production rates and source of vibrational-electronic energy
@@ -968,17 +1032,6 @@ template <std::floating_point P, UnitSystem U> struct ElectronImpactIonisationCo
     P ionisation_energy;
 };
 
-// Energy exchange over the N species and M energy modes of a thermo model,
-// in unit system U, as derived by make_multi_temperature_exchange: V
-// vibration-translation pairs, C chemistry-vibration couplings, E elastic
-// electron-heavy pairs, VE vibration-electron exchanges and I
-// electron-impact ionisations; the optional vibration mode of every species; the particle mass of
-// every species; the Boltzmann constant; the optional free-electron species index and its optional
-// energy mode; the constants of the Coulomb cross-section sigma = (coulomb_cross_section / T_e^2)
-// ln(coulomb_logarithm_factor T_e^3 / n_e'), that is (2 pi / 9) C^2 and 9 / (4 pi C^3) with C = L
-// T_e = e^2 / (4 pi eps_0 k_B), in model units (a cross-section is an area per particle, length^2 /
-// count, and Lambda counts particles); and minimum_electron_density, 1 m^-3 in the number density
-// unit of U.
 template <std::floating_point P,
           UnitSystem U,
           std::size_t N,
@@ -989,25 +1042,282 @@ template <std::floating_point P,
           std::size_t VE,
           std::size_t I>
     requires(N > 0 && M > 0)
-struct MultiTemperatureExchange {
+class MultiTemperatureExchange;
+
+namespace detail
+{
+// A thermo model whose electron_species_index(gas) gives its optional
+// free-electron species index.
+template <typename G>
+concept HasElectronSpeciesIndex = requires(const G& gas) {
+    { electron_species_index(gas) } -> std::same_as<OptionalSpeciesIndex>;
+};
+}  // namespace detail
+
+template <std::floating_point P,
+          UnitSystem U,
+          std::size_t N,
+          std::size_t R,
+          std::size_t V,
+          std::size_t C,
+          std::size_t E,
+          std::size_t VE,
+          std::size_t I,
+          HasEnergyModes G>
+    requires(N > 0 && R > 0) && std::same_as<typename G::units, U> &&
+            detail::HasElectronSpeciesIndex<G>
+MultiTemperatureExchange<P, U, N, G::mode_count, V, C, E, VE, I>
+  make_multi_temperature_exchange(const EnergyExchangeInput<V, C>& input,
+                                  const ElectronExchangeInput<E, VE, I>& electrons,
+                                  const std::array<std::string_view, N>& names,
+                                  const SpeciesData<P, U, N>& species,
+                                  const ReactionMechanism<P, U, N, R>& mechanism,
+                                  const G& gas,
+                                  const UnitScales<P, U>& scales);
+
+namespace detail
+{
+// Requirements prepared by make_multi_temperature_exchange: whether mode m
+// holds the vibration of a relaxing species of a vibration-translation pair
+// (uses_translation_mode) or of a vibration-electron exchange
+// (uses_electron_mode), and whether an electron-translation pair uses the
+// Coulomb cross-section (uses_coulomb).
+template <std::floating_point P,
+          UnitSystem U,
+          std::size_t N,
+          std::size_t M,
+          std::size_t V,
+          std::size_t C,
+          std::size_t E,
+          std::size_t VE,
+          std::size_t I>
+CANARY_HOST_DEVICE constexpr bool
+  uses_translation_mode(const MultiTemperatureExchange<P, U, N, M, V, C, E, VE, I>& exchange,
+                        ModeIndex m) noexcept;
+template <std::floating_point P,
+          UnitSystem U,
+          std::size_t N,
+          std::size_t M,
+          std::size_t V,
+          std::size_t C,
+          std::size_t E,
+          std::size_t VE,
+          std::size_t I>
+CANARY_HOST_DEVICE constexpr bool
+  uses_electron_mode(const MultiTemperatureExchange<P, U, N, M, V, C, E, VE, I>& exchange,
+                     ModeIndex m) noexcept;
+template <std::floating_point P,
+          UnitSystem U,
+          std::size_t N,
+          std::size_t M,
+          std::size_t V,
+          std::size_t C,
+          std::size_t E,
+          std::size_t VE,
+          std::size_t I>
+CANARY_HOST_DEVICE constexpr bool
+  uses_coulomb(const MultiTemperatureExchange<P, U, N, M, V, C, E, VE, I>& exchange) noexcept;
+}  // namespace detail
+
+// Energy exchange over the N species and M energy modes of a thermo model,
+// in unit system U, as derived by make_multi_temperature_exchange: V
+// vibration-translation pairs, C chemistry-vibration couplings, E elastic
+// electron-heavy pairs, VE vibration-electron exchanges and I
+// electron-impact ionisations; the optional vibration mode of every species; the particle mass of
+// every species; the Boltzmann constant; the optional free-electron species index and its optional
+// energy mode; the constants of the Coulomb cross-section sigma = (coulomb_cross_section / T_e^2)
+// ln(coulomb_logarithm_factor T_e^3 / n_e'), that is (2 pi / 9) C^2 and 9 / (4 pi C^3) with C = L
+// T_e = e^2 / (4 pi eps_0 k_B), in model units (a cross-section is an area per particle, length^2 /
+// count, and Lambda counts particles); and minimum_electron_density, 1 m^-3 in the number density
+// unit of U. Only make_multi_temperature_exchange constructs a value, so every stored record and
+// the requirements prepared from them are validated and consistent. Record lists are read-only and
+// keep their input order; species data are read through views indexed by SpeciesIndex. Borrowed
+// lists and views refer to this object: reacquire them after moving or replacing it.
+template <std::floating_point P,
+          UnitSystem U,
+          std::size_t N,
+          std::size_t M,
+          std::size_t V,
+          std::size_t C,
+          std::size_t E,
+          std::size_t VE,
+          std::size_t I>
+    requires(N > 0 && M > 0)
+class MultiTemperatureExchange
+{
+  public:
     using parameter_type = P;
     using units = U;
     static constexpr std::size_t mode_count = M;
 
-    std::array<VibrationTranslationPair<P, U>, V> vibration_translation;
-    std::array<ChemistryVibrationCoupling<P, U>, C> chemistry_vibration;
-    std::array<ElectronTranslationPair<P, U>, E> electron_translation;
-    std::array<VibrationElectronCoupling<P, U>, VE> vibration_electron;
-    std::array<ElectronImpactIonisationCoupling<P, U>, I> electron_impact_ionisation;
-    std::array<OptionalModeIndex, N> vibration_mode;
-    std::array<ParticleMass<P, U>, N> mass;
-    BoltzmannConstant<P, U> boltzmann;
-    OptionalSpeciesIndex electron;
-    OptionalModeIndex electron_mode;
-    P coulomb_cross_section;
-    P coulomb_logarithm_factor;
-    P minimum_electron_density;
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr const auto& vibration_translation() const& noexcept
+    { return vibration_translation_; }
+    auto vibration_translation() && = delete;
+    auto vibration_translation() const&& = delete;
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr const auto& chemistry_vibration() const& noexcept
+    { return chemistry_vibration_; }
+    auto chemistry_vibration() && = delete;
+    auto chemistry_vibration() const&& = delete;
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr const auto& electron_translation() const& noexcept
+    { return electron_translation_; }
+    auto electron_translation() && = delete;
+    auto electron_translation() const&& = delete;
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr const auto& vibration_electron() const& noexcept
+    { return vibration_electron_; }
+    auto vibration_electron() && = delete;
+    auto vibration_electron() const&& = delete;
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr const auto&
+      electron_impact_ionisation() const& noexcept
+    { return electron_impact_ionisation_; }
+    auto electron_impact_ionisation() && = delete;
+    auto electron_impact_ionisation() const&& = delete;
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr auto vibration_mode() const& noexcept
+    {
+        return as_indexed<SpeciesIndex>(
+          Kokkos::mdspan<const OptionalModeIndex, Kokkos::extents<std::size_t, N>>(
+            vibration_mode_.data()));
+    }
+    auto vibration_mode() && = delete;
+    auto vibration_mode() const&& = delete;
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr auto mass() const& noexcept
+    {
+        return as_indexed<SpeciesIndex>(
+          Kokkos::mdspan<const ParticleMass<P, U>, Kokkos::extents<std::size_t, N>>(mass_.data()));
+    }
+    auto mass() && = delete;
+    auto mass() const&& = delete;
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr BoltzmannConstant<P, U> boltzmann() const noexcept
+    { return boltzmann_; }
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr OptionalSpeciesIndex electron() const noexcept
+    { return electron_; }
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr OptionalModeIndex electron_mode() const noexcept
+    { return electron_mode_; }
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr P coulomb_cross_section() const noexcept
+    { return coulomb_cross_section_; }
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr P coulomb_logarithm_factor() const noexcept
+    { return coulomb_logarithm_factor_; }
+    [[nodiscard]] CANARY_HOST_DEVICE constexpr P minimum_electron_density() const noexcept
+    { return minimum_electron_density_; }
+
+  private:
+    MultiTemperatureExchange() = default;
+
+    std::array<VibrationTranslationPair<P, U>, V> vibration_translation_;
+    std::array<ChemistryVibrationCoupling<P, U>, C> chemistry_vibration_;
+    std::array<ElectronTranslationPair<P, U>, E> electron_translation_;
+    std::array<VibrationElectronCoupling<P, U>, VE> vibration_electron_;
+    std::array<ElectronImpactIonisationCoupling<P, U>, I> electron_impact_ionisation_;
+    std::array<OptionalModeIndex, N> vibration_mode_;
+    std::array<ParticleMass<P, U>, N> mass_;
+    BoltzmannConstant<P, U> boltzmann_;
+    OptionalSpeciesIndex electron_;
+    OptionalModeIndex electron_mode_;
+    P coulomb_cross_section_;
+    P coulomb_logarithm_factor_;
+    P minimum_electron_density_;
+    // Derived from the records above by the factory; see detail::uses_translation_mode.
+    std::array<bool, M> translation_modes_;
+    std::array<bool, M> electron_modes_;
+    bool coulomb_;
+
+    template <std::floating_point Q,
+              UnitSystem W,
+              std::size_t Ns,
+              std::size_t Ms,
+              std::size_t Vs,
+              std::size_t Cs,
+              std::size_t Es,
+              std::size_t VEs,
+              std::size_t Is>
+    friend CANARY_HOST_DEVICE constexpr bool detail::uses_translation_mode(
+      const MultiTemperatureExchange<Q, W, Ns, Ms, Vs, Cs, Es, VEs, Is>& exchange,
+      ModeIndex m) noexcept;
+    template <std::floating_point Q,
+              UnitSystem W,
+              std::size_t Ns,
+              std::size_t Ms,
+              std::size_t Vs,
+              std::size_t Cs,
+              std::size_t Es,
+              std::size_t VEs,
+              std::size_t Is>
+    friend CANARY_HOST_DEVICE constexpr bool detail::uses_electron_mode(
+      const MultiTemperatureExchange<Q, W, Ns, Ms, Vs, Cs, Es, VEs, Is>& exchange,
+      ModeIndex m) noexcept;
+    template <std::floating_point Q,
+              UnitSystem W,
+              std::size_t Ns,
+              std::size_t Ms,
+              std::size_t Vs,
+              std::size_t Cs,
+              std::size_t Es,
+              std::size_t VEs,
+              std::size_t Is>
+    friend CANARY_HOST_DEVICE constexpr bool detail::uses_coulomb(
+      const MultiTemperatureExchange<Q, W, Ns, Ms, Vs, Cs, Es, VEs, Is>& exchange) noexcept;
+    template <std::floating_point Q,
+              UnitSystem W,
+              std::size_t Ns,
+              std::size_t Rs,
+              std::size_t Vs,
+              std::size_t Cs,
+              std::size_t Es,
+              std::size_t VEs,
+              std::size_t Is,
+              HasEnergyModes H>
+        requires(Ns > 0 && Rs > 0) && std::same_as<typename H::units, W> &&
+                detail::HasElectronSpeciesIndex<H>
+    friend MultiTemperatureExchange<Q, W, Ns, H::mode_count, Vs, Cs, Es, VEs, Is>
+      make_multi_temperature_exchange(const EnergyExchangeInput<Vs, Cs>& input,
+                                      const ElectronExchangeInput<Es, VEs, Is>& electrons,
+                                      const std::array<std::string_view, Ns>& names,
+                                      const SpeciesData<Q, W, Ns>& species,
+                                      const ReactionMechanism<Q, W, Ns, Rs>& mechanism,
+                                      const H& gas,
+                                      const UnitScales<Q, W>& scales);
 };
+
+namespace detail
+{
+template <std::floating_point P,
+          UnitSystem U,
+          std::size_t N,
+          std::size_t M,
+          std::size_t V,
+          std::size_t C,
+          std::size_t E,
+          std::size_t VE,
+          std::size_t I>
+CANARY_HOST_DEVICE constexpr bool
+  uses_translation_mode(const MultiTemperatureExchange<P, U, N, M, V, C, E, VE, I>& exchange,
+                        ModeIndex m) noexcept
+{ return exchange.translation_modes_[m.value()]; }
+template <std::floating_point P,
+          UnitSystem U,
+          std::size_t N,
+          std::size_t M,
+          std::size_t V,
+          std::size_t C,
+          std::size_t E,
+          std::size_t VE,
+          std::size_t I>
+CANARY_HOST_DEVICE constexpr bool
+  uses_electron_mode(const MultiTemperatureExchange<P, U, N, M, V, C, E, VE, I>& exchange,
+                     ModeIndex m) noexcept
+{ return exchange.electron_modes_[m.value()]; }
+template <std::floating_point P,
+          UnitSystem U,
+          std::size_t N,
+          std::size_t M,
+          std::size_t V,
+          std::size_t C,
+          std::size_t E,
+          std::size_t VE,
+          std::size_t I>
+CANARY_HOST_DEVICE constexpr bool
+  uses_coulomb(const MultiTemperatureExchange<P, U, N, M, V, C, E, VE, I>& exchange) noexcept
+{ return exchange.coulomb_; }
+}  // namespace detail
 
 namespace detail
 {
@@ -1276,9 +1586,8 @@ template <std::floating_point P,
           std::size_t VE,
           std::size_t I,
           HasEnergyModes G>
-    requires(N > 0 && R > 0) && std::same_as<typename G::units, U> && requires(const G& gas) {
-        { electron_species_index(gas) } -> std::same_as<OptionalSpeciesIndex>;
-    }
+    requires(N > 0 && R > 0) && std::same_as<typename G::units, U> &&
+            detail::HasElectronSpeciesIndex<G>
 MultiTemperatureExchange<P, U, N, G::mode_count, V, C, E, VE, I>
   make_multi_temperature_exchange(const EnergyExchangeInput<V, C>& input,
                                   const ElectronExchangeInput<E, VE, I>& electrons,
@@ -1293,12 +1602,12 @@ MultiTemperatureExchange<P, U, N, G::mode_count, V, C, E, VE, I>
     MultiTemperatureExchange<P, U, N, modes, V, C, E, VE, I> exchange {};
     for (const SpeciesIndex i : species_indices(0, N)) {
         const OptionalModeIndex mode = species_vibration_mode(gas, i);
-        exchange.vibration_mode[i.value()] =
+        exchange.vibration_mode_[i.value()] =
           mode && (*mode).value() < modes ? mode : OptionalModeIndex {};
     }
     const auto check_vibration = [&](SpeciesIndex index) {
         const auto i = index.value();
-        if (!exchange.vibration_mode[i]) {
+        if (!exchange.vibration_mode_[i]) {
             throw ParameterError(
               std::format("species \"{}\" has no vibration component in a mode", names[i]));
         }
@@ -1309,8 +1618,8 @@ MultiTemperatureExchange<P, U, N, G::mode_count, V, C, E, VE, I>
                                        mechanism,
                                        scales,
                                        check_vibration,
-                                       exchange.vibration_translation,
-                                       exchange.chemistry_vibration);
+                                       exchange.vibration_translation_,
+                                       exchange.chemistry_vibration_);
 
     const OptionalSpeciesIndex e = electron_species_index(gas);
     if (e && (*e).value() >= N) {
@@ -1319,8 +1628,8 @@ MultiTemperatureExchange<P, U, N, G::mode_count, V, C, E, VE, I>
     const OptionalModeIndex electron_mode = electron_energy_mode(gas);
     const bool has_electrons =
       e.has_value() && electron_mode.has_value() && (*electron_mode).value() < modes;
-    exchange.electron = has_electrons ? e : OptionalSpeciesIndex {};
-    exchange.electron_mode = has_electrons ? electron_mode : OptionalModeIndex {};
+    exchange.electron_ = has_electrons ? e : OptionalSpeciesIndex {};
+    exchange.electron_mode_ = has_electrons ? electron_mode : OptionalModeIndex {};
     const auto check_electrons = [&] {
         if (!has_electrons) { throw ParameterError("the model has no free electrons"); }
     };
@@ -1328,9 +1637,9 @@ MultiTemperatureExchange<P, U, N, G::mode_count, V, C, E, VE, I>
         const ElectronTranslationInput& entry = electrons.electron_translation[k];
         try {
             check_electrons();
-            exchange.electron_translation[k] =
+            exchange.electron_translation_[k] =
               detail::make_electron_translation_pair(entry, names, species, *e, scales);
-            detail::check_duplicate_exchange(exchange.electron_translation,
+            detail::check_duplicate_exchange(exchange.electron_translation_,
                                              k,
                                              [](const auto& pair) { return pair.partner; });
         } catch (const ParameterError& error) {
@@ -1344,10 +1653,10 @@ MultiTemperatureExchange<P, U, N, G::mode_count, V, C, E, VE, I>
         const VibrationElectronInput& entry = electrons.vibration_electron[k];
         try {
             check_electrons();
-            exchange.vibration_electron[k] =
+            exchange.vibration_electron_[k] =
               detail::make_vibration_electron_coupling(entry, names, scales);
-            check_vibration(exchange.vibration_electron[k].species);
-            detail::check_duplicate_exchange(exchange.vibration_electron,
+            check_vibration(exchange.vibration_electron_[k].species);
+            detail::check_duplicate_exchange(exchange.vibration_electron_,
                                              k,
                                              [](const auto& coupling) { return coupling.species; });
         } catch (const ParameterError& error) {
@@ -1361,10 +1670,10 @@ MultiTemperatureExchange<P, U, N, G::mode_count, V, C, E, VE, I>
         const ElectronImpactIonisationInput& entry = electrons.electron_impact_ionisation[k];
         try {
             check_electrons();
-            exchange.electron_impact_ionisation[k] =
+            exchange.electron_impact_ionisation_[k] =
               detail::make_ionisation_coupling(entry, names, species, *e, mechanism, scales);
             detail::check_duplicate_exchange(
-              exchange.electron_impact_ionisation,
+              exchange.electron_impact_ionisation_,
               k,
               [](const auto& coupling) { return std::pair {coupling.reaction, coupling.species}; });
         } catch (const ParameterError& error) {
@@ -1381,19 +1690,31 @@ MultiTemperatureExchange<P, U, N, G::mode_count, V, C, E, VE, I>
                               (4.0 * std::numbers::pi * constants::vacuum_permittivity<double> *
                                constants::boltzmann<double>);
     const double pi = std::numbers::pi;
-    exchange.coulomb_cross_section = detail::positive_parameter<P>(
+    exchange.coulomb_cross_section_ = detail::positive_parameter<P>(
       (2.0 * pi / 9.0) * coulomb_si * coulomb_si /
         scale_factor(Dimension {.length = 2, .temperature = 2, .count = -1}, s),
       "Coulomb cross-section constant in the model's units");
-    exchange.coulomb_logarithm_factor = detail::positive_parameter<P>(
+    exchange.coulomb_logarithm_factor_ = detail::positive_parameter<P>(
       9.0 / (4.0 * pi * coulomb_si * coulomb_si * coulomb_si) /
         scale_factor(Dimension {.length = -3, .temperature = -3, .count = 1}, s),
       "Coulomb logarithm constant in the model's units");
-    exchange.minimum_electron_density =
+    exchange.minimum_electron_density_ =
       detail::positive_parameter<P>(1.0 / scale_factor(Dimension {.length = -3, .count = 1}, s),
                                     "1 m^-3 in the model's number density unit");
-    exchange.mass = species.mass;
-    exchange.boltzmann = boltzmann_constant(scales);
+    exchange.mass_ = species.mass;
+    exchange.boltzmann_ = boltzmann_constant(scales);
+    // Every record is validated above, so each relaxing species has a mode.
+    for (const VibrationTranslationPair<P, U>& pair : exchange.vibration_translation_) {
+        exchange.translation_modes_[(*exchange.vibration_mode_[pair.species.value()]).value()] =
+          true;
+    }
+    for (const VibrationElectronCoupling<P, U>& coupling : exchange.vibration_electron_) {
+        exchange.electron_modes_[(*exchange.vibration_mode_[coupling.species.value()]).value()] =
+          true;
+    }
+    for (const ElectronTranslationPair<P, U>& pair : exchange.electron_translation_) {
+        if (pair.cross_section == ElectronCrossSection::coulomb) { exchange.coulomb_ = true; }
+    }
     return exchange;
 }
 
@@ -1451,49 +1772,44 @@ CANARY_HOST_DEVICE RelaxationEnergies<typename S::value_type, N>
 {
     using T = typename S::value_type;
     using Real = ScalarTraits<T>::value_type;
-    std::array<bool, M> translation_mode {};
-    std::array<bool, M> electron_mode {};
-    if constexpr (Translation) {
-        for (const VibrationTranslationPair<P, U>& pair : exchange.vibration_translation) {
-            translation_mode[(*exchange.vibration_mode[pair.species.value()]).value()] = true;
-        }
-    }
-    if constexpr (Electron) {
-        for (const VibrationElectronCoupling<P, U>& coupling : exchange.vibration_electron) {
-            electron_mode[(*exchange.vibration_mode[coupling.species.value()]).value()] = true;
-        }
-    }
+    constexpr bool translation = Translation && V > 0;
+    constexpr bool electron = Electron && VE > 0;
     RelaxationEnergies<T, N> out {};
     out.translation.fill(T(Real(0)));
     out.electron.fill(T(Real(0)));
-    for (const ModeIndex m : mode_indices(0, M)) {
-        if (!translation_mode[m.value()] && !electron_mode[m.value()]) { continue; }
-        const std::array<SpecificEnergy<T, U>, N> at_mode =
-          species_mode_energy(gas,
-                              m,
-                              Temperature<T, U> {detail::mode_at(state.mode_temp, m).value()});
-        if (translation_mode[m.value()]) {
-            const std::array<SpecificEnergy<T, U>, N> at_t =
-              species_mode_energy(gas, m, state.temp);
-            for (const SpeciesIndex i : species_indices(0, N)) {
-                if (exchange.vibration_mode[i.value()] == OptionalModeIndex {m}) {
-                    out.translation[i.value()] =
-                      T(at_t[i.value()].value() - at_mode[i.value()].value());
-                }
-            }
-        }
-        if (electron_mode[m.value()]) {
-            // NOLINTNEXTLINE(misc-static-assert): run-time electron mode
-            CANARY_ASSERT(exchange.electron_mode.has_value());
-            const ModeIndex e = *exchange.electron_mode;
-            const std::array<SpecificEnergy<T, U>, N> at_e =
+    if constexpr (translation || electron) {
+        const auto species_mode = exchange.vibration_mode();
+        for (const ModeIndex m : mode_indices(0, M)) {
+            const bool to_translation = translation && uses_translation_mode(exchange, m);
+            const bool to_electron = electron && uses_electron_mode(exchange, m);
+            if (!to_translation && !to_electron) { continue; }
+            const std::array<SpecificEnergy<T, U>, N> at_mode =
               species_mode_energy(gas,
                                   m,
-                                  Temperature<T, U> {detail::mode_at(state.mode_temp, e).value()});
-            for (const SpeciesIndex i : species_indices(0, N)) {
-                if (exchange.vibration_mode[i.value()] == OptionalModeIndex {m}) {
-                    out.electron[i.value()] =
-                      T(at_e[i.value()].value() - at_mode[i.value()].value());
+                                  Temperature<T, U> {detail::mode_at(state.mode_temp, m).value()});
+            if (to_translation) {
+                const std::array<SpecificEnergy<T, U>, N> at_t =
+                  species_mode_energy(gas, m, state.temp);
+                for (const SpeciesIndex i : species_indices(0, N)) {
+                    if (species_mode[i] == OptionalModeIndex {m}) {
+                        out.translation[i.value()] =
+                          T(at_t[i.value()].value() - at_mode[i.value()].value());
+                    }
+                }
+            }
+            if (to_electron) {
+                // NOLINTNEXTLINE(misc-static-assert): run-time electron mode
+                CANARY_ASSERT(exchange.electron_mode().has_value());
+                const ModeIndex e = *exchange.electron_mode();
+                const std::array<SpecificEnergy<T, U>, N> at_e = species_mode_energy(
+                  gas,
+                  m,
+                  Temperature<T, U> {detail::mode_at(state.mode_temp, e).value()});
+                for (const SpeciesIndex i : species_indices(0, N)) {
+                    if (species_mode[i] == OptionalModeIndex {m}) {
+                        out.electron[i.value()] =
+                          T(at_e[i.value()].value() - at_mode[i.value()].value());
+                    }
                 }
             }
         }
@@ -1530,12 +1846,13 @@ CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M>
                               const S& state)
 {
     using Real = ScalarTraits<T>::value_type;
+    if constexpr (V == 0) { return zero_mode_sources<T, U, M>(); }
     // t_bath = (T sum over heavy j of n_j + T_e n_e) / sum_j n_j.
     const T t = state.temp.value();
     T t_bath = t;
-    if (exchange.electron.has_value()) {
-        const auto e = (*exchange.electron).value();
-        const T t_e = detail::mode_at(state.mode_temp, *exchange.electron_mode).value();
+    if (exchange.electron().has_value()) {
+        const auto e = (*exchange.electron()).value();
+        const T t_e = detail::mode_at(state.mode_temp, *exchange.electron_mode()).value();
         T heavy = T(Real(0));
         for (const SpeciesIndex i : species_indices(0, N)) {
             if (i.value() != e) { heavy = heavy + d.number[i.value()]; }
@@ -1543,15 +1860,16 @@ CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M>
         const T total = T(heavy + d.number[e]);
         t_bath = T(T(T(heavy * t) + T(d.number[e] * t_e)) / total);
     }
-    const std::array<T, N> inverse_tau = inverse_relaxation_times(exchange.vibration_translation,
-                                                                  exchange.boltzmann,
+    const std::array<T, N> inverse_tau = inverse_relaxation_times(exchange.vibration_translation(),
+                                                                  exchange.boltzmann(),
                                                                   d.number,
                                                                   t,
                                                                   t_bath);
     std::array<T, M> q {};
     q.fill(T(Real(0)));
+    const auto species_mode = exchange.vibration_mode();
     for (const SpeciesIndex i : species_indices(0, N)) {
-        const OptionalModeIndex mode = exchange.vibration_mode[i.value()];
+        const OptionalModeIndex mode = species_mode[i];
         if (!mode) { continue; }
         const ModeIndex m = *mode;
         q[m.value()] = q[m.value()] +
@@ -1589,7 +1907,8 @@ CANARY_HOST_DEVICE T candler_exponent(const CandlerFit<P, U>& fit, T x, T t_e)
 }
 
 // Mode sources of the vibration-electron exchanges, with energy_difference
-// the electron differences of relaxation_energies. Requires free electrons.
+// the electron differences of relaxation_energies: zero for VE = 0; otherwise
+// requires free electrons (guaranteed by make_multi_temperature_exchange).
 template <Scalar T,
           std::floating_point P,
           UnitSystem U,
@@ -1609,22 +1928,24 @@ CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M>
                            const S& state)
 {
     using Real = ScalarTraits<T>::value_type;
+    if constexpr (VE == 0) { return zero_mode_sources<T, U, M>(); }
     // NOLINTNEXTLINE(misc-static-assert): run-time electron index
-    CANARY_ASSERT(exchange.electron.has_value() && exchange.electron_mode.has_value());
-    const auto e = (*exchange.electron).value();
-    const ModeIndex e_mode = *exchange.electron_mode;
+    CANARY_ASSERT(exchange.electron().has_value() && exchange.electron_mode().has_value());
+    const auto e = (*exchange.electron()).value();
+    const ModeIndex e_mode = *exchange.electron_mode();
     const T t_e = detail::mode_at(state.mode_temp, e_mode).value();
-    const T p_e = T(T(d.number[e] * exchange.boltzmann.value()) * t_e);
+    const T p_e = T(T(d.number[e] * exchange.boltzmann().value()) * t_e);
     const Real ln10 = std::numbers::ln10_v<Real>;
     const T x = T(math::log(t_e) / T(ln10));
     std::array<T, M> q {};
     q.fill(T(Real(0)));
-    for (const VibrationElectronCoupling<P, U>& coupling : exchange.vibration_electron) {
+    const auto species_mode = exchange.vibration_mode();
+    for (const VibrationElectronCoupling<P, U>& coupling : exchange.vibration_electron()) {
         const auto p = coupling.species.value();
         const T f = candler_exponent(coupling.relaxation_time, x, t_e);
         const T inverse_tau = T(p_e * math::exp(T(-(f * T(ln10)))));
         const T rate = T(d.mass[p] * energy_difference[p] * inverse_tau);
-        const ModeIndex m = *exchange.vibration_mode[p];
+        const ModeIndex m = *species_mode[coupling.species];
         q[m.value()] = q[m.value()] + rate;
         q[e_mode.value()] = q[e_mode.value()] - rate;
     }
@@ -1632,6 +1953,68 @@ CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M>
     for (const ModeIndex m : mode_indices(0, M)) {
         out[m.value()] = PowerDensity<T, U> {q[m.value()]};
     }
+    return out;
+}
+
+// Mode sources of the elastic electron-heavy pairs with the partial densities
+// d of the cell (see electron_translation_source): zero for E = 0 or without
+// free electrons. The Coulomb cross-section is evaluated only when a pair uses
+// it; pairs are summed in list order.
+template <Scalar T,
+          std::floating_point P,
+          UnitSystem U,
+          std::size_t N,
+          std::size_t M,
+          std::size_t V,
+          std::size_t C,
+          std::size_t E,
+          std::size_t VE,
+          std::size_t I,
+          typename S>
+    requires MultiTemperatureStateOf<S, T, U, M> && ScalarWith<T, P> && HasLog<T> && HasSqrt<T>
+CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M>
+  electron_translation_terms(const MultiTemperatureExchange<P, U, N, M, V, C, E, VE, I>& exchange,
+                             const PartialDensities<T, N>& d,
+                             const S& state)
+{
+    using Real = ScalarTraits<T>::value_type;
+    std::array<PowerDensity<T, U>, M> out = zero_mode_sources<T, U, M>();
+    if constexpr (E == 0) { return out; }
+    if (!exchange.electron()) { return out; }
+    const SpeciesIndex e = *exchange.electron();
+    const ModeIndex e_mode = *exchange.electron_mode();
+    const auto mass = exchange.mass();
+    const P m_e = mass[e].value();
+    const P k = exchange.boltzmann().value();
+    const T t_e = detail::mode_at(state.mode_temp, e_mode).value();
+    const Real t_e_value = ScalarTraits<T>::value(t_e);
+    const T n_e = d.number[e.value()];
+    // Coulomb cross-section (2 pi / 9) L^2 ln(9 / (4 pi n_e' L^3)), L = C / T_e.
+    T coulomb = T(Real(0));
+    if (uses_coulomb(exchange)) {
+        const T n_e_limited = ScalarTraits<T>::value(n_e) < exchange.minimum_electron_density()
+                                ? T(exchange.minimum_electron_density())
+                                : n_e;
+        const T inverse_t_e = T(T(Real(1)) / t_e);
+        coulomb = T(T(exchange.coulomb_cross_section() * T(inverse_t_e * inverse_t_e)) *
+                    math::log(T(T(exchange.coulomb_logarithm_factor() * T(T(t_e * t_e) * t_e)) /
+                                n_e_limited)));
+    }
+    T sum = T(Real(0));
+    for (const ElectronTranslationPair<P, U>& pair : exchange.electron_translation()) {
+        T sigma = coulomb;
+        if (pair.cross_section == ElectronCrossSection::gnoffo_neutral) {
+            const P t_max = pair.maximum_temperature.value();
+            const T t_limited = t_e_value > t_max ? T(t_max) : t_e;
+            sigma = T(T(T(pair.c * t_limited) + pair.b) * t_limited) + pair.a;
+        }
+        sum =
+          sum + T(T((m_e / mass[pair.partner].value()) * d.number[pair.partner.value()]) * sigma);
+    }
+    const T c_e = math::sqrt(T(T((Real(8) * k) * t_e) / (std::numbers::pi_v<Real> * m_e)));
+    out[e_mode.value()] = PowerDensity<T, U> {
+      T(T(T(Real(3) * n_e) * T(k * T(state.temp.value() - t_e))) * T(c_e * sum)),
+    };
     return out;
 }
 
@@ -1663,9 +2046,10 @@ CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M>
                                const S& state)
 {
     detail::assert_state_extents<M>(state);
+    if constexpr (V == 0) { return detail::zero_mode_sources<T, U, M>(); }
     return detail::vibration_translation_terms(
       exchange,
-      detail::partial_densities(exchange.mass, mix, state.rho),
+      detail::partial_densities(exchange.mass(), mix, state.rho),
       detail::relaxation_energies<true, false>(exchange, gas, state).translation,
       state);
 }
@@ -1697,8 +2081,9 @@ CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M>
     using Real = ScalarTraits<T>::value_type;
     std::array<T, M> q {};
     q.fill(T(Real(0)));
-    for (const ChemistryVibrationCoupling<P, U>& coupling : exchange.chemistry_vibration) {
-        const ModeIndex m = *exchange.vibration_mode[coupling.species.value()];
+    const auto species_mode = exchange.vibration_mode();
+    for (const ChemistryVibrationCoupling<P, U>& coupling : exchange.chemistry_vibration()) {
+        const ModeIndex m = *species_mode[coupling.species];
         q[m.value()] =
           q[m.value()] + detail::coupling_energy_rate(coupling,
                                                       mechanism,
@@ -1708,7 +2093,7 @@ CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M>
     }
     std::array<PowerDensity<T, U>, M> out {};
     for (const ModeIndex m : mode_indices(0, M)) {
-        out[m.value()] = PowerDensity<T, U> {T(exchange.boltzmann.value() * q[m.value()])};
+        out[m.value()] = PowerDensity<T, U> {T(exchange.boltzmann().value() * q[m.value()])};
     }
     return out;
 }
@@ -1736,43 +2121,11 @@ CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M>
                               const S& state)
 {
     detail::assert_state_extents<M>(state);
-    using Real = ScalarTraits<T>::value_type;
-    std::array<PowerDensity<T, U>, M> out = detail::zero_mode_sources<T, U, M>();
-    if (E == 0 || !exchange.electron) { return out; }
-    const auto e = (*exchange.electron).value();
-    const ModeIndex e_mode = *exchange.electron_mode;
-    const P m_e = exchange.mass[e].value();
-    const P k = exchange.boltzmann.value();
-    const T t_e = detail::mode_at(state.mode_temp, e_mode).value();
-    const Real t_e_value = ScalarTraits<T>::value(t_e);
-    const detail::PartialDensities<T, N> d =
-      detail::partial_densities(exchange.mass, mix, state.rho);
-    const T n_e = d.number[e];
-    // Coulomb cross-section (2 pi / 9) L^2 ln(9 / (4 pi n_e' L^3)), L = C / T_e.
-    const T n_e_limited = ScalarTraits<T>::value(n_e) < exchange.minimum_electron_density
-                            ? T(exchange.minimum_electron_density)
-                            : n_e;
-    const T inverse_t_e = T(T(Real(1)) / t_e);
-    const T coulomb =
-      T(T(exchange.coulomb_cross_section * T(inverse_t_e * inverse_t_e)) *
-        math::log(T(T(exchange.coulomb_logarithm_factor * T(T(t_e * t_e) * t_e)) / n_e_limited)));
-    T sum = T(Real(0));
-    for (const ElectronTranslationPair<P, U>& pair : exchange.electron_translation) {
-        T sigma = coulomb;
-        if (pair.cross_section == ElectronCrossSection::gnoffo_neutral) {
-            const P t_max = pair.maximum_temperature.value();
-            const T t_limited = t_e_value > t_max ? T(t_max) : t_e;
-            sigma = T(T(T(pair.c * t_limited) + pair.b) * t_limited) + pair.a;
-        }
-        sum = sum + T(T((m_e / exchange.mass[pair.partner.value()].value()) *
-                        d.number[pair.partner.value()]) *
-                      sigma);
-    }
-    const T c_e = math::sqrt(T(T((Real(8) * k) * t_e) / (std::numbers::pi_v<Real> * m_e)));
-    out[e_mode.value()] = PowerDensity<T, U> {
-      T(T(T(Real(3) * n_e) * T(k * T(state.temp.value() - t_e))) * T(c_e * sum)),
-    };
-    return out;
+    if (E == 0 || !exchange.electron()) { return detail::zero_mode_sources<T, U, M>(); }
+    return detail::electron_translation_terms(
+      exchange,
+      detail::partial_densities(exchange.mass(), mix, state.rho),
+      state);
 }
 
 // Mode sources of the vibration-electron exchanges of exchange in a cell of
@@ -1803,13 +2156,12 @@ CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M>
                             const S& state)
 {
     detail::assert_state_extents<M>(state);
-    std::array<PowerDensity<T, U>, M> out = detail::zero_mode_sources<T, U, M>();
-    if (VE == 0 || !exchange.electron) { return out; }
+    if (VE == 0 || !exchange.electron()) { return detail::zero_mode_sources<T, U, M>(); }
     const detail::RelaxationEnergies<T, N> energies =
       detail::relaxation_energies<false, true>(exchange, gas, state);
     return detail::vibration_electron_terms(
       exchange,
-      detail::partial_densities(exchange.mass, mix, state.rho),
+      detail::partial_densities(exchange.mass(), mix, state.rho),
       energies.electron,
       state);
 }
@@ -1835,17 +2187,17 @@ CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M> electron_impact_ionisation_
 {
     using Real = ScalarTraits<T>::value_type;
     std::array<PowerDensity<T, U>, M> out = detail::zero_mode_sources<T, U, M>();
-    if (I == 0 || !exchange.electron) { return out; }
+    if (I == 0 || !exchange.electron()) { return out; }
     T q = T(Real(0));
     for (const ElectronImpactIonisationCoupling<P, U>& coupling :
-         exchange.electron_impact_ionisation) {
+         exchange.electron_impact_ionisation()) {
         // NOLINTNEXTLINE(misc-static-assert): run-time reaction index
         CANARY_ASSERT(coupling.reaction.value() < R);
         const T net = T(rates.forward()[coupling.reaction].value() -
                         rates.backward()[coupling.reaction].value());
         q = q - T(net * coupling.ionisation_energy);
     }
-    out[(*exchange.electron_mode).value()] = PowerDensity<T, U> {q};
+    out[(*exchange.electron_mode()).value()] = PowerDensity<T, U> {q};
     return out;
 }
 
@@ -1890,17 +2242,21 @@ CANARY_HOST_DEVICE MultiTemperatureSources<T, U, N, M>
     detail::assert_state_extents<M>(state);
     const RatesOfProgress<T, U, R> rates =
       rates_of_progress(mechanism, gas, mix, state.rho, state.temp, state.mode_temp);
-    const detail::PartialDensities<T, N> d =
-      detail::partial_densities(exchange.mass, mix, state.rho);
+    // Partial densities are shared by the vibration-translation,
+    // electron-translation and vibration-electron terms.
+    const detail::PartialDensities<T, N> d = [&] {
+        if constexpr (V > 0 || E > 0 || VE > 0) {
+            return detail::partial_densities(exchange.mass(), mix, state.rho);
+        } else {
+            return detail::PartialDensities<T, N> {};
+        }
+    }();
     const detail::RelaxationEnergies<T, N> energies =
       detail::relaxation_energies<true, true>(exchange, gas, state);
     const auto vt = detail::vibration_translation_terms(exchange, d, energies.translation, state);
     const auto cv = chemistry_vibration_source(exchange, mechanism, rates, state);
-    const auto et = electron_translation_source(exchange, mix, state);
-    std::array<PowerDensity<T, U>, M> ve = detail::zero_mode_sources<T, U, M>();
-    if (exchange.electron.has_value()) {
-        ve = detail::vibration_electron_terms(exchange, d, energies.electron, state);
-    }
+    const auto et = detail::electron_translation_terms(exchange, d, state);
+    const auto ve = detail::vibration_electron_terms(exchange, d, energies.electron, state);
     const auto ce = electron_impact_ionisation_source(exchange, rates);
     MultiTemperatureSources<T, U, N, M> out {};
     out.species = detail::mass_production_rates(mechanism, rates);

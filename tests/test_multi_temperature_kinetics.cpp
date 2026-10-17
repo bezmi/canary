@@ -35,6 +35,7 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace
 {
@@ -567,6 +568,78 @@ static_assert(
                                    si,
                                    3>);
 static_assert(std::is_trivially_copyable_v<BorrowedState>);
+
+// Air11 model whose species_mode_energy records each call as (mode, temperature).
+struct CountedModeGas {
+    using parameter_type = double;
+    using units = si;
+    static constexpr std::size_t mode_count = Gas::mode_count;
+    Gas model;
+    std::vector<std::pair<std::size_t, double>>* calls;
+};
+[[maybe_unused]] canary::OptionalModeIndex species_vibration_mode(const CountedModeGas& gas,
+                                                                  canary::SpeciesIndex i)
+{ return canary::species_vibration_mode(gas.model, i); }
+[[maybe_unused]] canary::OptionalModeIndex electron_energy_mode(const CountedModeGas& gas)
+{ return canary::electron_energy_mode(gas.model); }
+template <canary::Scalar T>
+auto species_properties(const CountedModeGas& gas, canary::Temperature<T, si> t)
+{ return canary::species_properties(gas.model, t); }
+template <canary::Scalar T>
+auto species_mode_energy(const CountedModeGas& gas,
+                         canary::ModeIndex m,
+                         canary::Temperature<T, si> t)
+{
+    gas.calls->emplace_back(m.value(), canary::ScalarTraits<T>::value(t.value()));
+    return canary::species_mode_energy(gas.model, m, t);
+}
+static_assert(canary::ModeRelaxingModel<CountedModeGas, double, double, species_count>);
+static_assert(canary::ReactingModel<CountedModeGas, double, double, species_count>);
+
+// Electron-translation pairs of the air11 Kim-Jo exchange with cross-section K, in list order.
+template <canary::ElectronCrossSection K> constexpr auto electron_pairs()
+{
+    constexpr auto& all = canary::air11_kim_jo_exchange_electrons.electron_translation;
+    constexpr std::size_t count = static_cast<std::size_t>(
+      std::ranges::count_if(all, [](const auto& pair) { return pair.cross_section == K; }));
+    canary::ElectronExchangeInput<count, 0, 0> out {};
+    std::size_t k = 0;
+    for (const auto& pair : all) {
+        if (pair.cross_section == K) { out.electron_translation[k++] = pair; }
+    }
+    return out;
+}
+
+// The read-only contract of EnergyExchange also holds for the multi-temperature exchange.
+template <typename X>
+concept BorrowsSpeciesModes = requires { std::declval<X>().vibration_mode(); };
+template <typename X>
+concept BorrowsElectronPairs = requires { std::declval<X>().electron_translation(); };
+template <typename X>
+concept ReadsElectron = requires {
+    std::declval<X>().electron();
+    std::declval<X>().electron_mode();
+    std::declval<X>().coulomb_cross_section();
+    std::declval<X>().coulomb_logarithm_factor();
+    std::declval<X>().minimum_electron_density();
+};
+template <typename X, typename Index>
+concept SpeciesModesIndexedBy = requires(const X& x, Index i) { x.vibration_mode()[i]; };
+static_assert(!std::is_default_constructible_v<Exchange>);
+static_assert(std::is_trivially_copyable_v<Exchange>);
+static_assert(BorrowsSpeciesModes<const Exchange&> && BorrowsElectronPairs<const Exchange&>);
+static_assert(!BorrowsSpeciesModes<Exchange&&> && !BorrowsSpeciesModes<const Exchange&&>);
+static_assert(!BorrowsElectronPairs<Exchange&&> && !BorrowsElectronPairs<const Exchange&&>);
+static_assert(ReadsElectron<Exchange&&>);
+static_assert(SpeciesModesIndexedBy<Exchange, canary::SpeciesIndex>);
+static_assert(!SpeciesModesIndexedBy<Exchange, std::size_t>);
+static_assert(!SpeciesModesIndexedBy<Exchange, canary::ModeIndex>);
+static_assert(
+  std::is_const_v<decltype(std::declval<const Exchange&>().vibration_mode())::element_type>);
+static_assert(noexcept(std::declval<const Exchange&>().vibration_mode()) &&
+              noexcept(std::declval<const Exchange&>().electron_impact_ionisation()) &&
+              noexcept(std::declval<const Exchange&>().electron()) &&
+              noexcept(std::declval<const Exchange&>().minimum_electron_density()));
 }  // namespace
 
 void test_multi_temperature_kinetics()
@@ -581,6 +654,123 @@ void test_multi_temperature_kinetics()
       canary::make_air11_kim_jo_exchange(built.species, mech, gas, si_scales);
     const std::array<std::string_view, species_count> names =
       canary::detail::air11_kim_jo_species_names;
+    const auto& exchange_names = canary::detail::air11_kim_jo_exchange_species_names;
+    const canary::EnergyExchangeInput<0, 0> no_vibration {};
+    const canary::ElectronExchangeInput<0, 0, 0> no_electrons {};
+    const auto build_exchange = [&](const auto& heavy, const auto& electrons) {
+        return canary::make_multi_temperature_exchange(heavy,
+                                                       electrons,
+                                                       exchange_names,
+                                                       built.species,
+                                                       mech,
+                                                       gas,
+                                                       si_scales);
+    };
+
+    "built exchanges prepare their mode and Coulomb requirements from their records"_test = [&] {
+        const auto check = [&](const auto& x, bool translation_0, bool electron_0, bool coulomb) {
+            const auto modes = x.vibration_mode();
+            for (const canary::ModeIndex m : canary::mode_indices(0, mode_count)) {
+                bool translation = false;
+                bool electron_mode = false;
+                for (const auto& pair : x.vibration_translation()) {
+                    translation =
+                      translation || modes[pair.species] == canary::OptionalModeIndex {m};
+                }
+                for (const auto& c : x.vibration_electron()) {
+                    electron_mode =
+                      electron_mode || modes[c.species] == canary::OptionalModeIndex {m};
+                }
+                expect(canary::detail::uses_translation_mode(x, m) == translation) << m.value();
+                expect(canary::detail::uses_electron_mode(x, m) == electron_mode) << m.value();
+            }
+            const canary::ModeIndex vibration {0};
+            const canary::ModeIndex free_electron {1};
+            expect(canary::detail::uses_translation_mode(x, vibration) == translation_0);
+            expect(canary::detail::uses_electron_mode(x, vibration) == electron_0);
+            expect(!canary::detail::uses_translation_mode(x, free_electron));
+            expect(!canary::detail::uses_electron_mode(x, free_electron));
+            expect(canary::detail::uses_coulomb(x) == coulomb);
+        };
+        check(exchange, true, true, true);
+        check(build_exchange(no_vibration, no_electrons), false, false, false);
+        check(build_exchange(canary::air11_kim_jo_exchange, no_electrons), true, false, false);
+        check(build_exchange(no_vibration,
+                             electron_pairs<canary::ElectronCrossSection::gnoffo_neutral>()),
+              false,
+              false,
+              false);
+        check(build_exchange(no_vibration, electron_pairs<canary::ElectronCrossSection::coulomb>()),
+              false,
+              false,
+              true);
+        auto copy = exchange;
+        copy = canary::make_air11_kim_jo_exchange(built.species, mech, gas, si_scales);
+        check(copy, true, true, true);
+        expect(&copy.vibration_translation() != &exchange.vibration_translation());
+        expect(copy.mass().base().data_handle() != exchange.mass().base().data_handle());
+        for (const auto i : canary::species_indices(0, species_count)) {
+            expect(copy.mass()[i] == exchange.mass()[i] &&
+                   copy.vibration_mode()[i] == exchange.vibration_mode()[i])
+              << i.value();
+        }
+    };
+
+    "exchange sources evaluate mode energies only for configured processes"_test = [&] {
+        std::vector<std::pair<std::size_t, double>> calls;
+        const CountedModeGas counted {gas, &calls};
+        Fractions y {};
+        y[0] = 0.7;
+        y[1] = 0.2;
+        y[5] = 0.1 - 1e-6;
+        y[electron] = 1e-6;
+        const auto mix =
+          canary::mixture(gas,
+                          canary::as_kind<canary::kind::mass_fraction>(
+                            Kokkos::mdspan<const double, Extents>(y.data(), y.size())));
+        canary::MultiTemperatureState<double, si, mode_count> state {};
+        state.rho = Rho {0.01};
+        state.temp = Temp {8000};
+        state.mode_temp = {canary::ModeTemperature<double, si> {5000},
+                           canary::ModeTemperature<double, si> {11000}};
+        using Calls = std::vector<std::pair<std::size_t, double>>;
+        const auto zero = [](const auto& modes) {
+            return std::ranges::all_of(modes, [](const auto& q) { return q.value() == 0.0; });
+        };
+
+        const auto empty = build_exchange(no_vibration, no_electrons);
+        calls.clear();
+        expect(zero(canary::vibration_translation_source(empty, counted, mix, state)));
+        expect(zero(canary::vibration_electron_source(empty, counted, mix, state)));
+        expect(zero(canary::electron_translation_source(empty, mix, state)));
+        const auto empty_total =
+          canary::multi_temperature_sources(mech, empty, counted, mix, state);
+        expect(calls.empty());
+        expect(zero(empty_total.modes));
+        const auto production =
+          canary::production_rates(mech, gas, mix, state.rho, state.temp, state.mode_temp);
+        for (const auto i : canary::species_indices(0, species_count)) {
+            expect(empty_total.species[i.value()] == production[i.value()]) << i.value();
+        }
+
+        calls.clear();
+        (void)canary::vibration_translation_source(exchange, counted, mix, state);
+        expect(calls == Calls {{0, 5000.0}, {0, 8000.0}});
+        calls.clear();
+        (void)canary::vibration_electron_source(exchange, counted, mix, state);
+        expect(calls == Calls {{0, 5000.0}, {0, 11000.0}});
+        calls.clear();
+        (void)canary::multi_temperature_sources(mech, exchange, counted, mix, state);
+        expect(calls == Calls {{0, 5000.0}, {0, 8000.0}, {0, 11000.0}});
+        calls.clear();
+        (void)canary::multi_temperature_sources(
+          mech,
+          build_exchange(canary::air11_kim_jo_exchange, no_electrons),
+          counted,
+          mix,
+          state);
+        expect(calls == Calls {{0, 5000.0}, {0, 8000.0}});
+    };
 
     "stateful accessor states match contiguous inputs across model sizes"_test = [] {
         const auto run = []<typename T, typename Layout, bool Const, bool FiveSpecies>() {
@@ -987,8 +1177,8 @@ void test_multi_temperature_kinetics()
                                                                     mech,
                                                                     custom,
                                                                     si_scales);
-        expect(result.electron == canary::OptionalSpeciesIndex {canary::SpeciesIndex {10}});
-        expect(result.electron_translation[0].partner == canary::SpeciesIndex {2});
+        expect(result.electron() == canary::OptionalSpeciesIndex {canary::SpeciesIndex {10}});
+        expect(result.electron_translation()[0].partner == canary::SpeciesIndex {2});
         electrons.electron_translation[0].partner = "carrier";
         expect(error_message([&] {
                    canary::make_multi_temperature_exchange(input,
@@ -1042,41 +1232,43 @@ void test_multi_temperature_kinetics()
                   << k.value();
             }
         }
-        expect(exchange.electron == canary::OptionalSpeciesIndex {canary::SpeciesIndex {10}} &&
-               exchange.electron_mode == canary::OptionalModeIndex {canary::ModeIndex {1}});
+        expect(exchange.electron() == canary::OptionalSpeciesIndex {canary::SpeciesIndex {10}} &&
+               exchange.electron_mode() == canary::OptionalModeIndex {canary::ModeIndex {1}});
         for (const std::size_t i : std::array<std::size_t, 6> {0, 1, 4, 7, 8, 9}) {
-            expect(exchange.vibration_mode[i] == canary::OptionalModeIndex {canary::ModeIndex {0}})
+            expect(exchange.vibration_mode()[canary::SpeciesIndex {i}] ==
+                   canary::OptionalModeIndex {canary::ModeIndex {0}})
               << i;
         }
         for (const std::size_t i : std::array<std::size_t, 5> {2, 3, 5, 6, 10}) {
-            expect(!exchange.vibration_mode[i]) << i;
+            expect(!exchange.vibration_mode()[canary::SpeciesIndex {i}]) << i;
         }
-        const auto& ve = exchange.vibration_electron[0];
+        const auto& ve = exchange.vibration_electron()[0];
         expect(ve.species == canary::SpeciesIndex {0});
         // In SI the fit is that of the input with log10(101325) added to c,
         // for p_e in Pa.
         expect(ve.relaxation_time.a_low == 7.5_d && ve.relaxation_time.b_high == -17.9_d);
         expect(relative(ve.relaxation_time.c_high, 24.35 + std::log10(atmosphere), 1.0e-15));
         expect(ve.relaxation_time.blend_lower.value() == 6950.0_d);
-        const auto& ce = exchange.electron_impact_ionisation[1];
+        const auto& ce = exchange.electron_impact_ionisation()[1];
         expect(ce.reaction == canary::ReactionIndex {39} && ce.species == canary::SpeciesIndex {2});
         expect(relative(ce.ionisation_energy, 1402330.360173364 / avogadro, 1.0e-15));
         // (2 pi / 9) C^2 and 9 / (4 pi C^3) with C = e^2 / (4 pi eps_0 k_B),
         // the exact e and k_B and CODATA 2018 eps_0; a few ulp.
         const double e = canary::constants::elementary_charge<double>;
         const double c = e * e / (4.0 * std::numbers::pi * 8.8541878128e-12 * boltzmann);
-        expect(
-          relative(exchange.coulomb_cross_section, 2.0 * std::numbers::pi / 9.0 * c * c, 1.0e-15));
-        expect(relative(exchange.coulomb_logarithm_factor,
+        expect(relative(exchange.coulomb_cross_section(),
+                        2.0 * std::numbers::pi / 9.0 * c * c,
+                        1.0e-15));
+        expect(relative(exchange.coulomb_logarithm_factor(),
                         9.0 / (4.0 * std::numbers::pi * c * c * c),
                         1.0e-15));
-        expect(exchange.minimum_electron_density == 1.0_d);
-        expect(exchange.electron_translation[0].cross_section ==
+        expect(exchange.minimum_electron_density() == 1.0_d);
+        expect(exchange.electron_translation()[0].cross_section ==
                canary::ElectronCrossSection::gnoffo_neutral);
-        expect(exchange.electron_translation[5].cross_section ==
+        expect(exchange.electron_translation()[5].cross_section ==
                canary::ElectronCrossSection::coulomb);
         // kim_2021 of N2-N2 with omega = 0.55.
-        expect(relative(exchange.vibration_translation[0].correction_exponent, -1.05, 1.0e-15));
+        expect(relative(exchange.vibration_translation()[0].correction_exponent, -1.05, 1.0e-15));
     };
 
     "multi-temperature kinetics: rates and mode sources equal the reference"_test = [&] {
@@ -1150,7 +1342,7 @@ void test_multi_temperature_kinetics()
             // 1. The chemistry-vibration source has the size of the sum of
             // its terms k_B theta_D (q_f + q_b) / 2.
             double cv_scale = 0;
-            for (const auto& c : exchange.chemistry_vibration) {
+            for (const auto& c : exchange.chemistry_vibration()) {
                 cv_scale += boltzmann * c.dissociation_temperature.value() *
                             (got.forward[c.reaction.value()] + got.backward[c.reaction.value()]) /
                             2.0;
@@ -1708,7 +1900,7 @@ void test_multi_temperature_kinetics()
 
           // The blend weight is 1 at blend_lower and 0 at blend_upper, so the
           // fit is continuous at both ends.
-          const auto& fit = exchange.vibration_electron[0].relaxation_time;
+          const auto& fit = exchange.vibration_electron()[0].relaxation_time;
           const auto f = [&](double t) {
               return canary::detail::candler_exponent(fit, std::log10(t), t);
           };
@@ -1893,13 +2085,13 @@ void test_multi_temperature_kinetics()
               total.modes[1].value(),
             };
             T cv_scale = T(0.0);
-            for (const auto& c : exchange.chemistry_vibration) {
+            for (const auto& c : exchange.chemistry_vibration()) {
                 cv_scale = cv_scale +
                            T(boltzmann * c.dissociation_temperature.value() *
                              (q.forward()[c.reaction].value() + q.backward()[c.reaction].value()));
             }
             T ce_scale = T(0.0);
-            for (const auto& c : exchange.electron_impact_ionisation) {
+            for (const auto& c : exchange.electron_impact_ionisation()) {
                 ce_scale = ce_scale + T(c.ionisation_energy * (q.forward()[c.reaction].value() +
                                                                q.backward()[c.reaction].value()));
             }
@@ -2277,7 +2469,7 @@ void test_multi_temperature_kinetics()
                                                                             air5_mech,
                                                                             air5.model,
                                                                             si_scales);
-        expect(!vibration_only.electron && !vibration_only.electron_mode);
+        expect(!vibration_only.electron() && !vibration_only.electron_mode());
     };
     "electron-impact ionisation validates participants and charge at construction"_test = [&] {
         const auto source = *canary::detail::species_index(names, "O");
@@ -2302,10 +2494,10 @@ void test_multi_temperature_kinetics()
         renamed[ion.value()] = "oxygen ion";
         renamed[carrier.value()] = "carrier";
         const auto arbitrary_names = build(built.species, mech, renamed);
-        expect(arbitrary_names.electron == reference.electron);
-        expect(arbitrary_names.electron_impact_ionisation[0].species == source);
-        expect(arbitrary_names.electron_impact_ionisation[0].ionisation_energy ==
-               reference.electron_impact_ionisation[0].ionisation_energy);
+        expect(arbitrary_names.electron() == reference.electron());
+        expect(arbitrary_names.electron_impact_ionisation()[0].species == source);
+        expect(arbitrary_names.electron_impact_ionisation()[0].ionisation_energy ==
+               reference.electron_impact_ionisation()[0].ionisation_energy);
 
         auto spectator_input = canary::air11_kim_jo;
         auto& spectator_reaction = spectator_input.reactions[38];
@@ -2401,8 +2593,8 @@ void test_multi_temperature_kinetics()
                 built.model);
               const auto exchange = canary::make_air11_kim_jo_exchange(
                 built.species, mechanism, built.model, scales);
-              expect(exchange.electron == canary::electron_species_index(built.model));
-              for (const auto& coupling : exchange.electron_impact_ionisation) {
+              expect(exchange.electron() == canary::electron_species_index(built.model));
+              for (const auto& coupling : exchange.electron_impact_ionisation()) {
                   expect(std::isfinite(coupling.ionisation_energy) && coupling.ionisation_energy > P(0));
               }
           };
