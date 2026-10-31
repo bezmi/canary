@@ -86,10 +86,13 @@ static_assert(!canary::PaddingFree<Gapped>);
 static_assert(!canary::PaddingFree<Unlisted>);
 static_assert(!canary::PaddingFree<Opaque> && !canary::PaddingFree<HoldsOpaque>);
 static_assert(!canary::PaddingFree<HoldsGapped>);
-static_assert(canary::PaddingFree<std::array<double, 4>> && canary::PaddingFree<std::array<Listed, 2>>);
-static_assert(!canary::PaddingFree<std::array<double, 0>> && !canary::PaddingFree<std::array<Gapped, 2>>);
+static_assert(canary::PaddingFree<std::array<double, 4>> &&
+              canary::PaddingFree<std::array<Listed, 2>>);
+static_assert(!canary::PaddingFree<std::array<double, 0>> &&
+              !canary::PaddingFree<std::array<Gapped, 2>>);
 static_assert(canary::PaddingFree<canary::SpecificHeat<double, si>> &&
-              canary::PaddingFree<canary::OptionalSpeciesIndex> && canary::PaddingFree<canary::OptionalModeIndex>);
+              canary::PaddingFree<canary::OptionalSpeciesIndex> &&
+              canary::PaddingFree<canary::OptionalModeIndex>);
 
 // The double models.
 static_assert(canary::PaddingFreeGasModel<canary::CaloricallyPerfect<double, si>>);
@@ -124,10 +127,13 @@ void test_layout()
         const auto b = canary::make_calorically_perfect_mixture(masses, charges, k_b, gammas).model;
         expect(same_bytes(a, b));
         const std::array other {Gamma {5.0 / 3.0}, Gamma {1.3}};
-        expect(!same_bytes(a, canary::make_calorically_perfect_mixture(masses, charges, k_b, other).model));
+        expect(
+          !same_bytes(a,
+                      canary::make_calorically_perfect_mixture(masses, charges, k_b, other).model));
 
         const canary::UnitScales<double, si> scales {};
-        expect(same_bytes(canary::make_air5<double>(scales).model, canary::make_air5<double>(scales).model));
+        expect(same_bytes(canary::make_air5<double>(scales).model,
+                          canary::make_air5<double>(scales).model));
         expect(same_bytes(canary::make_air5_four_temperature<double>(scales).model,
                           canary::make_air5_four_temperature<double>(scales).model));
     };

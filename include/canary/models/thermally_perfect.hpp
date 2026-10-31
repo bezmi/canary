@@ -86,7 +86,20 @@ struct ThermallyPerfectMixture {
     Temperature<P, U> absolute_tolerance {P(0)};
 
     static consteval bool padding_free()
-    { return layout::members_fill<ThermallyPerfectMixture, decltype(gas_constant), decltype(curve), decltype(reference_temperature), decltype(reference_energy), decltype(reference_cv), decltype(temperature_min), decltype(temperature_max), decltype(bracket_width), decltype(relative_tolerance), decltype(max_iterations), decltype(absolute_tolerance)>(); }
+    {
+        return layout::members_fill<ThermallyPerfectMixture,
+                                    decltype(gas_constant),
+                                    decltype(curve),
+                                    decltype(reference_temperature),
+                                    decltype(reference_energy),
+                                    decltype(reference_cv),
+                                    decltype(temperature_min),
+                                    decltype(temperature_max),
+                                    decltype(bracket_width),
+                                    decltype(relative_tolerance),
+                                    decltype(max_iterations),
+                                    decltype(absolute_tolerance)>();
+    }
 };
 
 namespace detail

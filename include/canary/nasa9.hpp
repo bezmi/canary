@@ -51,7 +51,10 @@ template <Scalar T> struct Nasa9Values {
     T s_over_r;
 
     static consteval bool padding_free()
-    { return layout::members_fill<Nasa9Values, decltype(cp_over_r), decltype(h_over_r), decltype(s_over_r)>(); }
+    {
+        return layout::
+          members_fill<Nasa9Values, decltype(cp_over_r), decltype(h_over_r), decltype(s_over_r)>();
+    }
 };
 
 // cp/R and h/R of a curve at one temperature, from one coefficient
@@ -132,7 +135,15 @@ class Nasa9Curve
 
   public:
     static consteval bool padding_free()
-    { return layout::members_fill<Nasa9Curve, decltype(segments), decltype(breaks), decltype(blends), decltype(b), decltype(low), decltype(high)>(); }
+    {
+        return layout::members_fill<Nasa9Curve,
+                                    decltype(segments),
+                                    decltype(breaks),
+                                    decltype(blends),
+                                    decltype(b),
+                                    decltype(low),
+                                    decltype(high)>();
+    }
 
   private:
     Nasa9Curve() = default;

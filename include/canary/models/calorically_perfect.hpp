@@ -33,7 +33,13 @@ template <std::floating_point P, UnitSystem U> struct CaloricallyPerfect {
     HeatCapacityRatio<P> gamma;
 
     static consteval bool padding_free()
-    { return layout::members_fill<CaloricallyPerfect, decltype(gas_constant), decltype(cv), decltype(cp), decltype(gamma)>(); }
+    {
+        return layout::members_fill<CaloricallyPerfect,
+                                    decltype(gas_constant),
+                                    decltype(cv),
+                                    decltype(cp),
+                                    decltype(gamma)>();
+    }
 };
 
 namespace detail
@@ -323,7 +329,14 @@ struct CaloricallyPerfectMixture {
     std::array<HeatCapacityRatio<P>, Capacity> gamma;
 
     static consteval bool padding_free()
-    { return layout::members_fill<CaloricallyPerfectMixture, decltype(n), decltype(gas_constant), decltype(cv), decltype(cp), decltype(gamma)>(); }
+    {
+        return layout::members_fill<CaloricallyPerfectMixture,
+                                    decltype(n),
+                                    decltype(gas_constant),
+                                    decltype(cv),
+                                    decltype(cp),
+                                    decltype(gamma)>();
+    }
 };
 
 // A sized range whose elements have type Q, for building models.

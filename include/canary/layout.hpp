@@ -30,8 +30,7 @@ namespace canary
 // bytes on common targets), or an enumeration.
 template <typename T>
 concept PaddingFreeScalar =
-  (std::is_arithmetic_v<T> && !std::same_as<std::remove_cv_t<T>, long double>) ||
-  std::is_enum_v<T>;
+  (std::is_arithmetic_v<T> && !std::same_as<std::remove_cv_t<T>, long double>) || std::is_enum_v<T>;
 
 // A class that lists its members for the check through padding_free().
 template <typename T>

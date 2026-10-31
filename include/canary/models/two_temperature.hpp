@@ -64,7 +64,12 @@ struct TwoTemperatureMixture {
     std::array<SpecificEnthalpy<P, U>, N> formation_enthalpy;
 
     static consteval bool padding_free()
-    { return layout::members_fill<TwoTemperatureMixture, decltype(thermally_perfect), decltype(translational_rotational_cp), decltype(formation_enthalpy)>(); }
+    {
+        return layout::members_fill<TwoTemperatureMixture,
+                                    decltype(thermally_perfect),
+                                    decltype(translational_rotational_cp),
+                                    decltype(formation_enthalpy)>();
+    }
 };
 
 // Two-temperature model of the given species, with d_i in
