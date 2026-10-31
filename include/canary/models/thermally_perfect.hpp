@@ -44,7 +44,6 @@ struct Nasa9Species {
 template <Scalar T, UnitSystem U, std::size_t N>
     requires(N > 0)
 struct NormalisedComposition {
-    int n;
     std::array<MassFraction<T>, N> fractions;
     SpecificGasConstant<T, U> gas_constant;
     Status status;
@@ -53,7 +52,7 @@ struct NormalisedComposition {
 
 // Ideal gas mixture of N species at one temperature, with the heat capacity
 // of each species a function of temperature given by a NASA 9-coefficient
-// curve of up to S segments. All N species are used; n equals N. The
+// curve of up to S segments. All N species are used. The
 // fields are in unit system U and are derived by
 // make_thermally_perfect_mixture:
 // - gas_constant: R_i = R_u / M_i;
@@ -73,7 +72,6 @@ struct ThermallyPerfectMixture {
     template <Scalar T> using State = ThermoState<T, U>;
     template <Scalar T> using Mixture = NormalisedComposition<T, U, N>;
 
-    int n;
     std::array<SpecificGasConstant<P, U>, N> gas_constant;
     std::array<Nasa9Curve<P, S>, N> curve;
     Temperature<P, U> reference_temperature;
@@ -83,7 +81,7 @@ struct ThermallyPerfectMixture {
     Temperature<P, U> temperature_max;
     Temperature<P, U> bracket_width;
     P relative_tolerance;
-    int max_iterations;
+    std::size_t max_iterations;
     Temperature<P, U> absolute_tolerance {P(0)};
 };
 
@@ -185,8 +183,7 @@ Built<ThermallyPerfectMixture<P, U, N, S>, SpeciesData<P, U, N>>
         return std::array<Nasa9Curve<P, S>, N> {make_curve(I)...};
     }(std::make_index_sequence<N> {});
     Built<ThermallyPerfectMixture<P, U, N, S>, SpeciesData<P, U, N>> built {
-      .model = {.n = static_cast<int>(N),
-                .gas_constant = {},
+      .model = {.gas_constant = {},
                 .curve = curves,
                 .reference_temperature = reference_temperature,
                 .reference_energy = {},
@@ -198,7 +195,7 @@ Built<ThermallyPerfectMixture<P, U, N, S>, SpeciesData<P, U, N>>
                 .max_iterations = 30},
       .species = {}};
     auto& model = built.model;
-    built.species.n = static_cast<int>(N);
+    built.species.n = N;
     bool has_electron = false;
     for (const SpeciesIndex i : species_indices(0, N)) {
         if (species[i.value()].name == nullptr || species[i.value()].name[0] == '\0') {
@@ -247,7 +244,6 @@ CANARY_HOST_DEVICE NormalisedComposition<T, U, N> normalise(
         sum = sum + w[i.value()];
     }
     NormalisedComposition<T, U, N> mix {};
-    mix.n = gas.n;
     mix.status = check.status;
     mix.reason = check.reason;
     for (const SpeciesIndex i : species_indices(0, N)) {
@@ -617,7 +613,6 @@ CANARY_HOST_DEVICE SingleTemperatureProperties<T, U>
 template <Scalar T, UnitSystem U, std::size_t N>
     requires(N > 0)
 struct SpeciesProperties {
-    int n;
     std::array<SpecificEnergy<T, U>, N> energy;
     std::array<SpecificHeat<T, U>, N> cv;
     std::array<SpecificEnthalpy<T, U>, N> enthalpy;
@@ -634,7 +629,6 @@ CANARY_HOST_DEVICE SpeciesProperties<T, U, N>
     const T t = temp.value();
     const T ln_t = math::log(t);
     SpeciesProperties<T, U, N> out {};
-    out.n = gas.n;
     for (const SpeciesIndex i : species_indices(0, N)) {
         const Nasa9CpH<T> c = nasa9_cp_h(gas.curve[i.value()], t, ln_t);
         const T s_over_r = nasa9_s(gas.curve[i.value()], t, ln_t);

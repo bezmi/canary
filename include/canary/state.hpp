@@ -346,7 +346,6 @@ enum class ClosureReason : unsigned char {
     NonfiniteTemperatureGuess,
     InvalidRelativeTolerance,
     InvalidAbsoluteTolerance,
-    NegativeIterationLimit,
     NonfiniteEndpointResidual,
     NoTemperatureBracket,
     NonfiniteInteriorResidual,

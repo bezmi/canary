@@ -360,6 +360,6 @@ void test_calorically_perfect_mixture()
         const std::vector<Mass> mv(m.begin(), m.end());
         const std::vector<Q> qv(q.begin(), q.end());
         const std::vector<Gamma> gv(g.begin(), g.end());
-        expect(canary::make_calorically_perfect_mixture(mv, qv, k_b, gv).model.n == 2_i);
+        expect(canary::make_calorically_perfect_mixture(mv, qv, k_b, gv).model.n == 2_ul);
     };
 }

@@ -221,7 +221,7 @@ void test_calorically_perfect()
                                            canary::boltzmann_constant(scales),
                                            canary::HeatCapacityRatio {5.0 / 3.0});
         expect(built.model.gas_constant.value() == 0.5_d);
-        expect(built.species.n == 1_i);
+        expect(built.species.n == 1_ul);
         expect(built.species.mass[0].value() == 2.0_d && built.species.charge[0].value() == 1.0_d);
         // p = rho T / m in scaled units.
         const auto c = thermo_state(built.model,

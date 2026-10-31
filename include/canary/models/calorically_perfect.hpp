@@ -312,7 +312,7 @@ struct CaloricallyPerfectMixture {
     template <Scalar T> using State = ThermoState<T, U>;
     template <Scalar T> using Mixture = canary::Mixture<T, U>;
 
-    int n;
+    std::size_t n;
     std::array<SpecificGasConstant<P, U>, Capacity> gas_constant;
     std::array<SpecificHeat<P, U>, Capacity> cv;
     std::array<SpecificHeat<P, U>, Capacity> cp;
@@ -356,8 +356,8 @@ Built<CaloricallyPerfectMixture<P, U, Capacity>, SpeciesData<P, U, Capacity>>
           std::format("species count must be between 1 and {}, got {}", Capacity, n));
     }
     Built<CaloricallyPerfectMixture<P, U, Capacity>, SpeciesData<P, U, Capacity>> built {};
-    built.model.n = static_cast<int>(n);
-    built.species.n = static_cast<int>(n);
+    built.model.n = n;
+    built.species.n = n;
     auto mass = std::ranges::begin(masses);
     auto charge = std::ranges::begin(charges);
     auto gamma = std::ranges::begin(gammas);
@@ -393,14 +393,13 @@ CANARY_HOST_DEVICE Mixture<T, U> mix(const CaloricallyPerfectMixture<P, U, Capac
                                      CompositionCheck check)
 {
     // NOLINTNEXTLINE(misc-static-assert): run-time species count and extent
-    CANARY_ASSERT(gas.n >= 1 &&
-                  static_cast<std::size_t>(gas.n) == static_cast<std::size_t>(weights.extent(0)));
+    CANARY_ASSERT(gas.n >= 1 && gas.n == static_cast<std::size_t>(weights.extent(0)));
     const T w0 = clamped_weight(weights, SpeciesIndex {0}, total);
     T sum = w0;
     auto gas_constant = gas.gas_constant[0] * w0;
     auto cv = gas.cv[0] * w0;
     auto cp = gas.cp[0] * w0;
-    for (const SpeciesIndex i : species_indices(1, static_cast<std::size_t>(gas.n))) {
+    for (const SpeciesIndex i : species_indices(1, gas.n)) {
         const T w = clamped_weight(weights, i, total);
         sum = sum + w;
         gas_constant = gas_constant + gas.gas_constant[i.value()] * w;

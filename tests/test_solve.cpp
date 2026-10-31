@@ -439,7 +439,7 @@ void test_solve()
         const auto check = []<std::floating_point V>() {
             using Dual = canary::test::Dual<V>;
             const auto f_value = [](V x) { return cubic(x, V(10)); };
-            for (const int iterations : {0, 1}) {
+            for (const std::size_t iterations : {std::size_t {0}, std::size_t {1}}) {
                 const SolveSettings<V> limits {
                   .relative_tolerance = static_cast<V>(settings.relative_tolerance),
                   .max_iterations = iterations,
@@ -550,8 +550,6 @@ void test_solve()
             check_invalid({.lower = V(2), .upper = V(0)}, V(1), limits, SolveReason::ReversedBounds);
             check_invalid(bracket, V(1), {.relative_tolerance = V(-1), .max_iterations = 50},
                           SolveReason::InvalidRelativeTolerance);
-            check_invalid(bracket, V(1), {.relative_tolerance = V(0.01), .max_iterations = -1},
-                          SolveReason::NegativeIterationLimit);
             check_invalid(
               bracket,
               V(1),
@@ -611,7 +609,8 @@ void test_solve()
                 return Residual<Dual> {.value = x * x - Dual(V(2), V(1)), .derivative = V(2) * x};
             };
             const Bracket<V> bracket {.lower = V(1), .upper = V(2)};
-            for (const int iterations : {0, 1, limits.max_iterations}) {
+            for (const std::size_t iterations :
+                 {std::size_t {0}, std::size_t {1}, limits.max_iterations}) {
                 const SolveSettings<V> options {.relative_tolerance = V(0),
                                                 .max_iterations = iterations};
                 const auto plain =
@@ -833,7 +832,7 @@ void test_solve()
                          {.relative_tolerance = V(0), .max_iterations = 50},
                          Status::NotConverged, SolveReason::PrecisionLimit);
             const SolveSettings<V> invalid {.relative_tolerance = V(-1),
-                                            .max_iterations = -1,
+                                            .max_iterations = 0,
                                             .absolute_tolerance = V(-1)};
             check_reason(f, {.lower = nan, .upper = V(0)}, nan, invalid,
                          Status::Invalid, SolveReason::NonfiniteBounds);
@@ -843,7 +842,7 @@ void test_solve()
             check_reason(f, bounds, V(1), invalid, Status::Invalid,
                          SolveReason::InvalidRelativeTolerance);
             check_reason(f, bounds, V(1),
-                         {.relative_tolerance = V(0), .max_iterations = -1,
+                         {.relative_tolerance = V(0), .max_iterations = 0,
                           .absolute_tolerance = V(-1)},
                          Status::Invalid, SolveReason::InvalidAbsoluteTolerance);
         };

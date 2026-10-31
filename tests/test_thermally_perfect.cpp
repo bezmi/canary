@@ -334,8 +334,7 @@ void test_thermally_perfect()
 
     "the builder derives gas constants, species data and settings"_test = [&] {
         const double r_u = canary::constants::universal_gas_constant<double>;
-        expect(gas.n == 5_i);
-        expect(built.species.n == 5_i);
+        expect(built.species.n == 5_ul);
         for (std::size_t i = 0; i < 5; ++i) {
             const auto& sp = canary::air5_species[i];
             expect(relative(gas.gas_constant[i].value(), r_u / sp.molar_mass, 2.0 * eps));
@@ -779,7 +778,6 @@ void test_thermally_perfect()
     "species properties are consistent with each other and the closure"_test = [&] {
         for (const double t : {250.0, 1000.0, 5000.0, 30000.0}) {
             const auto sp = canary::species_properties(gas, Temp {t});
-            expect(sp.n == 5_i);
             double e_mix = 0;
             double cv_mix = 0;
             double e_scale = 0;

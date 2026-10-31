@@ -325,7 +325,7 @@ template <std::floating_point P, UnitSystem U, std::size_t N>
 void check_transport_species(const std::array<std::string_view, N>& names,
                              const SpeciesData<P, U, N>& species)
 {
-    if (species.n != static_cast<int>(N)) {
+    if (species.n != N) {
         throw ParameterError(
           std::format("species data must have {} species, got {}", N, species.n));
     }

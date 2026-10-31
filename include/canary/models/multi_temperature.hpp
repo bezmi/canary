@@ -66,7 +66,7 @@ struct EnergyModeInput {
 template <std::floating_point P, UnitSystem U, std::size_t L>
     requires(L > 0)
 struct ElectronicLevels {
-    int levels;
+    std::size_t levels;
     std::array<P, L> degeneracies;
     std::array<Temperature<P, U>, L> temperatures;
 };
@@ -260,9 +260,9 @@ CANARY_HOST_DEVICE EnergyAndCv<W> electronic_energy(const ElectronicLevels<P, U,
                                                     W t)
 {
     using V = ScalarTraits<W>::value_type;
-    if (levels.levels <= 0) { return {.e = W(V(0)), .cv = W(V(0))}; }
+    if (levels.levels == 0) { return {.e = W(V(0)), .cv = W(V(0))}; }
     // At most the L stored levels are read.
-    const auto n = std::min(static_cast<std::size_t>(levels.levels), L);
+    const auto n = std::min(levels.levels, L);
     const W inv_t = W(V(1)) / t;
     std::array<W, L> weight {};
     weight[0] = W(static_cast<V>(levels.degeneracies[0]));
@@ -897,8 +897,8 @@ ElectronicLevels<P, U, L> make_electronic_levels(const ElectronicLevelsInput<L>&
     }
     const auto tau = scale_factor<kind::temperature>(scales);
     ElectronicLevels<P, U, L> out {};
-    out.levels = input.levels;
     const auto n = static_cast<std::size_t>(input.levels);
+    out.levels = n;
     for (std::size_t k = 0; k < n; ++k) {
         const double theta = input.temperatures[k];
         const int g = input.degeneracies[k];

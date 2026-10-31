@@ -119,7 +119,7 @@ template <std::floating_point P, std::size_t S>
     requires(S > 0)
 class Nasa9Curve
 {
-    int segments {};
+    std::size_t segments {};
     std::array<P, S + 1> breaks {};
     std::array<P, S> blends {};
     std::array<std::array<P, 9>, S> b {};
@@ -132,7 +132,7 @@ class Nasa9Curve
     // Number of fitted segments. make_nasa9_curve guarantees 1 <= segments <= S;
     // the bound by S also lets compilers see that indices stay inside the arrays.
     [[nodiscard]] CANARY_HOST_DEVICE constexpr std::size_t segment_count() const noexcept
-    { return std::min(static_cast<std::size_t>(segments), S); }
+    { return std::min(segments, S); }
 
     // Selection uses the scalar value; all transition arithmetic retains T.
     struct Region {
@@ -382,7 +382,7 @@ Nasa9Curve<P, S> make_nasa9_curve(const Nasa9Data<S>& data, P temperature_scale)
     const long double ln_tau = std::log(tau);
     const auto n = static_cast<std::size_t>(data.segments);
     Nasa9Curve<P, S> curve {};
-    curve.segments = data.segments;
+    curve.segments = n;
     for (std::size_t i = 0; i <= n; ++i) {
         curve.breaks[i] = detail::nasa9_parameter<P>(data.breaks[i] / tau, "boundary");
     }

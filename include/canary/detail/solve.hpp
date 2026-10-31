@@ -35,7 +35,7 @@ template <std::floating_point V> struct Bracket {
 
 template <std::floating_point V> struct SolveSettings {
     V relative_tolerance;  // finite and nonnegative
-    int max_iterations;
+    std::size_t max_iterations;
     V absolute_tolerance = V(0);  // finite and nonnegative, in the units of x
 };
 
@@ -49,7 +49,6 @@ enum class SolveReason : unsigned char {
     NonfiniteGuess,
     InvalidRelativeTolerance,
     InvalidAbsoluteTolerance,
-    NegativeIterationLimit,
     NonfiniteEndpointResidual,
     NoBracket,
     NonfiniteInteriorResidual,
@@ -67,9 +66,9 @@ template <Scalar T> struct SolveResult {
 };
 
 // Root of f in the bracket, starting from guess (clamped into the bracket).
-// Bounds and guess must be finite, lower <= upper, both tolerances finite
-// and nonnegative, and max_iterations nonnegative. Invalid inputs return the
-// guess as a constant with Invalid before either residual function is called.
+// Bounds and guess must be finite, lower <= upper, and both tolerances finite
+// and nonnegative. Invalid inputs return the guess as a constant with Invalid
+// before either residual function is called.
 // Exact endpoint roots are accepted before iteration. If both endpoints are
 // roots, select the one nearest the clamped guess, with the lower endpoint
 // selected on a tie. Equal finite bounds are accepted only when the endpoint
@@ -128,11 +127,6 @@ CANARY_HOST_DEVICE SolveResult<T> solve(const FValue& f_value,
                 .status = Status::Invalid,
                 .reason = SolveReason::InvalidAbsoluteTolerance};
     }
-    if (settings.max_iterations < 0) {
-        return {.root = T(guess),
-                .status = Status::Invalid,
-                .reason = SolveReason::NegativeIterationLimit};
-    }
     const Residual<V> r_lower = f_value(lower);
     const Residual<V> r_upper = f_value(upper);
     const V f_lower = r_lower.value;
@@ -164,7 +158,7 @@ CANARY_HOST_DEVICE SolveResult<T> solve(const FValue& f_value,
         V previous_half_width = high / V(2) - low / V(2);
         bool previous_newton = false;
 
-        for (int i = 0; i < settings.max_iterations; ++i) {
+        for (std::size_t i = 0; i < settings.max_iterations; ++i) {
             const Residual<V> r = f_value(x);
             if (!std::isfinite(r.value)) {
                 return {.root = T(x),

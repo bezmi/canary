@@ -179,7 +179,7 @@ template <std::floating_point P, UnitSystem U, std::size_t Capacity>
 struct SpeciesData {
     static_assert(Capacity <= std::numeric_limits<std::uint32_t>::max(),
                   "species capacity exceeds the index range");
-    int n;
+    std::size_t n;
     std::array<ParticleMass<P, U>, Capacity> mass;
     std::array<Charge<P, U>, Capacity> charge;
 };
@@ -407,9 +407,8 @@ CANARY_HOST_DEVICE constexpr auto
   weight_sums(const SpeciesData<P, U, Capacity>& species, const V& weights, T total)
 {
     // NOLINTNEXTLINE(misc-static-assert): run-time species count and extent
-    CANARY_ASSERT(species.n >= 1 && static_cast<std::size_t>(species.n) <= Capacity &&
-                  static_cast<std::size_t>(species.n) ==
-                    static_cast<std::size_t>(weights.extent(0)));
+    CANARY_ASSERT(species.n >= 1 && species.n <= Capacity &&
+                  species.n == static_cast<std::size_t>(weights.extent(0)));
     // Number weight w / m and charge weight (w / m) q of one species.
     using Number = decltype(std::declval<T>() / std::declval<P>());
     using ChargeWeight = decltype(std::declval<Number>() * std::declval<P>());
@@ -420,7 +419,7 @@ CANARY_HOST_DEVICE constexpr auto
       .number = n0,
       .charge = n0 * species.charge[0].value(),
     };
-    for (const SpeciesIndex i : species_indices(1, static_cast<std::size_t>(species.n))) {
+    for (const SpeciesIndex i : species_indices(1, species.n)) {
         const T w = clamped_weight(weights, i, total);
         const Number n = w / species.mass[i.value()].value();
         sums.weight = sums.weight + w;

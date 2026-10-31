@@ -1180,7 +1180,7 @@ void test_multi_temperature()
 
     "multi-temperature: the builder holds the single-temperature model, levels and modes"_test =
       [&] {
-          expect(built11.species.n == 11_i);
+          expect(built11.species.n == 11_ul);
           expect(!air4.electron());
           expect(!air4.electron_mode());
           expect(air11.electron() == canary::OptionalSpeciesIndex {canary::SpeciesIndex {10}});
@@ -1194,8 +1194,8 @@ void test_multi_temperature()
                               (2.5 + (0.5 * d)) * r_i,
                               2.0 * eps));
               const auto& input = canary::air11_electronic_levels[i];
-              expect(air11.electronic_levels[i].levels == input.levels);
               const auto n = static_cast<std::size_t>(input.levels);
+              expect(air11.electronic_levels[i].levels == n);
               for (std::size_t k = 0; k < n; ++k) {
                   expect(air11.electronic_levels[i].temperatures[k].value() ==
                          input.temperatures[k]);

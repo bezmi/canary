@@ -70,7 +70,6 @@ CANARY_HOST_DEVICE constexpr ClosureCheck solve_check(const SolveResult<T>& resu
     case SolveReason::InvalidAbsoluteTolerance:
         reason = ClosureReason::InvalidAbsoluteTolerance;
         break;
-    case SolveReason::NegativeIterationLimit: reason = ClosureReason::NegativeIterationLimit; break;
     case SolveReason::NonfiniteEndpointResidual:
         reason = ClosureReason::NonfiniteEndpointResidual;
         break;

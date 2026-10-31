@@ -375,7 +375,7 @@ void test_two_temperature()
 
     "two-temperature: the builder holds the single-temperature model and the species data"_test =
       [&] {
-          expect(built.species.n == 5_i);
+          expect(built.species.n == 5_ul);
           for (std::size_t i = 0; i < 5; ++i) {
               const double r_i = single.gas_constant[i].value();
               expect(gas.thermally_perfect.gas_constant[i] == single.gas_constant[i]);
@@ -385,7 +385,7 @@ void test_two_temperature()
                               2.0 * eps));
           }
           expect(gas.thermally_perfect.temperature_min.value() == 10.0);
-          expect(gas.thermally_perfect.max_iterations == 30_i);
+          expect(gas.thermally_perfect.max_iterations == 30_ul);
       };
 
     "two-temperature: the builder rejects null or empty species names"_test = [] {
