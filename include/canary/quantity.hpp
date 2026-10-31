@@ -73,6 +73,8 @@ struct particle_mass          { static constexpr Dimension dimension {.mass = 1,
 struct molar_mass             { static constexpr Dimension dimension {.mass = 1, .amount = -1}; };
 // Charge of one particle.
 struct charge                 { static constexpr Dimension dimension {.charge = 1, .count = -1}; };
+// Charge per unit mass.
+struct specific_charge        { static constexpr Dimension dimension {.mass = -1, .charge = 1}; };
 struct heat_capacity_ratio    { static constexpr Dimension dimension {}; };
 // rho*a*a/p for the model's acoustic constraint.
 struct acoustic_exponent      { static constexpr Dimension dimension {}; };
@@ -172,6 +174,7 @@ template <Scalar T>               using MassFraction         = Quantity<kind::ma
 template <Scalar T, UnitSystem U> using ParticleMass         = Quantity<kind::particle_mass, T, U>;
 template <Scalar T>               using MolarMass            = Quantity<kind::molar_mass, T, si>;
 template <Scalar T, UnitSystem U> using Charge               = Quantity<kind::charge, T, U>;
+template <Scalar T, UnitSystem U> using SpecificCharge       = Quantity<kind::specific_charge, T, U>;
 template <Scalar T>               using HeatCapacityRatio    = Quantity<kind::heat_capacity_ratio, T, unitless>;
 template <Scalar T>               using AcousticExponent     = Quantity<kind::acoustic_exponent, T, unitless>;
 template <Scalar T>               using PrandtlNumber        = Quantity<kind::prandtl_number, T, unitless>;

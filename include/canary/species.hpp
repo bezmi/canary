@@ -547,6 +547,34 @@ CANARY_HOST_DEVICE constexpr auto mean_charge(const SpeciesData<P, U, Capacity>&
     return Charge<std::remove_const_t<decltype(q)>, U> {q};
 }
 
+// Charge-to-mass ratio of a mixture, sum((w / m_i) q_i) / sum(w), with the
+// same clamped weights: the mean charge divided by the mean particle mass.
+// Check check_composition(fractions).status before calling and reject
+// Status::Invalid; the arithmetic does not report a status.
+template <std::floating_point P, UnitSystem U, std::size_t Capacity, typename V>
+    requires SpeciesWeights<V, kind::mass_fraction, unitless, P>
+CANARY_HOST_DEVICE constexpr auto charge_to_mass(const SpeciesData<P, U, Capacity>& species,
+                                                 const V& fractions)
+{
+    using T = range_quantity_t<V>::value_type;
+    const auto sums =
+      detail::weight_sums(species, fractions, T(typename ScalarTraits<T>::value_type(1)));
+    const auto r = sums.charge / sums.weight;
+    return SpecificCharge<std::remove_const_t<decltype(r)>, U> {r};
+}
+
+template <std::floating_point P, UnitSystem U, std::size_t Capacity, typename V, Scalar T>
+    requires SpeciesWeights<V, kind::density, U, P> &&
+             std::same_as<typename range_quantity_t<V>::value_type, T>
+CANARY_HOST_DEVICE constexpr auto charge_to_mass(const SpeciesData<P, U, Capacity>& species,
+                                                 const V& partial_densities,
+                                                 Density<T, U> rho)
+{
+    const auto sums = detail::weight_sums(species, partial_densities, rho.value());
+    const auto r = sums.charge / sums.weight;
+    return SpecificCharge<std::remove_const_t<decltype(r)>, U> {r};
+}
+
 // Validity of a composition, from the value parts:
 // - Invalid: the species count exceeds UINT32_MAX, a weight or the total
 //   is not finite, the total is not positive, or every clamped weight is zero.
