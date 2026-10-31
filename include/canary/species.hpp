@@ -553,7 +553,7 @@ CANARY_HOST_DEVICE constexpr auto mean_charge(const SpeciesData<P, U, Capacity>&
 // Status::Invalid; the arithmetic does not report a status.
 template <std::floating_point P, UnitSystem U, std::size_t Capacity, typename V>
     requires SpeciesWeights<V, kind::mass_fraction, unitless, P>
-CANARY_HOST_DEVICE constexpr auto charge_to_mass(const SpeciesData<P, U, Capacity>& species,
+CANARY_HOST_DEVICE constexpr auto mean_specific_charge(const SpeciesData<P, U, Capacity>& species,
                                                  const V& fractions)
 {
     using T = range_quantity_t<V>::value_type;
@@ -566,7 +566,7 @@ CANARY_HOST_DEVICE constexpr auto charge_to_mass(const SpeciesData<P, U, Capacit
 template <std::floating_point P, UnitSystem U, std::size_t Capacity, typename V, Scalar T>
     requires SpeciesWeights<V, kind::density, U, P> &&
              std::same_as<typename range_quantity_t<V>::value_type, T>
-CANARY_HOST_DEVICE constexpr auto charge_to_mass(const SpeciesData<P, U, Capacity>& species,
+CANARY_HOST_DEVICE constexpr auto mean_specific_charge(const SpeciesData<P, U, Capacity>& species,
                                                  const V& partial_densities,
                                                  Density<T, U> rho)
 {

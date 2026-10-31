@@ -146,7 +146,7 @@ static_assert([] {
 void test_species()
 {
     using namespace boost::ut;
-    using canary::charge_to_mass;
+    using canary::mean_specific_charge;
     using canary::check_composition;
     using canary::mean_charge;
     using canary::mean_particle_mass;
@@ -336,7 +336,7 @@ void test_species()
 
     "charge-to-mass ratio is the number-weighted charge over the clamped weight"_test = [] {
         const std::array y {0.25, 0.75};
-        const auto r = charge_to_mass(two_species, fractions(view_of(y)));
+        const auto r = mean_specific_charge(two_species, fractions(view_of(y)));
         static_assert(std::same_as<decltype(r), const canary::SpecificCharge<double, scaled>>);
         expect(r.value() == (((0.25 / 1.0) * 1.0) + ((0.75 / 16.0) * -1.0)) / (0.25 + 0.75));
     };
@@ -355,13 +355,13 @@ void test_species()
           {{0.2, 0.3, 0.5}, {0.9, 0.05, 0.05}, {1.0e-6, 0.5, 0.5 - 1.0e-6}},
         };
         for (const auto& y : compositions) {
-            const double r = charge_to_mass(s, fractions(view_of(y))).value();
+            const double r = mean_specific_charge(s, fractions(view_of(y))).value();
             const double expected = mean_charge(s, fractions(view_of(y))).value() /
                                     mean_particle_mass(s, fractions(view_of(y))).value();
             expect(within_ulp(r, expected, 8.0)) << r << expected;
         }
         for (std::size_t i = 0; i < 3; ++i) { s.charge[i] = canary::Charge<double, scaled> {0.0}; }
-        expect(charge_to_mass(s, fractions(view_of(compositions[0]))).value() == 0.0_d);
+        expect(mean_specific_charge(s, fractions(view_of(compositions[0]))).value() == 0.0_d);
     };
 
     "partial densities give the same results as the equivalent fractions"_test = [] {
@@ -372,22 +372,22 @@ void test_species()
                mean_particle_mass(two_species, fractions(view_of(y))).value());
         expect(mean_charge(two_species, densities(view_of(rho_i)), rho).value() ==
                mean_charge(two_species, fractions(view_of(y))).value());
-        expect(charge_to_mass(two_species, densities(view_of(rho_i)), rho).value() ==
-               charge_to_mass(two_species, fractions(view_of(y))).value());
+        expect(mean_specific_charge(two_species, densities(view_of(rho_i)), rho).value() ==
+               mean_specific_charge(two_species, fractions(view_of(y))).value());
     };
 
     "weights outside [0, total] are clamped and normalised by their sum"_test = [] {
         const std::array y {1.2, -0.2};
         expect(mean_particle_mass(two_species, fractions(view_of(y))).value() == 1.0_d);
         expect(mean_charge(two_species, fractions(view_of(y))).value() == 1.0_d);
-        expect(charge_to_mass(two_species, fractions(view_of(y))).value() == 1.0_d);
+        expect(mean_specific_charge(two_species, fractions(view_of(y))).value() == 1.0_d);
         const std::array short_sum {0.2, 0.3};  // sums to 0.5
         const std::array full_sum {0.4, 0.6};
         expect(within_ulp(mean_particle_mass(two_species, fractions(view_of(short_sum))).value(),
                           mean_particle_mass(two_species, fractions(view_of(full_sum))).value(),
                           2.0));
-        expect(within_ulp(charge_to_mass(two_species, fractions(view_of(short_sum))).value(),
-                          charge_to_mass(two_species, fractions(view_of(full_sum))).value(),
+        expect(within_ulp(mean_specific_charge(two_species, fractions(view_of(short_sum))).value(),
+                          mean_specific_charge(two_species, fractions(view_of(full_sum))).value(),
                           2.0));
     };
 
@@ -413,7 +413,7 @@ void test_species()
             }
             const double m = mean_particle_mass(s, fractions(view_of(yp))).value();
             const double q = mean_charge(s, fractions(view_of(yp))).value();
-            const double r = charge_to_mass(s, fractions(view_of(yp))).value();
+            const double r = mean_specific_charge(s, fractions(view_of(yp))).value();
             if (order[0] == 0 && order[1] == 1) {
                 m0 = m;
                 q0 = q;
@@ -435,7 +435,7 @@ void test_species()
         const std::array y {0.1, 0.3, 0.05, 0.25, 0.3};
         expect(within_ulp(mean_particle_mass(s, fractions(view_of(y))).value(), 2.5, 4.0));
         expect(within_ulp(mean_charge(s, fractions(view_of(y))).value(), -1.0, 4.0));
-        expect(within_ulp(charge_to_mass(s, fractions(view_of(y))).value(), -1.0 / 2.5, 4.0));
+        expect(within_ulp(mean_specific_charge(s, fractions(view_of(y))).value(), -1.0 / 2.5, 4.0));
     };
 
     "a strided view gives results identical to a contiguous view"_test = [] {
@@ -452,8 +452,8 @@ void test_species()
                mean_particle_mass(two_species, fractions(view_of(y))).value());
         expect(mean_charge(two_species, ys).value() ==
                mean_charge(two_species, fractions(view_of(y))).value());
-        expect(charge_to_mass(two_species, ys).value() ==
-               charge_to_mass(two_species, fractions(view_of(y))).value());
+        expect(mean_specific_charge(two_species, ys).value() ==
+               mean_specific_charge(two_species, fractions(view_of(y))).value());
         expect(check_composition(ys).status == Status::Valid);
     };
 
