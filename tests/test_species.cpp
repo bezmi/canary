@@ -146,10 +146,10 @@ static_assert([] {
 void test_species()
 {
     using namespace boost::ut;
-    using canary::mean_specific_charge;
     using canary::check_composition;
     using canary::mean_charge;
     using canary::mean_particle_mass;
+    using canary::mean_specific_charge;
 
     "composition rejects an unrepresentable species count before reading weights"_test = [] {
         if constexpr (std::numeric_limits<std::size_t>::max() >
@@ -334,14 +334,14 @@ void test_species()
         expect(q.value() == (((0.25 / 1.0) * 1.0) + ((0.75 / 16.0) * -1.0)) / number);
     };
 
-    "charge-to-mass ratio is the number-weighted charge over the clamped weight"_test = [] {
+    "mean specific charge is the number-weighted charge over the clamped weight"_test = [] {
         const std::array y {0.25, 0.75};
         const auto r = mean_specific_charge(two_species, fractions(view_of(y)));
         static_assert(std::same_as<decltype(r), const canary::SpecificCharge<double, scaled>>);
         expect(r.value() == (((0.25 / 1.0) * 1.0) + ((0.75 / 16.0) * -1.0)) / (0.25 + 0.75));
     };
 
-    "charge-to-mass ratio equals the mean charge over the mean particle mass"_test = [] {
+    "mean specific charge equals the mean charge over the mean particle mass"_test = [] {
         using Species3 = canary::SpeciesData<double, scaled, 3>;
         Species3 s {};
         s.n = 3;
