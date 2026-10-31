@@ -4,6 +4,7 @@
 #include <array>
 #include <canary/config.hpp>
 #include <canary/indexed_view.hpp>
+#include <canary/layout.hpp>
 #include <canary/quantity.hpp>
 #include <canary/scalar.hpp>
 #include <canary/status.hpp>
@@ -51,6 +52,9 @@ class OptionalModeIndex
     }
     friend CANARY_HOST_DEVICE constexpr bool operator==(OptionalModeIndex,
                                                         OptionalModeIndex) noexcept = default;
+
+    static consteval bool padding_free()
+    { return layout::members_fill<OptionalModeIndex, decltype(value_)>(); }
 
   private:
     std::size_t value_ {std::numeric_limits<std::size_t>::max()};

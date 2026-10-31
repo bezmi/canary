@@ -7,6 +7,7 @@
 #include <canary/config.hpp>
 #include <canary/detail/closure.hpp>
 #include <canary/detail/solve.hpp>
+#include <canary/layout.hpp>
 #include <canary/nasa9.hpp>
 #include <canary/quantity.hpp>
 #include <canary/scalar.hpp>
@@ -83,6 +84,9 @@ struct ThermallyPerfectMixture {
     P relative_tolerance;
     std::size_t max_iterations;
     Temperature<P, U> absolute_tolerance {P(0)};
+
+    static consteval bool padding_free()
+    { return layout::members_fill<ThermallyPerfectMixture, decltype(gas_constant), decltype(curve), decltype(reference_temperature), decltype(reference_energy), decltype(reference_cv), decltype(temperature_min), decltype(temperature_max), decltype(bracket_width), decltype(relative_tolerance), decltype(max_iterations), decltype(absolute_tolerance)>(); }
 };
 
 namespace detail

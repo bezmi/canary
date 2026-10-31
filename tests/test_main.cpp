@@ -31,4 +31,5 @@ int main()
     test_energy_exchange();
     test_multi_temperature_kinetics();
     test_mixture_transport();
+    test_layout();
 }

@@ -27,5 +27,6 @@ void test_reactions();
 void test_energy_exchange();
 void test_multi_temperature_kinetics();
 void test_mixture_transport();
+void test_layout();
 
 #endif  // CANARY_TESTS_TEST_SUITES_HPP

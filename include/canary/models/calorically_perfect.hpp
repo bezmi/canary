@@ -5,6 +5,7 @@
 #include <canary/build.hpp>
 #include <canary/config.hpp>
 #include <canary/detail/closure.hpp>
+#include <canary/layout.hpp>
 #include <canary/quantity.hpp>
 #include <canary/scalar.hpp>
 #include <canary/species.hpp>
@@ -30,6 +31,9 @@ template <std::floating_point P, UnitSystem U> struct CaloricallyPerfect {
     SpecificHeat<P, U> cv;
     SpecificHeat<P, U> cp;
     HeatCapacityRatio<P> gamma;
+
+    static consteval bool padding_free()
+    { return layout::members_fill<CaloricallyPerfect, decltype(gas_constant), decltype(cv), decltype(cp), decltype(gamma)>(); }
 };
 
 namespace detail
@@ -317,6 +321,9 @@ struct CaloricallyPerfectMixture {
     std::array<SpecificHeat<P, U>, Capacity> cv;
     std::array<SpecificHeat<P, U>, Capacity> cp;
     std::array<HeatCapacityRatio<P>, Capacity> gamma;
+
+    static consteval bool padding_free()
+    { return layout::members_fill<CaloricallyPerfectMixture, decltype(n), decltype(gas_constant), decltype(cv), decltype(cp), decltype(gamma)>(); }
 };
 
 // A sized range whose elements have type Q, for building models.

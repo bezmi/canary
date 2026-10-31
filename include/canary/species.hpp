@@ -6,6 +6,7 @@
 #include <canary/build.hpp>
 #include <canary/config.hpp>
 #include <canary/indexed_view.hpp>
+#include <canary/layout.hpp>
 #include <canary/quantity.hpp>
 #include <canary/scalar.hpp>
 #include <canary/status.hpp>
@@ -70,6 +71,9 @@ class OptionalSpeciesIndex
     }
     friend CANARY_HOST_DEVICE constexpr bool operator==(OptionalSpeciesIndex,
                                                         OptionalSpeciesIndex) noexcept = default;
+
+    static consteval bool padding_free()
+    { return layout::members_fill<OptionalSpeciesIndex, decltype(value_)>(); }
 
   private:
     std::uint32_t value_ {std::numeric_limits<std::uint32_t>::max()};

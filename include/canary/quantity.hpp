@@ -2,6 +2,7 @@
 #define CANARY_QUANTITY_HPP
 
 #include <canary/config.hpp>
+#include <canary/layout.hpp>
 #include <canary/scalar.hpp>
 #include <concepts>
 #include <type_traits>
@@ -132,6 +133,9 @@ class Quantity
     }
 
     [[nodiscard]] CANARY_HOST_DEVICE constexpr T value() const { return value_; }
+
+    static consteval bool padding_free()
+    { return layout::members_fill<Quantity, decltype(value_)>(); }
 
   private:
     T value_ {};

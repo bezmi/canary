@@ -12,6 +12,7 @@
 #include <canary/config.hpp>
 #include <canary/detail/nasa9_integrals.hpp>
 #include <canary/detail/nasa9_validation.hpp>
+#include <canary/layout.hpp>
 #include <canary/scalar.hpp>
 #include <cmath>
 #include <concepts>
@@ -48,6 +49,9 @@ template <Scalar T> struct Nasa9Values {
     T cp_over_r;
     T h_over_r;
     T s_over_r;
+
+    static consteval bool padding_free()
+    { return layout::members_fill<Nasa9Values, decltype(cp_over_r), decltype(h_over_r), decltype(s_over_r)>(); }
 };
 
 // cp/R and h/R of a curve at one temperature, from one coefficient
@@ -126,6 +130,11 @@ class Nasa9Curve
     Nasa9Values<P> low {};
     Nasa9Values<P> high {};
 
+  public:
+    static consteval bool padding_free()
+    { return layout::members_fill<Nasa9Curve, decltype(segments), decltype(breaks), decltype(blends), decltype(b), decltype(low), decltype(high)>(); }
+
+  private:
     Nasa9Curve() = default;
     void check() const;
 

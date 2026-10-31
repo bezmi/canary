@@ -5,6 +5,7 @@
 #include <concepts>
 #include <cstddef>
 #include <canary/config.hpp>
+#include <canary/layout.hpp>
 #include <canary/quantity.hpp>
 #include <canary/scalar.hpp>
 #include <canary/species.hpp>
@@ -33,6 +34,12 @@ concept GasModelType = std::is_trivially_copyable_v<G> && requires {
     requires std::floating_point<typename G::parameter_type>;
     requires UnitSystem<typename G::units>;
 };
+
+// A gas model whose bytes are all member bytes (PaddingFree): two models
+// with equal parameters are equal byte for byte, so a byte copy of the
+// model identifies it.
+template <typename G>
+concept PaddingFreeGasModel = GasModelType<G> && PaddingFree<G>;
 
 template <GasModelType G, Scalar T> using state_t = G::template State<T>;
 

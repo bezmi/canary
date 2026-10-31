@@ -20,7 +20,7 @@ endfunction()
 add_executable(canary_tests test_main.cpp test_config_default.cpp test_config_consumer.cpp test_scalar.cpp test_quantity.cpp test_units.cpp test_status.cpp test_indexed_view.cpp test_species.cpp test_state.cpp test_thermo.cpp test_calorically_perfect.cpp test_calorically_perfect_mixture.cpp
                             test_cerberus_parity.cpp test_transport.cpp test_solve.cpp test_nasa9.cpp test_thermally_perfect.cpp
                             test_two_temperature.cpp test_multi_temperature.cpp test_reactions.cpp test_energy_exchange.cpp
-                            test_multi_temperature_kinetics.cpp test_mixture_transport.cpp)
+                            test_multi_temperature_kinetics.cpp test_mixture_transport.cpp test_layout.cpp)
 target_link_libraries(canary_tests PRIVATE canary::canary Boost::ut)
 canary_test_options(canary_tests)
 add_test(NAME canary.unit COMMAND canary_tests)
@@ -86,6 +86,7 @@ canary_compile_fail_test(calorically_perfect_si_in_scaled "ClosesInAnyOrder<.*Ca
 canary_compile_fail_test(thermally_perfect_si_in_scaled "ClosesInAnyOrder<.*ThermallyPerfectMixture<double, canary::scaled")
 canary_compile_fail_test(two_temperature_si_modes_in_scaled "ClosesInAnyOrder<.*TwoTemperatureMixture<double, canary::scaled")
 canary_compile_fail_test(multi_temperature_si_modes_in_scaled "ClosesInAnyOrder<.*MultiTemperatureMixture<double, canary::scaled")
+canary_compile_fail_test(padding_free_gas_model_with_padding "PaddingFreeGasModel<.*ThermallyPerfectMixture<float")
 canary_compile_fail_test(calorically_perfect_swapped_kinds "no matching function for call to [^ ]*make_calorically_perfect")
 canary_compile_fail_test(transport_other_units "no matching function for call to [^ ]*viscosity")
 canary_compile_fail_test(quantity_molar_scaled "KindUnits<(K, U|canary::kind::molar_mass, canary::scaled)>")

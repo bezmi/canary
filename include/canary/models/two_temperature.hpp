@@ -5,6 +5,7 @@
 #include <canary/build.hpp>
 #include <canary/config.hpp>
 #include <canary/detail/solve.hpp>
+#include <canary/layout.hpp>
 #include <canary/models/thermally_perfect.hpp>
 #include <canary/nasa9.hpp>
 #include <canary/quantity.hpp>
@@ -61,6 +62,9 @@ struct TwoTemperatureMixture {
     ThermallyPerfectMixture<P, U, N, S> thermally_perfect;
     std::array<SpecificHeat<P, U>, N> translational_rotational_cp;
     std::array<SpecificEnthalpy<P, U>, N> formation_enthalpy;
+
+    static consteval bool padding_free()
+    { return layout::members_fill<TwoTemperatureMixture, decltype(thermally_perfect), decltype(translational_rotational_cp), decltype(formation_enthalpy)>(); }
 };
 
 // Two-temperature model of the given species, with d_i in

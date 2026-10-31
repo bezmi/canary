@@ -6,6 +6,7 @@
 #include <canary/build.hpp>
 #include <canary/config.hpp>
 #include <canary/detail/solve.hpp>
+#include <canary/layout.hpp>
 #include <canary/models/thermally_perfect.hpp>
 #include <canary/nasa9.hpp>
 #include <canary/quantity.hpp>
@@ -69,6 +70,9 @@ struct ElectronicLevels {
     std::size_t levels;
     std::array<P, L> degeneracies;
     std::array<Temperature<P, U>, L> temperatures;
+
+    static consteval bool padding_free()
+    { return layout::members_fill<ElectronicLevels, decltype(levels), decltype(degeneracies), decltype(temperatures)>(); }
 };
 
 // The components of one species that one energy mode holds.
@@ -76,6 +80,9 @@ struct ModeComponentSet {
     bool vibration;
     bool electronic;
     bool electron;
+
+    static consteval bool padding_free()
+    { return layout::members_fill<ModeComponentSet, decltype(vibration), decltype(electronic), decltype(electron)>(); }
 };
 
 namespace detail
@@ -103,6 +110,9 @@ template <std::size_t N, std::size_t M> class ModeTopology
     { return electron_; }
     CANARY_HOST_DEVICE constexpr OptionalModeIndex electron_mode() const noexcept
     { return electron_mode_; }
+
+    static consteval bool padding_free()
+    { return layout::members_fill<ModeTopology, decltype(rows_), decltype(unions_), decltype(electron_), decltype(electron_mode_)>(); }
 
   private:
     std::array<std::array<ModeComponentSet, N>, M> rows_;
@@ -211,6 +221,9 @@ struct MultiTemperatureMixture {
     { return topology_.electron(); }
     CANARY_HOST_DEVICE constexpr OptionalModeIndex electron_mode() const noexcept
     { return topology_.electron_mode(); }
+
+    static consteval bool padding_free()
+    { return layout::members_fill<MultiTemperatureMixture, decltype(thermally_perfect), decltype(translational_rotational_cp), decltype(formation_enthalpy), decltype(electronic_levels), decltype(reference_electronic_energy), decltype(topology_)>(); }
 
   private:
     detail::ModeTopology<N, M> topology_;
