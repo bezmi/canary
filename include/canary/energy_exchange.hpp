@@ -729,7 +729,9 @@ CANARY_HOST_DEVICE ValueAndDerivative<V> truncated_oscillator_energy(V theta_v, 
 // temperature t, with the number densities n of every species (see
 // VibrationTranslationPair). The bath pressure of partner q in tau_MW is
 // n_q k_B t_bath, with t_bath = p / (k_B sum_j n_j) for the mixture
-// pressure p (t_bath = t without free electrons).
+// pressure p (t_bath = t without free electrons). An absent partner
+// contributes exactly zero, also when both terms of its tau underflow
+// (safe_divide).
 template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N, std::size_t V>
     requires ScalarWith<T, P> && HasExp<T> && HasLog<T> && HasSqrt<T>
 CANARY_HOST_DEVICE std::array<T, N>
@@ -765,7 +767,7 @@ CANARY_HOST_DEVICE std::array<T, N>
         }
         inverse_tau[pair.species.value()] =
           inverse_tau[pair.species.value()] +
-          T(n[pair.partner.value()] / T(millikan_white + correction));
+          safe_divide(n[pair.partner.value()], T(millikan_white + correction));
     }
     return inverse_tau;
 }
@@ -1909,6 +1911,8 @@ CANARY_HOST_DEVICE T candler_exponent(const CandlerFit<P, U>& fit, T x, T t_e)
 // Mode sources of the vibration-electron exchanges, with energy_difference
 // the electron differences of relaxation_energies: zero for VE = 0; otherwise
 // requires free electrons (guaranteed by make_multi_temperature_exchange).
+// Without free electrons, or for an absent molecule, the exchange is exactly
+// zero also when Candler's fit overflows at t_e (safe_product).
 template <Scalar T,
           std::floating_point P,
           UnitSystem U,
@@ -1943,8 +1947,8 @@ CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M>
     for (const VibrationElectronCoupling<P, U>& coupling : exchange.vibration_electron()) {
         const auto p = coupling.species.value();
         const T f = candler_exponent(coupling.relaxation_time, x, t_e);
-        const T inverse_tau = T(p_e * math::exp(T(-(f * T(ln10)))));
-        const T rate = T(d.mass[p] * energy_difference[p] * inverse_tau);
+        const T inverse_tau = safe_product(p_e, math::exp(T(-(f * T(ln10)))));
+        const T rate = safe_product(d.mass[p], T(energy_difference[p] * inverse_tau));
         const ModeIndex m = *species_mode[coupling.species];
         q[m.value()] = q[m.value()] + rate;
         q[e_mode.value()] = q[e_mode.value()] - rate;

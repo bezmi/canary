@@ -882,7 +882,10 @@ CANARY_HOST_DEVICE CollisionTermValues<T, N>
 }
 
 // mu, k_tr + k_rot and k_ve of GuptaYosTransport, as values in model units,
-// with cp_i of the thermo model at temp_ve.
+// with cp_i of the thermo model at temp_ve. An absent species (zero mole
+// fraction) contributes exactly zero to every sum, also when its collision
+// terms are not finite at temp; its composition derivative is then dropped
+// (safe_product, safe_divide).
 template <Scalar T> struct GuptaYosValues {
     T viscosity;
     T conductivity;
@@ -907,19 +910,19 @@ CANARY_HOST_DEVICE GuptaYosValues<T> gupta_yos_values(const GuptaYosTransport<P,
     T rotational = T(V(0));
     T vibrational = T(V(0));
     for (const SpeciesIndex i : species_indices(0, N)) {
-        T sum_1 = T(x[0] * delta.delta_1[i.value()][0]);
-        T sum_2 = T(x[0] * delta.delta_2[i.value()][0]);
+        T sum_1 = safe_product(x[0], delta.delta_1[i.value()][0]);
+        T sum_2 = safe_product(x[0], delta.delta_2[i.value()][0]);
         T sum_alpha = T(model.alpha[i.value()][0] * sum_2);
         for (const SpeciesIndex j : species_indices(1, N)) {
-            const T term_2 = T(x[j.value()] * delta.delta_2[i.value()][j.value()]);
-            sum_1 = sum_1 + T(x[j.value()] * delta.delta_1[i.value()][j.value()]);
+            const T term_2 = safe_product(x[j.value()], delta.delta_2[i.value()][j.value()]);
+            sum_1 = sum_1 + safe_product(x[j.value()], delta.delta_1[i.value()][j.value()]);
             sum_2 = sum_2 + term_2;
             sum_alpha = sum_alpha + T(model.alpha[i.value()][j.value()] * term_2);
         }
-        mu = mu + T(T(model.mass[i.value()].value() * x[i.value()]) / sum_2);
-        translational = translational + T(x[i.value()] / sum_alpha);
+        mu = mu + safe_divide(T(model.mass[i.value()].value() * x[i.value()]), sum_2);
+        translational = translational + safe_divide(x[i.value()], sum_alpha);
         if (model.rotational_degrees[i.value()] > 0) {
-            const T q = T(x[i.value()] / sum_1);
+            const T q = safe_divide(x[i.value()], sum_1);
             const T ratio = T(cp[i.value()].value() / model.gas_constant[i.value()].value());
             const T c = math::max(T(math::min(ratio, T(V(4.5))) - V(3.5)), T(V(0)));
             rotational = rotational + q;
@@ -1004,6 +1007,8 @@ CANARY_HOST_DEVICE DiffusionCoefficient<T, U>
 }
 
 // Accumulate direct p Delta(1)_ij / (k_B T) values without pair matrices.
+// An absent species contributes exactly zero to every sum, also when its
+// collision term is not finite at temp (safe_product).
 template <Scalar T, std::floating_point P, UnitSystem U, std::size_t N>
     requires ScalarWith<T, P> && HasLog<T> && HasExp<T>
 CANARY_HOST_DEVICE std::array<DiffusionCoefficient<T, U>, N>
@@ -1022,8 +1027,8 @@ CANARY_HOST_DEVICE std::array<DiffusionCoefficient<T, U>, N>
         for (const SpeciesIndex j : species_indices(i.value() + 1, N)) {
             const T delta = collision_term(model.collision[i.value()][j.value()].delta_1, ln_t);
             const T inverse = T(delta * p_over_kt);
-            sums[i.value()] = sums[i.value()] + T(x[j.value()] * inverse);
-            sums[j.value()] = sums[j.value()] + T(x[i.value()] * inverse);
+            sums[i.value()] = sums[i.value()] + safe_product(x[j.value()], inverse);
+            sums[j.value()] = sums[j.value()] + safe_product(x[i.value()], inverse);
         }
         out[i.value()] = mixture_diffusion_row<T, U>(x, i, sums[i.value()]);
     }

@@ -735,6 +735,39 @@ void test_energy_exchange()
         }
     };
 
+    "energy exchange: an absent partner gives zero when both relaxation-time terms underflow"_test =
+      [&] {
+          // A negative Millikan-White a without a correction: exp(a' T^(-1/3) + c)
+          // underflows at T = 1e-6 K, and the correction term is zero.
+          canary::EnergyExchangeInput<1, 0> input {};
+          input.vibration_translation[0] = {
+            .species = "N2",
+            .partner = "O",
+            .millikan_white = {.a = -27.32, .b = 0.1465},
+            .correction = {.model = canary::RelaxationCorrection::none,
+                           .cross_section = 0.0,
+                           .reference_temperature = 0.0,
+                           .exponent = 0.0},
+          };
+          const auto single = canary::make_energy_exchange(input,
+                                                           canary::detail::air5_park_species_names,
+                                                           built.species,
+                                                           mech,
+                                                           si_scales);
+          const double t = 1.0e-6;
+          const double a = single.vibration_translation()[0].millikan_white_a;
+          const double c = single.vibration_translation()[0].millikan_white_offset;
+          expect(std::exp((a / std::cbrt(t)) + c) == 0.0_d);
+          const std::array<double, species_count> n {1.0e20, 0.0, 0.0, 0.0, 0.0};
+          const auto inverse_tau =
+            canary::detail::inverse_relaxation_times(single.vibration_translation(),
+                                                     single.boltzmann(),
+                                                     n,
+                                                     t,
+                                                     t);
+          for (const double value : inverse_tau) { expect(value == 0.0_d) << value; }
+      };
+
     "energy exchange: relaxation at fixed energy reaches the equilibrium temperature"_test = [&] {
         const Fractions y {1.0, 0.0, 0.0, 0.0, 0.0};
         const auto mix = canary::mixture(gas, fractions(y));

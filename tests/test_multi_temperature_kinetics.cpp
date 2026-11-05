@@ -1989,6 +1989,36 @@ void test_multi_temperature_kinetics()
           expect(relative(q, expected, 1.0e-13)) << q << expected;
       };
 
+    "multi-temperature kinetics: V-E without electrons or molecules is zero when the fit overflows"_test =
+      [&] {
+          // c_high = -400 makes 10^(-f) overflow above the blend range.
+          auto electrons = canary::air11_kim_jo_exchange_electrons;
+          expect(std::string_view {electrons.vibration_electron[0].species} == "N2");
+          electrons.vibration_electron[0].relaxation_time.c_high = -400.0;
+          const auto overflowing = build_exchange(canary::air11_kim_jo_exchange, electrons);
+          const ReferenceState& s = reference_states[0];
+          const double t_e = 12000.0;
+          Fractions y = s.y;
+          y[electron] = 0.0;
+          const auto no_electrons =
+            canary::vibration_electron_source(overflowing,
+                                              gas,
+                                              canary::mixture(gas, fractions(y)),
+                                              cell_state(gas, y, s.rho, s.temp, s.t_v, t_e));
+          expect(no_electrons[0].value() == 0.0_d && no_electrons[1].value() == 0.0_d)
+            << no_electrons[0].value();
+          // With electrons and no N2 (the only V-E species) both sources are
+          // exactly zero; the product 0 * inf would give NaN.
+          y = s.y;
+          y[0] = 0.0;
+          const auto mix = canary::mixture(gas, fractions(y));
+          const auto state = cell_state(gas, y, s.rho, s.temp, s.t_v, t_e);
+          const auto got = canary::vibration_electron_source(overflowing, gas, mix, state);
+          const auto expected = canary::vibration_electron_source(exchange, gas, mix, state);
+          expect(got[0].value() == 0.0_d && got[1].value() == 0.0_d) << got[1].value();
+          expect(expected[0].value() == 0.0_d && expected[1].value() == 0.0_d);
+      };
+
     "multi-temperature kinetics: net ionisation cools the electron mode"_test = [&] {
         // Weakly ionised air with a hot electron mode ionises; strongly
         // ionised air with a cold one recombines.

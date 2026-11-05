@@ -784,6 +784,50 @@ void test_mixture_transport()
         }
     };
 
+    "mixture transport: an absent species with a non-finite collision fit contributes nothing"_test =
+      [&] {
+          // The (N, N2) pair: N is absent from cold air. ln Delta = +800
+          // overflows and -800 underflows the exponential at every T.
+          const auto reference = evaluate(gupta_yos,
+                                          air_two_temperature.model,
+                                          cold_air,
+                                          1.0e4,
+                                          4000.0,
+                                          3000.0,
+                                          si_scales);
+          for (const double d : {800.0, -800.0}) {
+              auto pairs = canary::air5_collision_integrals;
+              expect(std::string_view {pairs[3].first} == "N" &&
+                     std::string_view {pairs[3].second} == "N2");
+              pairs[3].pi_omega_11.D = d;
+              pairs[3].pi_omega_22.D = d;
+              const auto model =
+                canary::make_gupta_yos_transport(pairs,
+                                                 canary::detail::air5_species_names,
+                                                 air.species,
+                                                 canary::air5_rotational_degrees,
+                                                 si_scales);
+              const auto got = evaluate(model,
+                                        air_two_temperature.model,
+                                        cold_air,
+                                        1.0e4,
+                                        4000.0,
+                                        3000.0,
+                                        si_scales);
+              expect(got.mu == reference.mu && got.k == reference.k && got.k_ve == reference.k_ve)
+                << d << got.mu << got.k << got.k_ve;
+              // D_i of the present species are unchanged; D_N depends on its
+              // own fit and is only required to be finite.
+              for (std::size_t i = 0; i < species_count; ++i) {
+                  if (i == 2) {
+                      expect(std::isfinite(got.d_mix[i])) << d << got.d_mix[i];
+                  } else {
+                      expect(got.d_mix[i] == reference.d_mix[i]) << d << i << got.d_mix[i];
+                  }
+              }
+          }
+      };
+
     "mixture transport: scaled units give the SI results after conversion"_test = [&] {
         const auto air_s = canary::make_air5<double>(reference_scales);
         const auto air_two_temperature_s =
