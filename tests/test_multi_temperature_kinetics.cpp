@@ -1770,6 +1770,7 @@ void test_multi_temperature_kinetics()
     "multi-temperature kinetics: translational rates ignore other mode logarithms"_test = [] {
         const canary::ArrheniusRate<double, si> rate {
           .A = 1.0,
+          .log_A = 0.0,
           .n = 2.0,
           .activation_temperature = Temp {3.0},
           .translational_exponent = 1.0,

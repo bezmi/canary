@@ -347,10 +347,13 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
     const T inv_t = T(V(1)) / t;
     const EquilibriumTerms<T, N> at_t = equilibrium_terms(mech, gas, t);
 
-    // Number densities n_i.
+    // Number densities n_i and the logarithms of the positive ones.
     std::array<T, N> n {};
+    std::array<T, N> ln_n {};
     for (const SpeciesIndex i : species_indices(0, N)) {
         n[i.value()] = T(rho.value() * mix.fractions[i.value()].value() / mech.mass()[i].value());
+        ln_n[i.value()] =
+          ScalarTraits<T>::value(n[i.value()]) > V(0) ? math::log(n[i.value()]) : T(V(0));
     }
 
     // ln(T_o / T_l) of every other temperature and, at each other
@@ -392,8 +395,11 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
                                                          ln_ratio[(*r.forward.other_mode).value()]);
             }
         }
-        const T k_f = T(r.forward.A * math::exp(controlled_exponent));
-        T k_b = k_f;
+        // ln k_f and ln k_b, then the rates in the logarithmic form of the
+        // library: positive concentrations add nu ln n, zero concentrations
+        // and the third body multiply the exponential.
+        T ln_f = T(r.forward.log_A + controlled_exponent);
+        T ln_b = ln_f;
         if (r.backward_model == BackwardRateModel::equilibrium) {
             bool at_other_temperature = false;
             if constexpr (M > 0) { at_other_temperature = r.equilibrium_at_other_temperature; }
@@ -407,26 +413,33 @@ CANARY_HOST_DEVICE RatesOfProgress<T, U, R>
             } else {
                 exponent = equilibrium_exponent(r, forward_exponent, at_t);
             }
-            k_b = T(r.forward.A * math::exp(exponent));
+            ln_b = T(r.forward.log_A + exponent);
         } else {
-            k_b = T(r.backward.A * math::exp(rate_exponent<M>(r.backward, ln_t, inv_t, ln_ratio)));
+            ln_b = T(r.backward.log_A + rate_exponent<M>(r.backward, ln_t, inv_t, ln_ratio));
         }
-        T q_f = k_f;
-        T q_b = k_b;
+        T weight_f = T(V(1));
+        T weight_b = T(V(1));
         if (r.third_body) {
             T m = T(r.efficiencies()[SpeciesIndex {0}] * n[0]);
             for (const SpeciesIndex i : species_indices(1, N)) {
                 m = m + T(r.efficiencies()[i] * n[i.value()]);
             }
-            q_f = q_f * m;
-            q_b = q_b * m;
+            weight_f = m;
+            weight_b = m;
         }
         for (const SpeciesIndex i : species_indices(0, N)) {
-            for (int c = 0; c < r.reactants()[i]; ++c) { q_f = q_f * n[i.value()]; }
-            for (int c = 0; c < r.products()[i]; ++c) { q_b = q_b * n[i.value()]; }
+            const int nu_f = r.reactants()[i];
+            const int nu_b = r.products()[i];
+            if (ScalarTraits<T>::value(n[i.value()]) > V(0)) {
+                if (nu_f != 0) { ln_f = ln_f + T(V(nu_f) * ln_n[i.value()]); }
+                if (nu_b != 0) { ln_b = ln_b + T(V(nu_b) * ln_n[i.value()]); }
+            } else {
+                for (int c = 0; c < nu_f; ++c) { weight_f = weight_f * n[i.value()]; }
+                for (int c = 0; c < nu_b; ++c) { weight_b = weight_b * n[i.value()]; }
+            }
         }
-        out.forward()[k] = NumberRateDensity<T, U> {q_f};
-        out.backward()[k] = NumberRateDensity<T, U> {q_b};
+        out.forward()[k] = NumberRateDensity<T, U> {safe_product(weight_f, math::exp(ln_f))};
+        out.backward()[k] = NumberRateDensity<T, U> {safe_product(weight_b, math::exp(ln_b))};
     }
     return out;
 }
@@ -983,6 +996,87 @@ void test_reactions()
             expect(relative(ratio, expected, 1.0e-13)) << k.value() << ratio << expected;
         }
     };
+
+    "a reaction that needs an absent species has exactly zero rate when its constant overflows"_test =
+      [&] {
+          // N2 + O <=> NO + N with an explicit backward rate; N is absent.
+          const auto build = [&](double a, double n) {
+              canary::MechanismInput<1, 5> input {};
+              input.temperature_lower = 300.0;
+              input.temperature_upper = 30000.0;
+              auto& r = input.reactions[0];
+              r.equation = "N2 + O <=> NO + N";
+              r.reactants = {.count = 2, .entries = {{{"N2", 1.0}, {"O", 1.0}}}};
+              r.products = {.count = 2, .entries = {{{"NO", 1.0}, {"N", 1.0}}}};
+              r.forward = {.A = 1.0e-6,
+                           .n = 0.0,
+                           .activation_temperature = 0.0,
+                           .translational_exponent = 1.0};
+              r.backward_model = canary::BackwardRateModel::arrhenius;
+              r.backward = {.A = a,
+                            .n = n,
+                            .activation_temperature = 0.0,
+                            .translational_exponent = 1.0};
+              return canary::make_reaction_mechanism(input,
+                                                     canary::reaction_species(canary::air5_species),
+                                                     si_scales);
+          };
+          // k_b = A T^80 overflows at 1e4 K; the second mechanism has a finite k_b.
+          const auto overflowing = build(1.0e30, 80.0);
+          const auto finite = build(1.0e-6, 0.0);
+          const Fractions y {0.5, 0.0, 0.0, 0.2, 0.3};
+          const double rho = 0.01;
+          const double temp = 1.0e4;
+          const auto mix = canary::mixture(gas, fractions(y));
+          const auto q = canary::rates_of_progress(overflowing,
+                                                   gas,
+                                                   mix,
+                                                   canary::Density<double, si> {rho},
+                                                   canary::Temperature<double, si> {temp});
+          expect(std::isinf(overflowing.reactions()[canary::ReactionIndex {0}].backward.A *
+                            std::pow(temp, 80.0)));
+          expect(q.backward()[canary::ReactionIndex {0}].value() == 0.0_d);
+          const double n_n2 = rho * y[0] / built.species.mass[0].value();
+          const double n_o = rho * y[3] / built.species.mass[3].value();
+          const double k_f = overflowing.reactions()[canary::ReactionIndex {0}].forward.A;
+          expect(
+            relative(q.forward()[canary::ReactionIndex {0}].value(), k_f * n_n2 * n_o, 1.0e-13));
+          const auto omega = canary::production_rates(overflowing,
+                                                      gas,
+                                                      mix,
+                                                      canary::Density<double, si> {rho},
+                                                      canary::Temperature<double, si> {temp});
+          for (const auto& w : omega) { expect(std::isfinite(w.value())) << w.value(); }
+
+          // d q_b / d rho_N = k_b n_NO / m_N with the finite constant; zero
+          // with the overflowing one.
+          for (const bool overflow : {false, true}) {
+              const auto& mechanism = overflow ? overflowing : finite;
+              std::array<D, species_count> partial {};
+              for (std::size_t j = 0; j < species_count; ++j) {
+                  partial[j] = D(rho * y[j], j == 2 ? 1.0 : 0.0);
+              }
+              const auto view = canary::as_kind<canary::kind::density, si>(
+                Kokkos::mdspan<const D, Extents>(partial.data(), species_count));
+              const canary::Density<D, si> rho_d {D(rho)};
+              const auto mix_d = canary::mixture(gas, view, rho_d);
+              const auto q_d = canary::rates_of_progress(mechanism,
+                                                         gas,
+                                                         mix_d,
+                                                         rho_d,
+                                                         canary::Temperature<D, si> {D(temp)});
+              const D q_b = q_d.backward()[canary::ReactionIndex {0}].value();
+              expect(q_b.real() == 0.0_d);
+              if (overflow) {
+                  expect(q_b.dual() == 0.0_d);
+              } else {
+                  const double k_b = mechanism.reactions()[canary::ReactionIndex {0}].backward.A;
+                  const double n_no = rho * y[4] / built.species.mass[4].value();
+                  const double expected = k_b * n_no / built.species.mass[2].value();
+                  expect(relative(q_b.dual(), expected, 1.0e-13)) << q_b.dual() << expected;
+              }
+          }
+      };
 
     "rates outside the temperature limits are those at the limits"_test = [&] {
         const canary::Density<double, si> rho {0.01};

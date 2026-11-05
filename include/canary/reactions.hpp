@@ -34,6 +34,11 @@
 // unit mass of species i at T_eq from the species_properties of the thermo
 // model, and p0 the standard pressure. With T_eq = T_l, k_b does not depend
 // on T_o.
+// Each rate of progress is evaluated as [M] exp(ln k + sum_i nu_i ln n_i)
+// over the species with a positive concentration, times the concentrations
+// that are zero: the exponential is finite whenever the rate is, and a
+// reaction that needs an absent species has exactly zero rate also when its
+// rate constant overflows.
 
 #include <algorithm>
 #include <array>
@@ -239,12 +244,14 @@ struct MechanismInput {
 // and theta in the temperature unit of U, and A per particle in
 // (length^3 / count)^(order - 1) / time of U, times the temperature scale
 // raised to n. A and n are plain values, since the dimension of A depends
-// on the reaction order. translational_exponent is s of
+// on the reaction order; log_A = ln A is stored for the evaluation of the
+// rates in logarithmic form. translational_exponent is s of
 // T_c = T^s T_o^(1 - s); other_mode is the index of the energy mode whose
 // temperature is T_o. Absence denotes the primary temperature, including
 // every requirement collapsed by explicit single-temperature construction.
 template <std::floating_point P, UnitSystem U> struct ArrheniusRate {
     P A;
+    P log_A;
     P n;
     Temperature<P, U> activation_temperature;
     P translational_exponent;
@@ -747,6 +754,7 @@ ArrheniusRate<P, U> arrhenius_rate(const ArrheniusInput& input,
     }
     return {
       .A = a,
+      .log_A = static_cast<P>(std::log(converted_a)),
       .n = n,
       .activation_temperature = theta,
       .translational_exponent = exponent,
@@ -1412,9 +1420,11 @@ CANARY_HOST_DEVICE void evaluate_rate_block(const ReactionMechanism<P, U, N, R>&
                                             T inv_t,
                                             const std::array<T, M>& ln_ratio,
                                             const std::array<T, N>& n,
+                                            const std::array<T, N>& ln_n,
                                             const Source& source,
                                             RateOutputOf<Output, T, U, R>& out)
 {
+    using V = ScalarTraits<T>::value_type;
     constexpr bool equilibrium = !std::same_as<Source, ArrheniusReverseSource>;
     const auto records = mech.reactions();
     for (std::size_t position = begin; position < end; ++position) {
@@ -1426,8 +1436,9 @@ CANARY_HOST_DEVICE void evaluate_rate_block(const ReactionMechanism<P, U, N, R>&
             controlled_exponent =
               arrhenius_exponent(r.forward, ln_t, inv_t, ln_ratio[(*r.forward.other_mode).value()]);
         }
-        const T k_f = T(r.forward.A * math::exp(controlled_exponent));
-        T k_b = k_f;
+        // ln k_f and ln k_b.
+        T ln_f = T(r.forward.log_A + controlled_exponent);
+        T ln_b = ln_f;
         if constexpr (equilibrium) {
             T exponent = forward_exponent;
             if constexpr (EquilibriumOther && M > 0) {
@@ -1438,7 +1449,7 @@ CANARY_HOST_DEVICE void evaluate_rate_block(const ReactionMechanism<P, U, N, R>&
             } else {
                 exponent = equilibrium_exponent(r, forward_exponent, source.terms);
             }
-            k_b = T(r.forward.A * math::exp(exponent));
+            ln_b = T(r.forward.log_A + exponent);
         } else {
             const T exponent = [&] {
                 if constexpr (BackwardOther && M > 0) {
@@ -1450,22 +1461,39 @@ CANARY_HOST_DEVICE void evaluate_rate_block(const ReactionMechanism<P, U, N, R>&
                     return arrhenius_exponent(r.backward, ln_t, inv_t);
                 }
             }();
-            k_b = T(r.backward.A * math::exp(exponent));
+            ln_b = T(r.backward.log_A + exponent);
         }
-        T q_f = k_f;
-        T q_b = k_b;
+        // The concentrations enter in logarithmic form where they are
+        // positive, so that the exponential of the combined logarithm is
+        // finite whenever the rate is. The third body and the species with a
+        // zero value part multiply the result as weights: the rate of a
+        // reaction that needs an absent species is exactly zero also when
+        // its rate constant overflows, and a dual number keeps the
+        // derivative of the one absent concentration while the rest is
+        // finite (safe_product).
+        T weight_f = T(V(1));
+        T weight_b = T(V(1));
         if constexpr (ThirdBody) {
             T m = T(r.efficiencies()[SpeciesIndex {0}] * n[0]);
             for (const SpeciesIndex i : species_indices(1, N)) {
                 m = m + T(r.efficiencies()[i] * n[i.value()]);
             }
-            q_f = q_f * m;
-            q_b = q_b * m;
+            weight_f = m;
+            weight_b = m;
         }
         for (const SpeciesIndex i : species_indices(0, N)) {
-            for (int c = 0; c < r.reactants()[i]; ++c) { q_f = q_f * n[i.value()]; }
-            for (int c = 0; c < r.products()[i]; ++c) { q_b = q_b * n[i.value()]; }
+            const int nu_f = r.reactants()[i];
+            const int nu_b = r.products()[i];
+            if (ScalarTraits<T>::value(n[i.value()]) > V(0)) {
+                if (nu_f != 0) { ln_f = ln_f + T(V(nu_f) * ln_n[i.value()]); }
+                if (nu_b != 0) { ln_b = ln_b + T(V(nu_b) * ln_n[i.value()]); }
+            } else {
+                for (int c = 0; c < nu_f; ++c) { weight_f = weight_f * n[i.value()]; }
+                for (int c = 0; c < nu_b; ++c) { weight_b = weight_b * n[i.value()]; }
+            }
         }
+        const T q_f = safe_product(weight_f, math::exp(ln_f));
+        const T q_b = safe_product(weight_b, math::exp(ln_b));
         if constexpr (Output == RateOutput::Directional) {
             out.forward()[k] = NumberRateDensity<T, U> {q_f};
             out.backward()[k] = NumberRateDensity<T, U> {q_b};
@@ -1493,6 +1521,7 @@ CANARY_HOST_DEVICE void dispatch_rate_block(const ReactionMechanism<P, U, N, R>&
                                             T inv_t,
                                             const std::array<T, M>& ln_ratio,
                                             const std::array<T, N>& n,
+                                            const std::array<T, N>& ln_n,
                                             const Source& source,
                                             RateOutputOf<Output, T, U, R>& out)
 {
@@ -1507,6 +1536,7 @@ CANARY_HOST_DEVICE void dispatch_rate_block(const ReactionMechanism<P, U, N, R>&
                                                                                          inv_t,
                                                                                          ln_ratio,
                                                                                          n,
+                                                                                         ln_n,
                                                                                          source,
                                                                                          out);
     };
@@ -1583,9 +1613,15 @@ CANARY_HOST_DEVICE RateOutputOf<Output, T, U, R>
     const auto& schedule = reaction_schedule<M>(mech);
     const T ln_t = math::log(t);
     const T inv_t = T(V(1)) / t;
+    // Number densities and, for the positive ones, their logarithms; the
+    // fractions of mix are not negative. A zero concentration enters the
+    // rates as a weight (evaluate_rate_block), and its entry here is unused.
     std::array<T, N> n {};
+    std::array<T, N> ln_n {};
     for (const SpeciesIndex i : species_indices(0, N)) {
         n[i.value()] = T(rho.value() * mix.fractions[i.value()].value() / mech.mass()[i].value());
+        ln_n[i.value()] =
+          ScalarTraits<T>::value(n[i.value()]) > V(0) ? math::log(n[i.value()]) : T(V(0));
     }
     std::array<T, M> ln_ratio {};
     if constexpr (M > 0) {
@@ -1614,6 +1650,7 @@ CANARY_HOST_DEVICE RateOutputOf<Output, T, U, R>
                                            inv_t,
                                            ln_ratio,
                                            n,
+                                           ln_n,
                                            ArrheniusReverseSource {},
                                            out);
     }
@@ -1624,8 +1661,16 @@ CANARY_HOST_DEVICE RateOutputOf<Output, T, U, R>
         const auto terms = equilibrium_terms(mech, gas, t);
         const EquilibriumRateSource<T, N> source {terms, ln_t, inv_t};
         for (std::size_t b = schedule.explicit_end; b < primary_end; ++b) {
-            dispatch_rate_block<Output,
-                                false>(mech, schedule, b, ln_t, inv_t, ln_ratio, n, source, out);
+            dispatch_rate_block<Output, false>(mech,
+                                               schedule,
+                                               b,
+                                               ln_t,
+                                               inv_t,
+                                               ln_ratio,
+                                               n,
+                                               ln_n,
+                                               source,
+                                               out);
         }
     }
     if constexpr (M > 0) {
@@ -1638,8 +1683,16 @@ CANARY_HOST_DEVICE RateOutputOf<Output, T, U, R>
             const auto terms = equilibrium_terms(mech, gas, temperature);
             const EquilibriumRateSource<T, N> source {terms, ln_other, inv_other};
             do {
-                dispatch_rate_block<Output,
-                                    true>(mech, schedule, b, ln_t, inv_t, ln_ratio, n, source, out);
+                dispatch_rate_block<Output, true>(mech,
+                                                  schedule,
+                                                  b,
+                                                  ln_t,
+                                                  inv_t,
+                                                  ln_ratio,
+                                                  n,
+                                                  ln_n,
+                                                  source,
+                                                  out);
                 ++b;
             } while (b < schedule.block_count && schedule.blocks[b].equilibrium_mode == mode);
         }

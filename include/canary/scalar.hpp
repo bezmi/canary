@@ -258,6 +258,27 @@ template <std::floating_point V> CANARY_HOST_DEVICE constexpr bool finite_positi
 template <Scalar... S> CANARY_HOST_DEVICE constexpr bool all_finite_positive(const S&... x)
 { return (finite_positive(ScalarTraits<S>::value(x)) & ...); }
 
+// x f, exactly zero when the value part of x is zero and f is not finite.
+// An absent species (zero weight x) whose fitted factor f is not
+// representable contributes nothing; its composition derivative, infinite in
+// exact arithmetic, is dropped. With a finite f the result is x * f, with
+// the derivatives of that product.
+template <Scalar T> CANARY_HOST_DEVICE T safe_product(const T& x, const T& f)
+{
+    using V = ScalarTraits<T>::value_type;
+    return ScalarTraits<T>::value(x) == V(0) && !math::isfinite(f) ? T(V(0)) : T(x * f);
+}
+
+// x / s, exactly zero when the value parts of x and s are both zero: the
+// share of an absent species in a sum that every present species left at
+// zero. Otherwise x / s.
+template <Scalar T> CANARY_HOST_DEVICE T safe_divide(const T& x, const T& s)
+{
+    using V = ScalarTraits<T>::value_type;
+    return ScalarTraits<T>::value(x) == V(0) && ScalarTraits<T>::value(s) == V(0) ? T(V(0))
+                                                                                  : T(x / s);
+}
+
 }  // namespace detail
 
 }  // namespace canary
