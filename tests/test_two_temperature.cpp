@@ -1,4 +1,5 @@
 #include "dual.hpp"
+#include "nasa9_blend_offsets.hpp"
 #include "test_suites.hpp"
 
 #include <algorithm>
@@ -75,6 +76,20 @@ bool relative(double a, double b, double bound) { return std::abs(a - b) <= boun
 // Energies are compared relative to the larger of the value and 1 J/kg.
 bool energy_relative(double a, double b, double bound)
 { return std::abs(a - b) <= bound * std::max(std::abs(b), 1.0); }
+
+// sum_i y_i R_i dh_i/R at temperature t (K): the amount by which canary's
+// vibrational-electronic energy of the composition y exceeds the reference
+// implementation's (see nasa9_blend_offsets.hpp).
+double blend_energy_offset(const Air& gas, const std::array<double, 5>& y, double t)
+{
+    const auto off = canary::test::blend_offsets(canary::air5_species, t);
+    double de = 0.0;
+    for (std::size_t i = 0; i < 5; ++i) {
+        de += y[i] * gas.thermally_perfect.gas_constant[i].value() *
+              static_cast<double>(off[i].h_over_r);
+    }
+    return de;
+}
 
 constexpr std::array<double, 5> air {0.767, 0.233, 0.0, 0.0, 0.0};
 constexpr std::array<double, 5> dissociated {0.3, 0.1, 0.3, 0.25, 0.05};
@@ -478,8 +493,13 @@ void test_two_temperature()
               expect(c.status == Status::Valid);
               expect(relative(c.state.rho.value(), ref.rho, 1.0e-12))
                 << ref.temp << c.state.rho.value() << ref.rho;
-              expect(energy_relative(c.state.e.value(), r * (ref.u + ref.u_ve), 1.0e-12))
-                << ref.temp << c.state.e.value() << r * (ref.u + ref.u_ve);
+              // The reference joins NASA9 segments by blending their
+              // coefficients; canary's vibrational-electronic energy, and
+              // with it the total energy, exceeds the reference's by
+              // sum_i y_i R_i dh_i/R at T_ve (see nasa9_blend_offsets.hpp).
+              const double de = blend_energy_offset(gas, ref.y, ref.t_ve);
+              expect(energy_relative(c.state.e.value(), r * (ref.u + ref.u_ve) + de, 1.0e-12))
+                << ref.temp << c.state.e.value() << r * (ref.u + ref.u_ve) + de;
               // e_ve is a small difference of terms of size sum(y (|dh_f| + cp_tr T_ve))
               // (5 J/kg from terms near 1e5 J/kg at 300 K), so its rounding
               // in either implementation is relative to that size.
@@ -488,8 +508,9 @@ void test_two_temperature()
                   cancelled += ref.y[i] * (std::abs(gas.formation_enthalpy[i].value()) +
                                            (gas.translational_rotational_cp[i].value() * ref.t_ve));
               }
-              expect(std::abs(c.state.mode_e[0].value() - (r * ref.u_ve)) <= 1.0e-12 * cancelled)
-                << ref.temp << ref.t_ve << c.state.mode_e[0].value() << r * ref.u_ve;
+              expect(std::abs(c.state.mode_e[0].value() - (r * ref.u_ve + de)) <=
+                     1.0e-12 * cancelled)
+                << ref.temp << ref.t_ve << c.state.mode_e[0].value() << r * ref.u_ve + de;
               expect(c.state.mode_temp[0].value() == ref.t_ve);
               const auto props = canary::properties(gas, mix, c.state);
               expect(relative(props.acoustics.sound_speed.value(), std::sqrt(r) * ref.a, 1.0e-10))
@@ -500,11 +521,14 @@ void test_two_temperature()
     "two-temperature: (rho, rho e, rho e_ve) gives the reference temperatures and pressure"_test =
       [&] {
           for (const ReferenceState& ref : reference_states) {
-              const std::array rho_e_ve {ref.rho * r * ref.u_ve};
+              // The reference energies, shifted to canary's curves at the
+              // reference temperatures (see the previous test).
+              const double de = blend_energy_offset(gas, ref.y, ref.t_ve);
+              const std::array rho_e_ve {ref.rho * (r * ref.u_ve + de)};
               const auto c = thermo_state(gas,
                                           fractions(ref.y),
                                           Rho {ref.rho},
-                                          RhoE {ref.rho * r * (ref.u + ref.u_ve)},
+                                          RhoE {ref.rho * (r * (ref.u + ref.u_ve) + de)},
                                           mode_energy_densities<si>(rho_e_ve));
               expect(c.status == Status::Valid);
               expect(relative(c.state.temp.value(), ref.temp, 1.0e-8))
@@ -873,14 +897,14 @@ void test_two_temperature()
     };
 
     "two-temperature: a T_ve solve that converges from one side ends Valid"_test = [&] {
-        // Pure N2 with e_ve = e_ve(T_ve = 2210.65 K), solved from the guess
-        // 7660.64 K: every Newton iterate lies above the root, and the last
-        // Newton step rounds to the iterate itself.
+        // Pure N2 with e_ve = e_ve(T_ve = 2210.65 K) of the current curves,
+        // solved from the far guess 7660.64 K, from which the iterates
+        // approach the root from above.
         const std::array<double, 5> y {1.0, 0.0, 0.0, 0.0, 0.0};
         const auto mix = mixture(gas, fractions(y));
         const auto solved = canary::detail::solve_mode_temperature(gas,
                                                                    mix,
-                                                                   E {288859.87009850127},
+                                                                   E {288876.49543694092},
                                                                    7660.6364266913906);
         expect(solved.status == Status::Valid);
         expect(relative(solved.root, 2210.6513935268, 1.0e-12)) << solved.root;

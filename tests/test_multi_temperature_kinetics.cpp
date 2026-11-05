@@ -1,4 +1,5 @@
 #include "dual.hpp"
+#include "nasa9_blend_offsets.hpp"
 #include "test_suites.hpp"
 
 #include <algorithm>
@@ -1278,6 +1279,34 @@ void test_multi_temperature_kinetics()
             const Values got = evaluate(mech, exchange, gas, s);
             const Fractions n = number_densities(built.species, s.y, s.rho);
             const double t_l = std::clamp(s.temp, 300.0, 30000.0);
+            // The reference joins NASA9 segments by blending their
+            // coefficients; canary's Gibbs energies differ by the blend
+            // offsets at T_l, which scale the equilibrium backward rates, and
+            // its vibrational energy differences e_v(T) - e_v(T_v) and
+            // e_v(T_e) - e_v(T_v) exceed the reference's by
+            // R_i (dh_i(T) - dh_i(T_v)) and R_i (dh_i(T_e) - dh_i(T_v)), which
+            // the same relaxation times turn into source differences (see
+            // nasa9_blend_offsets.hpp).
+            const auto off = canary::test::blend_offsets(canary::air11_species, t_l);
+            std::array<canary::PowerDensity<double, si>, mode_count> dq_vt {};
+            std::array<canary::PowerDensity<double, si>, mode_count> dq_ve {};
+            {
+                const auto mix = canary::mixture(gas, fractions(s.y));
+                const auto state = cell_state(gas, s.y, s.rho, s.temp, s.t_v, s.t_e);
+                const auto d = canary::detail::partial_densities(exchange.mass(), mix, state.rho);
+                const auto off_t = canary::test::blend_offsets(canary::air11_species, s.temp);
+                const auto off_v = canary::test::blend_offsets(canary::air11_species, s.t_v);
+                const auto off_e = canary::test::blend_offsets(canary::air11_species, s.t_e);
+                std::array<double, species_count> dvt {};
+                std::array<double, species_count> dve {};
+                for (std::size_t i = 0; i < species_count; ++i) {
+                    const double r_i = gas.thermally_perfect.gas_constant[i].value();
+                    dvt[i] = r_i * static_cast<double>(off_t[i].h_over_r - off_v[i].h_over_r);
+                    dve[i] = r_i * static_cast<double>(off_e[i].h_over_r - off_v[i].h_over_r);
+                }
+                dq_vt = canary::detail::vibration_translation_terms(exchange, d, dvt, state);
+                dq_ve = canary::detail::vibration_electron_terms(exchange, d, dve, state);
+            }
             // The reference rates in particles per volume and time, with
             // the reactions that differ in the reference replaced by the
             // formulas at canary's temperatures.
@@ -1287,11 +1316,14 @@ void test_multi_temperature_kinetics()
                 const int dnu = mech.reactions()[k].coefficient_change;
                 forward[k.value()] = avogadro * s.forward[k.value()];
                 double offset = 0.0;
+                std::array<int, species_count> dnu_i {};
                 for (std::size_t i = 0; i < species_count; ++i) {
-                    offset += coefficient_change(mech, k.value(), i) * enthalpy_offset[i];
+                    dnu_i[i] = coefficient_change(mech, k.value(), i);
+                    offset += dnu_i[i] * enthalpy_offset[i];
                 }
-                backward[k.value()] =
-                  avogadro * s.backward[k.value()] * std::pow(r_u, dnu) * std::exp(offset / t_l);
+                backward[k.value()] = avogadro * s.backward[k.value()] * std::pow(r_u, dnu) *
+                                      std::exp(offset / t_l) *
+                                      canary::test::blend_rate_factor(off, dnu_i, t_l);
                 // The reference evaluates these forward rates at T_v; the
                 // formula at T_c = T^s T_e^(1 - s).
                 if (contains(forward_at_electron, k.value())) {
@@ -1348,24 +1380,24 @@ void test_multi_temperature_kinetics()
                             2.0;
             }
             for (const canary::ModeIndex m : canary::mode_indices(0, mode_count)) {
-                expect(std::abs(got.vt[m.value()] - s.vt[m.value()]) <=
-                       5.0e-5 * std::abs(s.vt[m.value()]))
-                  << s.name << m.value() << got.vt[m.value()] << s.vt[m.value()];
+                const double vt = s.vt[m.value()] + dq_vt[m.value()].value();
+                const double ve = s.ve[m.value()] + dq_ve[m.value()].value();
+                expect(std::abs(got.vt[m.value()] - vt) <= 5.0e-5 * std::abs(s.vt[m.value()]))
+                  << s.name << m.value() << got.vt[m.value()] << vt;
                 expect(std::abs(got.cv[m.value()] - s.cv[m.value()]) <= 5.0e-5 * cv_scale)
                   << s.name << m.value() << got.cv[m.value()] << s.cv[m.value()];
                 expect(std::abs(got.et[m.value()] - s.et[m.value()]) <=
                        5.0e-5 * std::abs(s.et[m.value()]))
                   << s.name << m.value() << got.et[m.value()] << s.et[m.value()];
-                expect(std::abs(got.ve[m.value()] - s.ve[m.value()]) <=
-                       5.0e-5 * std::abs(s.ve[m.value()]))
-                  << s.name << m.value() << got.ve[m.value()] << s.ve[m.value()];
+                expect(std::abs(got.ve[m.value()] - ve) <= 5.0e-5 * std::abs(s.ve[m.value()]))
+                  << s.name << m.value() << got.ve[m.value()] << ve;
                 const double scale = std::abs(s.vt[m.value()]) + cv_scale +
                                      std::abs(s.et[m.value()]) + std::abs(s.ve[m.value()]) +
                                      std::abs(got.ce[m.value()]);
-                expect(std::abs(got.total[m.value()] - (s.total[m.value()] + got.ce[m.value()])) <=
-                       5.0e-5 * scale)
-                  << s.name << m.value() << got.total[m.value()]
-                  << s.total[m.value()] + got.ce[m.value()];
+                const double total = s.total[m.value()] + got.ce[m.value()] +
+                                     dq_vt[m.value()].value() + dq_ve[m.value()].value();
+                expect(std::abs(got.total[m.value()] - total) <= 5.0e-5 * scale)
+                  << s.name << m.value() << got.total[m.value()] << total;
             }
             // Q_CE from its definition with canary's rates of progress.
             double ce = 0;

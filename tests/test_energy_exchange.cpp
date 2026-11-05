@@ -1,4 +1,5 @@
 #include "dual.hpp"
+#include "nasa9_blend_offsets.hpp"
 #include "oscillator_reference.hpp"
 #include "test_suites.hpp"
 
@@ -333,12 +334,25 @@ void test_energy_exchange()
         const double r = ru / reference_gas_constant;
         for (const ReferenceState& s : reference_states) {
             const Values got = evaluate(mech, exchange, gas, s.y, s.rho, s.temp, s.t_ve);
+            // The reference joins NASA9 segments by blending their coefficients;
+            // its equilibrium constants use T clamped to the mechanism limits.
+            // The Gibbs energies of canary differ by the blend offsets, which
+            // scale the backward rates (see nasa9_blend_offsets.hpp).
+            const double t_c = std::clamp(s.temp, 300.0, 50000.0);
+            const auto off = canary::test::blend_offsets(canary::air5_species, t_c);
             PerReaction forward {};
             PerReaction backward {};
+            PerReaction factor {};
             for (const auto k : canary::reaction_indices(0, reaction_count)) {
                 forward[k.value()] = avogadro * s.forward[k.value()];
+                std::array<int, species_count> dnu {};
+                for (std::size_t i = 0; i < species_count; ++i) {
+                    dnu[i] = coefficient_change(mech, k.value(), i);
+                }
+                factor[k.value()] = canary::test::blend_rate_factor(off, dnu, t_c);
                 backward[k.value()] = avogadro * s.backward[k.value()] *
-                                      std::pow(r, mech.reactions()[k].coefficient_change);
+                                      std::pow(r, mech.reactions()[k].coefficient_change) *
+                                      factor[k.value()];
                 if (!s.rates_listed) { continue; }
                 // Forward rates contain no constant that differs between
                 // the implementations; backward rates contain R_u through
@@ -359,6 +373,9 @@ void test_energy_exchange()
                     const double m = built.species.mass[i].value();
                     const int dnu = coefficient_change(mech, k, i);
                     scale += m * std::abs(dnu) * (got.forward[k] + got.backward[k]);
+                    // Without listed rates, the reference backward rate is
+                    // canary's divided by the blend factor.
+                    expected += m * dnu * got.backward[k] * (1.0 / factor[k] - 1.0);
                 }
                 if (s.rates_listed) {
                     expected = 0;

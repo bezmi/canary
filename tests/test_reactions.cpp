@@ -1,4 +1,5 @@
 #include "dual.hpp"
+#include "nasa9_blend_offsets.hpp"
 #include "test_suites.hpp"
 
 #include <algorithm>
@@ -864,12 +865,23 @@ void test_reactions()
         const double r = canary::constants::universal_gas_constant<double> / reference_gas_constant;
         for (const ReferenceState& s : reference_states) {
             const Rates got = evaluate(reference_mech, gas, s.y, s.rho, s.temp);
+            // The reference joins NASA9 segments by blending their coefficients;
+            // its equilibrium constants use T clamped to the mechanism limits.
+            // The Gibbs energies of canary differ by the blend offsets, which
+            // scale the backward rates (see nasa9_blend_offsets.hpp).
+            const double t_c = std::clamp(s.temp, 300.0, 30000.0);
+            const auto off = canary::test::blend_offsets(canary::air5_species, t_c);
             PerReaction forward {};
             PerReaction backward {};
             for (const auto k : canary::reaction_indices(0, reaction_count)) {
                 forward[k.value()] = avogadro * s.forward[k.value()];
+                std::array<int, species_count> dnu {};
+                for (std::size_t i = 0; i < species_count; ++i) {
+                    dnu[i] = coefficient_change(mech, k.value(), i);
+                }
                 backward[k.value()] = avogadro * s.backward[k.value()] *
-                                      std::pow(r, mech.reactions()[k].coefficient_change);
+                                      std::pow(r, mech.reactions()[k].coefficient_change) *
+                                      canary::test::blend_rate_factor(off, dnu, t_c);
                 expect(relative(got.forward[k.value()], forward[k.value()], 1.0e-12))
                   << s.temp << k.value() << got.forward[k.value()] << forward[k.value()];
                 expect(relative(got.backward[k.value()], backward[k.value()], 1.0e-10))

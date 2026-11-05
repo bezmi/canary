@@ -1,4 +1,5 @@
 #include "dual.hpp"
+#include "nasa9_blend_offsets.hpp"
 #include "test_suites.hpp"
 
 #include <algorithm>
@@ -1492,11 +1493,25 @@ void test_multi_temperature()
               expect(canary::electron_pressure(air4, mix, c.state).value() == 0.0);
               expect(close_to(c.state.e.value() - e_m, ref.u, 2.0e-5, floor))
                 << ref.temp << c.state.e.value() - e_m << ref.u;
+              // The reference joins NASA9 segments by blending their
+              // coefficients. The vibration component of the molecule of
+              // each mode (N2, O2, NO in modes 0, 1, 2) evaluates the curve at
+              // the mode temperature, so canary's mode energy exceeds the
+              // reference's by y R dh/R there (see nasa9_blend_offsets.hpp);
+              // the atomic electronic components use the levels.
+              const std::array<std::size_t, 3> molecule {0, 1, 4};
               for (const canary::ModeIndex m : canary::mode_indices(0, 3)) {
-                  expect(
-                    close_to(c.state.mode_e[m.value()].value(), ref.u_m[m.value()], 2.0e-5, floor))
+                  const std::size_t i = molecule[m.value()];
+                  const auto off =
+                    canary::test::blend_offset(canary::air5_species[i].fit, ref.t_m[m.value()]);
+                  const double de = ref.y[i] * air4.thermally_perfect.gas_constant[i].value() *
+                                    static_cast<double>(off.h_over_r);
+                  expect(close_to(c.state.mode_e[m.value()].value(),
+                                  ref.u_m[m.value()] + de,
+                                  2.0e-5,
+                                  floor))
                     << ref.temp << m.value() << c.state.mode_e[m.value()].value()
-                    << ref.u_m[m.value()];
+                    << ref.u_m[m.value()] + de;
               }
               const auto props = canary::properties(air4, mix, c.state);
               expect(relative(props.acoustics.sound_speed.value(), ref.a, 1.0e-5))
