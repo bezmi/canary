@@ -13,9 +13,22 @@ struct ClosureCheck {
     ClosureDiagnostic diagnostic {};
 };
 
-// Preserve the first diagnostic when severities are equal.
+// The check with the more severe status; a when the severities are equal, so
+// the first diagnostic is preserved. Every field is selected on its own: a
+// choice between the two whole records compiles to a copy through local
+// memory in device code, which this keeps out of the kernels.
 CANARY_HOST_DEVICE constexpr ClosureCheck combine(ClosureCheck a, ClosureCheck b) noexcept
-{ return a.status < b.status ? b : a; }
+{
+    const bool take_b = a.status < b.status;
+    return {
+      .status = take_b ? b.status : a.status,
+      .diagnostic =
+        {
+          .reason = take_b ? b.diagnostic.reason : a.diagnostic.reason,
+          .mode = take_b ? b.diagnostic.mode : a.diagnostic.mode,
+        },
+    };
+}
 
 CANARY_HOST_DEVICE constexpr ClosureCheck invalid_closure(ClosureReason reason) noexcept
 { return {Status::Invalid, {reason, {}}}; }
@@ -88,9 +101,17 @@ CANARY_HOST_DEVICE constexpr ClosureCheck solve_check(const SolveResult<T>& resu
     return {result.status, {reason, {}}};
 }
 
+// Valid for a finite value part, otherwise Invalid with the reason nonfinite.
+// Field-wise selection, as in combine.
 template <Scalar T>
 CANARY_HOST_DEVICE constexpr ClosureCheck finite_check(T value, ClosureReason nonfinite) noexcept
-{ return math::isfinite(value) ? ClosureCheck {} : invalid_closure(nonfinite); }
+{
+    const bool finite = math::isfinite(value);
+    return {
+      .status = finite ? Status::Valid : Status::Invalid,
+      .diagnostic = {.reason = finite ? ClosureReason::None : nonfinite, .mode = {}},
+    };
+}
 
 template <Scalar T>
 CANARY_HOST_DEVICE constexpr ClosureCheck

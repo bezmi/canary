@@ -4,14 +4,16 @@
 
 #include <array>
 #include <boost/ut.hpp>
-#include <cmath>
-#include <concepts>
-#include <cstddef>
+#include <canary/detail/closure.hpp>
 #include <canary/quantity.hpp>
 #include <canary/species.hpp>
 #include <canary/state.hpp>
 #include <canary/status.hpp>
 #include <canary/thermo.hpp>
+#include <cmath>
+#include <concepts>
+#include <cstddef>
+#include <limits>
 #include <mdspan/mdspan.hpp>
 
 namespace
@@ -98,10 +100,58 @@ static_assert(canary::AcceptsInput<canary::test::GuessRequiredGas, canary::test:
 static_assert(!canary::AcceptsInput<canary::test::IdealGas, canary::test::TemperatureGuess>);
 static_assert(!canary::AcceptsInput<canary::test::GuessGas, double>);
 
+// combine keeps the more severe check in either order and the first check on a
+// tie, with its reason and mode.
+constexpr canary::detail::ClosureCheck valid_check {};
+constexpr canary::detail::ClosureCheck invalid_density {
+  .status = Status::Invalid,
+  .diagnostic = {.reason = canary::ClosureReason::NonfiniteDensity, .mode = {}},
+};
+constexpr canary::detail::ClosureCheck invalid_mode_energy {
+  .status = Status::Invalid,
+  .diagnostic = {.reason = canary::ClosureReason::AbsentModeEnergy,
+                 .mode = canary::OptionalModeIndex {canary::ModeIndex {1}}},
+};
+constexpr canary::detail::ClosureCheck not_converged {
+  .status = Status::NotConverged,
+  .diagnostic = {.reason = canary::ClosureReason::IterationLimit, .mode = {}},
+};
+constexpr bool same(canary::detail::ClosureCheck a, canary::detail::ClosureCheck b)
+{
+    return a.status == b.status && a.diagnostic.reason == b.diagnostic.reason &&
+           a.diagnostic.mode == b.diagnostic.mode;
+}
+static_assert(same(canary::detail::combine(valid_check, valid_check), valid_check));
+static_assert(same(canary::detail::combine(valid_check, invalid_mode_energy), invalid_mode_energy));
+static_assert(same(canary::detail::combine(invalid_mode_energy, valid_check), invalid_mode_energy));
+static_assert(same(canary::detail::combine(not_converged, invalid_density), invalid_density));
+static_assert(same(canary::detail::combine(invalid_density, not_converged), invalid_density));
+static_assert(same(canary::detail::combine(invalid_density, invalid_mode_energy), invalid_density));
+static_assert(same(canary::detail::combine(invalid_mode_energy, invalid_density),
+                   invalid_mode_energy));
+
 void test_thermo()
 {
     using namespace boost::ut;
     using canary::thermo_state;
+
+    "finite_check is Valid for a finite value part and Invalid with the reason otherwise"_test =
+      [] {
+          using canary::detail::finite_check;
+          const auto reason = canary::ClosureReason::NonfiniteEnergy;
+          const double nan = std::numeric_limits<double>::quiet_NaN();
+          const double inf = std::numeric_limits<double>::infinity();
+          expect(same(finite_check(1.0, reason), valid_check));
+          expect(same(finite_check(D {1.0, nan}, reason), valid_check));
+          for (const double bad : {nan, inf, -inf}) {
+              const canary::detail::ClosureCheck expected {
+                .status = Status::Invalid,
+                .diagnostic = {.reason = reason, .mode = {}},
+              };
+              expect(same(finite_check(bad, reason), expected));
+              expect(same(finite_check(D {bad, 1.0}, reason), expected));
+          }
+      };
 
     const canary::test::IdealGas gas {air};
     const Rho rho {1.2};
