@@ -86,7 +86,7 @@ canary_compile_fail_test(calorically_perfect_si_in_scaled "ClosesInAnyOrder<.*Ca
 canary_compile_fail_test(thermally_perfect_si_in_scaled "ClosesInAnyOrder<.*ThermallyPerfectMixture<double, canary::scaled")
 canary_compile_fail_test(two_temperature_si_modes_in_scaled "ClosesInAnyOrder<.*TwoTemperatureMixture<double, canary::scaled")
 canary_compile_fail_test(multi_temperature_si_modes_in_scaled "ClosesInAnyOrder<.*MultiTemperatureMixture<double, canary::scaled")
-canary_compile_fail_test(padding_free_gas_model_with_padding "PaddingFreeGasModel<.*ThermallyPerfectMixture<float")
+canary_compile_fail_test(padding_free_gas_model_with_padding "satisf(y|action of) [^ ]*PaddingFree.*ThermallyPerfectMixture<float")
 canary_compile_fail_test(calorically_perfect_swapped_kinds "no matching function for call to [^ ]*make_calorically_perfect")
 canary_compile_fail_test(transport_other_units "no matching function for call to [^ ]*viscosity")
 canary_compile_fail_test(quantity_molar_scaled "KindUnits<(K, U|canary::kind::molar_mass, canary::scaled)>")

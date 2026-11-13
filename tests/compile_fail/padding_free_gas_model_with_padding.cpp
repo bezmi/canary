@@ -1,10 +1,15 @@
-// A gas model with padding bytes is not a PaddingFreeGasModel.
+// A function that requires a gas model without padding bytes rejects a model
+// that has them.
 #include <canary/data/air5.hpp>
+#include <canary/layout.hpp>
 #include <canary/thermo.hpp>
 
 namespace
 {
-template <canary::PaddingFreeGasModel G> int image(const G& /*gas*/) { return 0; }
+template <canary::GasModelType G>
+    requires canary::PaddingFree<G>
+int image(const G& /*gas*/)
+{ return 0; }
 }  // namespace
 
 #ifdef CANARY_COMPILE_FAIL

@@ -23,6 +23,7 @@
 #include <canary/data/air5_park_exchange.hpp>     // IWYU pragma: export
 #include <canary/data/air5_transport.hpp>         // IWYU pragma: export
 #include <canary/energy_exchange.hpp>             // IWYU pragma: export
+#include <canary/layout.hpp>                      // IWYU pragma: export
 #include <canary/models/calorically_perfect.hpp>  // IWYU pragma: export
 #include <canary/models/multi_temperature.hpp>    // IWYU pragma: export
 #include <canary/models/thermally_perfect.hpp>    // IWYU pragma: export

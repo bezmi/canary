@@ -95,20 +95,20 @@ static_assert(canary::PaddingFree<canary::SpecificHeat<double, si>> &&
               canary::PaddingFree<canary::OptionalModeIndex>);
 
 // The double models.
-static_assert(canary::PaddingFreeGasModel<canary::CaloricallyPerfect<double, si>>);
-static_assert(canary::PaddingFreeGasModel<canary::CaloricallyPerfectMixture<double, scaled, 16>>);
-static_assert(canary::PaddingFreeGasModel<canary::Air5<double, si>>);
-static_assert(canary::PaddingFreeGasModel<canary::Air11<double, si>>);
-static_assert(canary::PaddingFreeGasModel<canary::Air5TwoTemperature<double, si>>);
-static_assert(canary::PaddingFreeGasModel<canary::Air5FourTemperature<double, si>>);
+static_assert(canary::PaddingFree<canary::CaloricallyPerfect<double, si>>);
+static_assert(canary::PaddingFree<canary::CaloricallyPerfectMixture<double, scaled, 16>>);
+static_assert(canary::PaddingFree<canary::Air5<double, si>>);
+static_assert(canary::PaddingFree<canary::Air11<double, si>>);
+static_assert(canary::PaddingFree<canary::Air5TwoTemperature<double, si>>);
+static_assert(canary::PaddingFree<canary::Air5FourTemperature<double, si>>);
 // Its mode table, 3-byte entries for 11 species and 2 modes followed by a
 // 4-byte index, leaves one byte unused.
-static_assert(!canary::PaddingFreeGasModel<canary::Air11ThreeTemperature<double, si>>);
+static_assert(!canary::PaddingFree<canary::Air11ThreeTemperature<double, si>>);
 static_assert(canary::GasModelType<canary::Air11ThreeTemperature<double, si>>);
 // With float parameters the 8-byte counts leave gaps; the models remain gas models.
-static_assert(canary::PaddingFreeGasModel<canary::CaloricallyPerfect<float, si>>);
-static_assert(!canary::PaddingFreeGasModel<canary::Air5<float, scaled>>);
-static_assert(!canary::PaddingFreeGasModel<canary::Air5TwoTemperature<float, scaled>>);
+static_assert(canary::PaddingFree<canary::CaloricallyPerfect<float, si>>);
+static_assert(!canary::PaddingFree<canary::Air5<float, scaled>>);
+static_assert(!canary::PaddingFree<canary::Air5TwoTemperature<float, scaled>>);
 static_assert(canary::GasModelType<canary::Air5TwoTemperature<float, scaled>>);
 
 void test_layout()
