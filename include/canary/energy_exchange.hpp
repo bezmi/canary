@@ -135,9 +135,15 @@ template <std::size_t V, std::size_t C> struct EnergyExchangeInput {
 // - gnoffo_neutral: a neutral partner, sigma = a + b T' + c T'^2 in m^2
 //   with T' = min(T_e, maximum_temperature) in K (P. A. Gnoffo, R. N. Gupta
 //   and J. L. Shinn, NASA TP-2867, 1989);
-// - coulomb: a charged partner, sigma = (2 pi / 9) L^2 ln(Lambda) with
+// - coulomb: a partner with one elementary charge of either sign,
+//   sigma = (2 pi / 9) L^2 ln(Lambda) with
 //   L = e^2 / (4 pi eps_0 k_B T_e), Lambda = 9 / (4 pi n_e' L^3) and
-//   n_e' = max(n_e, 1 m^-3).
+//   n_e' = max(n_e, 1 m^-3): the classical form for singly charged ions
+//   (Gnoffo, Gupta and Shinn, NASA TP-2867, 1989). It does not depend on the
+//   sign of the charge; partners with several elementary charges are not
+//   supported. It holds for weak coupling, Lambda > 1, that is
+//   n_e' < 9 / (4 pi L^3). For a larger n_e' the logarithm and the
+//   cross-section are negative; this is not checked.
 enum class ElectronCrossSection : std::uint8_t { gnoffo_neutral, coulomb };
 
 // Host input of one elastic electron-heavy pair: the partner, the
@@ -1341,9 +1347,19 @@ ElectronTranslationPair<P, U>
     const bool charged = species.charge[pair.partner.value()].value() != P(0);
     pair.cross_section = input.cross_section;
     switch (input.cross_section) {
-    case ElectronCrossSection::coulomb:
+    case ElectronCrossSection::coulomb: {
         if (!charged) { throw ParameterError("a coulomb partner must be charged"); }
+        // Both charges are whole multiples of the elementary charge that
+        // passed through the same conversion, so the comparison is exact.
+        const P ion = species.charge[pair.partner.value()].value();
+        const P electron_charge = species.charge[electron.value()].value();
+        if (std::abs(ion) != -electron_charge) {
+            throw ParameterError(std::format(
+              "a coulomb partner must carry one elementary charge, got {} electron charges",
+              -ion / electron_charge));
+        }
         return pair;
+    }
     case ElectronCrossSection::gnoffo_neutral: break;
     default: throw ParameterError("unknown electron cross-section model");
     }
@@ -1536,9 +1552,9 @@ ElectronImpactIonisationCoupling<P, U>
 // - a vibration-translation, chemistry-vibration or vibration-electron
 //   species has no vibration mode;
 // - an electron exchange is given and the model has no free electrons;
-// - a name is null or unknown; an electron-translation partner is the electron, is
-//   not charged for coulomb or is charged for gnoffo_neutral, or the
-//   cross-section model is unknown;
+// - a name is null or unknown; an electron-translation partner is the electron,
+//   does not carry exactly one elementary charge of either sign for coulomb or
+//   is charged for gnoffo_neutral, or the cross-section model is unknown;
 // - a gnoffo_neutral coefficient is not finite, its maximum temperature
 //   is not finite and positive, or its quadratic is negative/nonfinite on
 //   [0, maximum_temperature] before or after parameter conversion;
@@ -2082,7 +2098,11 @@ CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M>
 // the state, with the normalised mass fractions of mix: Q_ET into the
 // electron mode, 0 in every other mode and without free electrons. T' of
 // gnoffo_neutral and n_e' of coulomb are limited on their value parts; a
-// limited value has derivative zero.
+// limited value has derivative zero. The coulomb cross-section is the
+// classical form for singly charged partners and holds in the weak-coupling
+// domain n_e' < coulomb_logarithm_factor T_e^3. Outside that domain, which
+// is not checked, its logarithm and the contribution of the coulomb pairs to
+// Q_ET have the opposite sign.
 template <Scalar T,
           std::floating_point P,
           UnitSystem U,

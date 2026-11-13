@@ -1798,13 +1798,19 @@ int main()
         const auto electron = *canary::electron_species_index(gas.model);
         const auto ion = *canary::detail::species_index(air11_names, "O+");
         const auto spectator = *canary::detail::species_index(air11_names, "N2");
-        const auto check = [&](const auto& input_file, const auto& species, const auto& reactions,
+        const auto check = [&](const auto& electrons,
+                               const auto& species,
+                               const auto& reactions,
                                std::string_view reason) {
-            const auto owner = db::electron_exchange_input<10, 1, 2>(input_file, species_file);
             std::string message;
             try {
-                (void)canary::make_multi_temperature_exchange(
-                  heavy, owner, air11_names, species, reactions, gas.model, scales);
+                (void)canary::make_multi_temperature_exchange(heavy,
+                                                              electrons,
+                                                              air11_names,
+                                                              species,
+                                                              reactions,
+                                                              gas.model,
+                                                              scales);
             } catch (const canary::ParameterError& error) {
                 message = error.what();
             }
@@ -1815,11 +1821,17 @@ int main()
                 expect(message.find(reason) != std::string::npos) << message;
             }
         };
-        check(file, gas.species, mechanism, "");
+        const auto electrons = [&](const auto& input_file) {
+            return db::electron_exchange_input<10, 1, 2>(input_file, species_file);
+        };
+        check(electrons(file), gas.species, mechanism, "");
         for (const int index : {-1, 40}) {
             auto changed = file;
             changed.electron_impact_ionisation[0].reaction = index;
-            check(changed, gas.species, mechanism, "reaction index must be between 0 and 39");
+            check(electrons(changed),
+                  gas.species,
+                  mechanism,
+                  "reaction index must be between 0 and 39");
         }
         const auto source = *canary::detail::species_index(air11_names, "O");
         const auto check_record = [&](const auto& record, std::string_view reason) {
@@ -1842,7 +1854,15 @@ int main()
         auto species = gas.species;
         species.charge[ion.value()] =
           canary::Charge<double, canary::si> {2.0 * species.charge[ion.value()].value()};
-        check(file, species, mechanism, "must have charge opposite to the electron charge");
+        // O+ is also a coulomb partner, whose charge is checked before the
+        // ionisations; without electron-translation pairs the ionisation
+        // check is reached.
+        auto ionisation_only = file;
+        ionisation_only.electron_translation.clear();
+        check(db::electron_exchange_input<0, 1, 2>(ionisation_only, species_file),
+              species,
+              mechanism,
+              "must have charge opposite to the electron charge");
         changed = mechanism.reactions()[canary::ReactionIndex {38}];
         changed.products()[spectator] += 1;
         check_record(changed, "no other net species changes");

@@ -2353,6 +2353,72 @@ void test_multi_temperature_kinetics()
                  }).starts_with("neutral cross-section must be finite and non-negative"));
       };
 
+    "multi-temperature kinetics: the coulomb cross-section needs a singly charged partner and "
+    "changes sign at the weak-coupling limit"_test = [&] {
+        const std::size_t ion = (*canary::detail::species_index(names, "N+")).value();
+        canary::ElectronExchangeInput<1, 0, 0> electrons {};
+        electrons.electron_translation[0] =
+          canary::air11_kim_jo_exchange_electrons.electron_translation[5];
+        const auto build = [&](const auto& species) {
+            return canary::make_multi_temperature_exchange(no_vibration,
+                                                           electrons,
+                                                           names,
+                                                           species,
+                                                           mech,
+                                                           gas,
+                                                           si_scales);
+        };
+        const double e = built.species.charge[ion].value();
+        expect(fatal(e == -built.species.charge[electron].value()));
+
+        auto doubly_charged = built.species;
+        doubly_charged.charge[ion] = canary::Charge<double, si> {2.0 * e};
+        const std::string message = error_message([&] { (void)build(doubly_charged); });
+        expect(message == "electron-translation pair 0 (N+): a coulomb partner must carry one "
+                          "elementary charge, got 2 electron charges")
+          << message;
+
+        // The cross-section does not depend on the sign of the charge.
+        auto negatively_charged = built.species;
+        negatively_charged.charge[ion] = canary::Charge<double, si> {-e};
+        const auto pair = build(built.species);
+        const auto pair_negative = build(negatively_charged);
+        {
+            const Fractions& y = reference_states[0].y;
+            const auto mix = canary::mixture(gas, fractions(y));
+            const auto state = cell_state(gas, y, 1.0e-3, 12000.0, 5000.0, 8000.0);
+            const auto positive = canary::electron_translation_source(pair, mix, state);
+            const auto negative = canary::electron_translation_source(pair_negative, mix, state);
+            expect(positive[1].value() != 0.0_d);
+            expect(negative[0].value() == positive[0].value());
+            expect(negative[1].value() == positive[1].value());
+        }
+
+        // N+ and electrons in the ratio of a neutral plasma, with T > T_e, so
+        // that Q_ET has the sign of ln(Lambda). The logarithm is zero at the
+        // electron number density coulomb_logarithm_factor T_e^3.
+        const double m_e = built.species.mass[electron].value();
+        const double m_ion = built.species.mass[ion].value();
+        Fractions y {};
+        y[ion] = m_ion / (m_ion + m_e);
+        y[electron] = m_e / (m_ion + m_e);
+        const double t_e = 1.0e4;
+        const double limit = pair.coulomb_logarithm_factor() * t_e * t_e * t_e;
+        const auto source = [&]<typename T>(double n_e) {
+            std::array<T, species_count> y_t {};
+            for (std::size_t i = 0; i < species_count; ++i) { y_t[i] = T(y[i]); }
+            const auto mix = canary::mixture(gas, fractions(y_t));
+            const double rho = n_e * m_e / y[electron];
+            const auto state = cell_state(gas, y_t, T(rho), T(12000.0), T(5000.0), T(t_e));
+            return canary::ScalarTraits<T>::value(
+              canary::electron_translation_source(pair, mix, state)[1].value());
+        };
+        expect(source.operator()<double>(0.999 * limit) > 0.0);
+        expect(source.operator()<double>(1.001 * limit) < 0.0);
+        expect(source.operator()<D>(0.999 * limit) > 0.0);
+        expect(source.operator()<D>(1.001 * limit) < 0.0);
+    };
+
     "multi-temperature kinetics: the builder rejects invalid input with the entry in the "
     "message"_test = [&] {
         using Input = std::remove_cvref_t<decltype(canary::air11_kim_jo_exchange)>;
