@@ -98,6 +98,7 @@ canary_compile_fail_test(multi_temperature_exchange_single_temperature "ModeRela
 canary_compile_fail_test(mixture_transport_composition "HasNormalisedComposition<.*CaloricallyPerfectMixture")
 canary_compile_fail_test(mixture_transport_heat_capacity "HasSpeciesIsobaricSpecificHeat<.*CaloricallyPerfectMixture")
 canary_compile_fail_test(mixture_transport_model "TransportModel<.*GuptaYosTransport")
+canary_compile_fail_test(mixture_transport_vibrational_electronic_mode "HasVibrationalElectronicMode<.*MultiTemperatureMixture")
 
 # Each public header is compiled alone, as strict C++20, with only the
 # include directories of canary::canary (include/ and mdspan). This checks

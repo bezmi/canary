@@ -8,6 +8,7 @@
 #include <canary/data/air5.hpp>
 #include <canary/data/air5_transport.hpp>
 #include <canary/models/calorically_perfect.hpp>
+#include <canary/models/multi_temperature.hpp>
 #include <canary/models/thermally_perfect.hpp>
 #include <canary/models/two_temperature.hpp>
 #include <canary/nasa9.hpp>
@@ -447,6 +448,10 @@ static_assert(canary::HasSpeciesIsobaricSpecificHeat<AirTwoTemperature, D, 5>);
 static_assert(canary::HasSpeciesIsobaricSpecificHeat<AirTwoTemperature, float, 5>);
 static_assert(!canary::HasSpeciesIsobaricSpecificHeat<Air, double, 4>);
 static_assert(!canary::HasSpeciesIsobaricSpecificHeat<CaloricallyPerfectAir, double, 5>);
+static_assert(canary::HasVibrationalElectronicMode<AirTwoTemperature>);
+static_assert(!canary::HasVibrationalElectronicMode<Air>);
+static_assert(
+  !canary::HasVibrationalElectronicMode<canary::MultiTemperatureMixture<double, si, 11, 1>>);
 static_assert(canary::TransportModel<Wilke, Air, double>);
 static_assert(canary::TransportModel<Wilke, Air, D>);
 static_assert(canary::TransportModel<Wilke, Air, float>);
@@ -459,6 +464,15 @@ static_assert(canary::TransportModel<canary::Air5GuptaYosTransport<float, scaled
                                      double>);
 static_assert(!canary::TransportModel<GuptaYos, CaloricallyPerfectAir, double>);
 static_assert(!canary::TransportModel<GuptaYos, canary::Air5<double, scaled>, double>);
+// The single mode of a multi-temperature model may hold any energy components,
+// so it has no Gupta-Yos mode conductivity; Wilke gives a zero mode
+// conductivity for any mode.
+static_assert(canary::TransportModel<Wilke,
+                                     canary::MultiTemperatureMixture<double, si, species_count, 1>,
+                                     double>);
+static_assert(!canary::TransportModel<GuptaYos,
+                                      canary::MultiTemperatureMixture<double, si, species_count, 1>,
+                                      double>);
 // Constant-Prandtl conductivity requires a single-temperature cp.
 static_assert(!canary::TransportModel<SutherlandPrandtl, AirTwoTemperature, double>);
 static_assert(std::is_trivially_copyable_v<Wilke>);

@@ -44,7 +44,9 @@
 // thermo model at the vibrational-electronic temperature T_ve (T for a
 // single-temperature model). k_ve is the conductivity of the
 // vibrational-electronic energy; a single-temperature model adds it to
-// k_tr + k_rot.
+// k_tr + k_rot. A model with energy modes gives k_ve as the conductivity of
+// its mode, and must have exactly one mode that holds the vibrational and
+// electronic energy of every species (HasVibrationalElectronicMode).
 //
 // Mixture-averaged diffusion coefficients, for both models:
 //   D_i = (1 - x_i) / sum_{j != i} x_j / D_ij,
@@ -676,6 +678,15 @@ concept HasSpeciesIsobaricSpecificHeat =
       } -> std::convertible_to<std::array<SpecificHeat<T, typename G::units>, N>>;
   };
 
+// A thermo model whose single internal energy mode holds the vibrational and
+// electronic energy of every species at T_ve = mode_temp[0], without free
+// electrons (Park's two-temperature model). The model declares this with a
+// static constexpr bool vibrational_electronic_mode equal to true.
+template <typename G>
+concept HasVibrationalElectronicMode = detail::HasModeCount<G> && (G::mode_count == 1) && requires {
+    requires std::bool_constant<G::vibrational_electronic_mode>::value;
+};
+
 // Binary diffusion coefficients D_ij of N species (symmetric).
 template <Scalar T, UnitSystem U, std::size_t N>
 using BinaryDiffusionCoefficients = std::array<std::array<DiffusionCoefficient<T, U>, N>, N>;
@@ -1110,10 +1121,11 @@ CANARY_HOST_DEVICE TransportCoefficients<T, U> transport(const GuptaYosTransport
 }
 
 // Viscosity, conductivity k_tr + k_rot and the mode conductivity k_ve of
-// GuptaYosTransport at a state of a two-temperature mixture model, with
+// GuptaYosTransport at a state of a mixture model with one
+// vibrational-electronic mode (HasVibrationalElectronicMode), with
 // T_ve = mode_temp[0].
 template <std::floating_point P, UnitSystem U, std::size_t N, GasModelType G, Scalar T>
-    requires HasNormalisedComposition<G, T, N> &&
+    requires HasNormalisedComposition<G, T, N> && HasVibrationalElectronicMode<G> &&
              std::same_as<state_t<G, T>, MultiTemperatureState<T, U, 1>> &&
              HasSpeciesIsobaricSpecificHeat<G, T, N> && ScalarWith<T, P> && HasLog<T> &&
              HasExp<T> && HasMin<T> && HasMax<T>

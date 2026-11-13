@@ -41,7 +41,10 @@ namespace canary
 // For mass fractions y_i and R = sum(y_i R_i): the internal energy per unit
 // mass e = sum(y_i e_i) includes e_ve = sum(y_i e_ve,i) (State::mode_e[0]),
 // and p = rho R T. Free electrons are not part of the model. All N species
-// are used. The fields are in unit system U and are derived by
+// are used. vibrational_electronic_mode declares that the single mode is the
+// vibrational-electronic mode of every species, which the mixture transport
+// models require for the conductivity of that mode. The fields are in unit
+// system U and are derived by
 // make_two_temperature_mixture:
 // - thermally_perfect: the single-temperature model of the same species. Its
 //   gas constants, curves and reference temperature define the species
@@ -58,6 +61,8 @@ struct TwoTemperatureMixture {
     template <Scalar T> using State = MultiTemperatureState<T, U, 1>;
     template <Scalar T> using Mixture = NormalisedComposition<T, U, N>;
     static constexpr std::size_t mode_count = 1;
+    // The mode holds the vibrational and electronic energy of every species.
+    static constexpr bool vibrational_electronic_mode = true;
 
     ThermallyPerfectMixture<P, U, N, S> thermally_perfect;
     std::array<SpecificHeat<P, U>, N> translational_rotational_cp;
