@@ -76,6 +76,12 @@ struct molar_mass             { static constexpr Dimension dimension {.mass = 1,
 struct charge                 { static constexpr Dimension dimension {.charge = 1, .count = -1}; };
 // Charge per unit mass.
 struct specific_charge        { static constexpr Dimension dimension {.mass = -1, .charge = 1}; };
+// Charge per unit volume.
+struct charge_density         { static constexpr Dimension dimension {.length = -3, .charge = 1}; };
+// One component of the momentum per unit volume.
+struct momentum_density       { static constexpr Dimension dimension {.mass = 1, .length = -2, .time = -1}; };
+// One component of the charge crossing a unit area per unit time.
+struct current_density        { static constexpr Dimension dimension {.length = -2, .time = -1, .charge = 1}; };
 struct heat_capacity_ratio    { static constexpr Dimension dimension {}; };
 // rho*a*a/p for the model's acoustic constraint.
 struct acoustic_exponent      { static constexpr Dimension dimension {}; };
@@ -179,6 +185,9 @@ template <Scalar T, UnitSystem U> using ParticleMass         = Quantity<kind::pa
 template <Scalar T>               using MolarMass            = Quantity<kind::molar_mass, T, si>;
 template <Scalar T, UnitSystem U> using Charge               = Quantity<kind::charge, T, U>;
 template <Scalar T, UnitSystem U> using SpecificCharge       = Quantity<kind::specific_charge, T, U>;
+template <Scalar T, UnitSystem U> using ChargeDensity        = Quantity<kind::charge_density, T, U>;
+template <Scalar T, UnitSystem U> using MomentumDensity      = Quantity<kind::momentum_density, T, U>;
+template <Scalar T, UnitSystem U> using CurrentDensity       = Quantity<kind::current_density, T, U>;
 template <Scalar T>               using HeatCapacityRatio    = Quantity<kind::heat_capacity_ratio, T, unitless>;
 template <Scalar T>               using AcousticExponent     = Quantity<kind::acoustic_exponent, T, unitless>;
 template <Scalar T>               using PrandtlNumber        = Quantity<kind::prandtl_number, T, unitless>;
@@ -375,6 +384,23 @@ CANARY_HOST_DEVICE constexpr auto
 {
     return detail::make_quantity<kind::thermal_conductivity, U>(mu.value() * cp.value() /
                                                                 prandtl.value());
+}
+
+// rho_q = rho * (q / m)
+template <Scalar A, Scalar B, UnitSystem U>
+    requires ScalarPair<A, B>
+CANARY_HOST_DEVICE constexpr auto charge_density(Density<A, U> rho,
+                                                 SpecificCharge<B, U> specific_charge)
+{ return detail::make_quantity<kind::charge_density, U>(rho.value() * specific_charge.value()); }
+
+// j = (q / m) * (rho u), for one component of the momentum density rho u
+template <Scalar A, Scalar B, UnitSystem U>
+    requires ScalarPair<A, B>
+CANARY_HOST_DEVICE constexpr auto current_density(SpecificCharge<A, U> specific_charge,
+                                                  MomentumDensity<B, U> momentum)
+{
+    return detail::make_quantity<kind::current_density, U>(specific_charge.value() *
+                                                           momentum.value());
 }
 
 }  // namespace canary

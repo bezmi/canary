@@ -90,6 +90,8 @@ canary_compile_fail_test(padding_free_gas_model_with_padding "satisf(y|action of
 canary_compile_fail_test(calorically_perfect_swapped_kinds "no matching function for call to [^ ]*make_calorically_perfect")
 canary_compile_fail_test(transport_other_units "no matching function for call to [^ ]*viscosity")
 canary_compile_fail_test(quantity_molar_scaled "KindUnits<(K, U|canary::kind::molar_mass, canary::scaled)>")
+canary_compile_fail_test(quantity_charge_density_other_kind "no matching function for call to [^ ]*charge_density")
+canary_compile_fail_test(quantity_current_density_other_kind "no matching function for call to [^ ]*current_density")
 canary_compile_fail_test(energy_exchange_single_temperature "RelaxingModel<.*ThermallyPerfectMixture")
 canary_compile_fail_test(energy_exchange_mode_energy_missing "HasVibrationalElectronicEnergy<.*ThermallyPerfectMixture")
 canary_compile_fail_test(reaction_mechanism_without_modes "HasEnergyModes<.*ThermallyPerfectMixture")

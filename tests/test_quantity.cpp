@@ -39,6 +39,24 @@ concept HasCaloricallyPerfectRelation =
       canary::isobaric_specific_heat(canary::SpecificHeat<double, si> {1}, ratio);
   };
 
+template <typename A, typename B>
+concept HasChargeDensityRelation = requires(A a, B b) { canary::charge_density(a, b); };
+
+template <typename A, typename B>
+concept HasCurrentDensityRelation = requires(A a, B b) { canary::current_density(a, b); };
+
+// Dimension of a product of two quantities.
+constexpr canary::Dimension product(const canary::Dimension& a, const canary::Dimension& b)
+{
+    return {.mass = a.mass + b.mass,
+            .length = a.length + b.length,
+            .time = a.time + b.time,
+            .temperature = a.temperature + b.temperature,
+            .charge = a.charge + b.charge,
+            .count = a.count + b.count,
+            .amount = a.amount + b.amount};
+}
+
 }  // namespace
 
 static_assert(sizeof(canary::Density<double, si>) == sizeof(double));
@@ -104,6 +122,33 @@ static_assert(!AddableWith<canary::Density<double, si>, double>);
 static_assert(AddableWith<canary::Density<D, si>, canary::Density<double, si>>);
 static_assert(!MultipliableWith<canary::Density<double, si>, canary::Temperature<double, si>>);
 static_assert(MultipliableWith<canary::Density<double, si>, double>);
+
+// Charge and current density: the dimensions of the kinds are those of the
+// relations' products, and a momentum density is a density times a speed.
+static_assert(canary::kind::charge_density::dimension ==
+              product(canary::kind::density::dimension, canary::kind::specific_charge::dimension));
+static_assert(canary::kind::current_density::dimension ==
+              product(canary::kind::specific_charge::dimension,
+                      canary::kind::momentum_density::dimension));
+static_assert(canary::kind::momentum_density::dimension ==
+              product(canary::kind::density::dimension, canary::kind::sound_speed::dimension));
+// The relations accept only their argument kinds, in their order, in one
+// unit system.
+static_assert(
+  HasChargeDensityRelation<canary::Density<double, si>, canary::SpecificCharge<double, si>>);
+static_assert(!HasChargeDensityRelation<canary::Density<double, si>, canary::Charge<double, si>>);
+static_assert(
+  !HasChargeDensityRelation<canary::SpecificCharge<double, si>, canary::Density<double, si>>);
+static_assert(
+  !HasChargeDensityRelation<canary::Density<double, si>, canary::SpecificCharge<double, scaled>>);
+static_assert(HasCurrentDensityRelation<canary::SpecificCharge<double, scaled>,
+                                        canary::MomentumDensity<double, scaled>>);
+static_assert(
+  !HasCurrentDensityRelation<canary::SpecificCharge<double, si>, canary::Density<double, si>>);
+static_assert(
+  !HasCurrentDensityRelation<canary::Charge<double, si>, canary::MomentumDensity<double, si>>);
+static_assert(!AddableWith<canary::ChargeDensity<double, si>, canary::CurrentDensity<double, si>>);
+static_assert(!AddableWith<canary::MomentumDensity<double, si>, canary::Density<double, si>>);
 
 void test_quantity()
 {
@@ -295,5 +340,48 @@ void test_quantity()
         expect(rho_sum.value().real() == 3.0_d && rho_sum.value().dual() == 1.0_d);
         const auto rho_scaled = rho * 3.0;
         expect(rho_scaled.value().dual() == 3.0_d);
+    };
+
+    "charge density from density and specific charge"_test = [] {
+        using canary::ChargeDensity;
+        using canary::SpecificCharge;
+        const Density<double, si> rho {1.5e-3};
+        const SpecificCharge<double, si> r {-1.75e11};
+        const auto rho_q = canary::charge_density(rho, r);
+        static_assert(std::same_as<decltype(rho_q), const ChargeDensity<double, si>>);
+        expect(rho_q.value() == 1.5e-3 * -1.75e11);
+        // A float state value with a double parameter gives a double.
+        const auto mixed = canary::charge_density(Density<float, scaled> {2.0F},
+                                                  SpecificCharge<double, scaled> {0.25});
+        static_assert(std::same_as<decltype(mixed), const ChargeDensity<double, scaled>>);
+        expect(mixed.value() == 0.5_d);
+        // d(rho r)/drho = r.
+        const auto dual = canary::charge_density(Density<D, si> {D(2.0, 1.0)}, r);
+        static_assert(std::same_as<decltype(dual), const ChargeDensity<D, si>>);
+        expect(dual.value().real() == 2.0 * -1.75e11);
+        expect(dual.value().dual() == -1.75e11);
+        // Contributions of several fluids add within the kind.
+        const auto sum = rho_q + canary::charge_density(rho, SpecificCharge<double, si> {1.75e11});
+        expect(sum.value() == 0.0_d);
+    };
+
+    "current density from specific charge and one component of the momentum density"_test = [] {
+        using canary::CurrentDensity;
+        using canary::MomentumDensity;
+        using canary::SpecificCharge;
+        const SpecificCharge<double, si> r {9.58e7};
+        const MomentumDensity<double, si> momentum {-0.3};
+        const auto j = canary::current_density(r, momentum);
+        static_assert(std::same_as<decltype(j), const CurrentDensity<double, si>>);
+        expect(j.value() == 9.58e7 * -0.3);
+        const auto mixed = canary::current_density(SpecificCharge<double, scaled> {0.5},
+                                                   MomentumDensity<float, scaled> {4.0F});
+        static_assert(std::same_as<decltype(mixed), const CurrentDensity<double, scaled>>);
+        expect(mixed.value() == 2.0_d);
+        // d(r m)/dm = r.
+        const auto dual = canary::current_density(r, MomentumDensity<D, si> {D(-0.3, 1.0)});
+        static_assert(std::same_as<decltype(dual), const CurrentDensity<D, si>>);
+        expect(dual.value().real() == 9.58e7 * -0.3);
+        expect(dual.value().dual() == 9.58e7);
     };
 }
