@@ -2378,6 +2378,17 @@ void test_multi_temperature_kinetics()
                           "elementary charge, got 2 electron charges")
           << message;
 
+        // A wrong electron charge is reported as such, not as a wrong partner.
+        const double inf = std::numeric_limits<double>::infinity();
+        for (const double charge : {0.0, e, std::numeric_limits<double>::quiet_NaN(), inf, -inf}) {
+            auto species = built.species;
+            species.charge[electron] = canary::Charge<double, si> {charge};
+            const std::string electron_message = error_message([&] { (void)build(species); });
+            expect(electron_message == "electron-translation pair 0 (N+): the electron charge "
+                                       "must be finite and negative")
+              << charge << electron_message;
+        }
+
         // The cross-section does not depend on the sign of the charge.
         auto negatively_charged = built.species;
         negatively_charged.charge[ion] = canary::Charge<double, si> {-e};

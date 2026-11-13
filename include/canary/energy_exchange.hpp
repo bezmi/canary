@@ -477,6 +477,18 @@ void check_exchange_species(const std::array<std::string_view, N>& names,
     }
 }
 
+// Charge of the free-electron species; throws ParameterError unless it is
+// finite and negative.
+template <std::floating_point P, UnitSystem U, std::size_t N>
+P checked_electron_charge(const SpeciesData<P, U, N>& species, SpeciesIndex electron)
+{
+    const P charge = species.charge[electron.value()].value();
+    if (!std::isfinite(charge) || !(charge < P(0))) {
+        throw ParameterError("the electron charge must be finite and negative");
+    }
+    return charge;
+}
+
 // Compare the resolved physical key with earlier entries of the same process.
 template <typename Entry, std::size_t N, typename Key>
 void check_duplicate_exchange(const std::array<Entry, N>& entries, std::size_t index, Key key)
@@ -1352,7 +1364,7 @@ ElectronTranslationPair<P, U>
         // Both charges are whole multiples of the elementary charge that
         // passed through the same conversion, so the comparison is exact.
         const P ion = species.charge[pair.partner.value()].value();
-        const P electron_charge = species.charge[electron.value()].value();
+        const P electron_charge = checked_electron_charge(species, electron);
         if (std::abs(ion) != -electron_charge) {
             throw ParameterError(std::format(
               "a coulomb partner must carry one elementary charge, got {} electron charges",
@@ -1463,10 +1475,7 @@ void check_ionisation_participants(const Reaction<P, U, N>& r,
     if (species.charge[source.value()].value() != P(0)) {
         throw ParameterError("the ionised species must be neutral");
     }
-    const P electron_charge = species.charge[electron.value()].value();
-    if (!std::isfinite(electron_charge) || !(electron_charge < P(0))) {
-        throw ParameterError("the electron charge must be finite and negative");
-    }
+    const P electron_charge = checked_electron_charge(species, electron);
     // Widen before subtraction so malformed stored coefficients cannot overflow.
     const auto net = [&](SpeciesIndex i) {
         return std::int64_t {r.products()[i]} - std::int64_t {r.reactants()[i]};
@@ -1560,8 +1569,10 @@ ElectronImpactIonisationCoupling<P, U>
 //   [0, maximum_temperature] before or after parameter conversion;
 // - a relaxation-time parameter is not finite or blend_upper <=
 //   blend_lower;
-// - an ionisation's reaction index is outside [0, R), its source is not a
-//   neutral heavy species, or the electron charge is not finite and negative;
+// - a coulomb pair or an ionisation is given and the electron charge is not
+//   finite and negative;
+// - an ionisation's reaction index is outside [0, R), or its source is not a
+//   neutral heavy species;
 // - an ionisation reaction has no incident electron, or its net changes are
 //   not -1 source, +1 electron, +1 product ion and zero for every other species;
 // - the product ion's charge is not opposite to the electron charge, or the
