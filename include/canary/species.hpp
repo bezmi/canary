@@ -5,6 +5,7 @@
 #include <array>
 #include <canary/build.hpp>
 #include <canary/config.hpp>
+#include <canary/detail/parameters.hpp>
 #include <canary/indexed_view.hpp>
 #include <canary/layout.hpp>
 #include <canary/quantity.hpp>
@@ -239,26 +240,6 @@ inline void check_species_metadata(const SpeciesMetadataView& metadata, double c
             }
         }
     }
-}
-
-// Narrow only after unit conversion, preserving the quantity's kind and units.
-template <std::floating_point P, KindTag K, std::floating_point W, UnitTag U>
-Quantity<K, P, U> thermodynamic_parameter(Quantity<K, W, U> value, const char* name)
-{
-    if (!std::isfinite(value.value()) || std::abs(value.value()) > std::numeric_limits<P>::max()) {
-        throw ParameterError(std::format("{} is outside the finite parameter range", name));
-    }
-    return Quantity<K, P, U> {value};
-}
-
-template <std::floating_point P, KindTag K, std::floating_point W, UnitTag U>
-Quantity<K, P, U> positive_thermodynamic_parameter(Quantity<K, W, U> value, const char* name)
-{
-    const auto stored = thermodynamic_parameter<P>(value, name);
-    if (!(stored.value() > P(0))) {
-        throw ParameterError(std::format("{} must remain positive after conversion", name));
-    }
-    return stored;
 }
 
 // Convert the host molar mass before narrowing to the model parameter type.

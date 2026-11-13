@@ -56,6 +56,7 @@
 #include <array>
 #include <canary/build.hpp>
 #include <canary/config.hpp>
+#include <canary/detail/parameters.hpp>
 #include <canary/models/thermally_perfect.hpp>
 #include <canary/quantity.hpp>
 #include <canary/scalar.hpp>
@@ -193,17 +194,54 @@ template <std::size_t S> void check_transport_curve(const TransportCurveInput<S>
     }
 }
 
+// The temperatures at which f(T) = A ln T + B / T + C / T^2 + D, with
+// coefficients = {A, B, C, D}, can take its extremes on the closed segment
+// [low, high]: the two ends and the roots of A T^2 - B T - 2 C = 0 strictly
+// inside the segment. An entry without an interior root repeats the lower
+// end.
+template <std::floating_point W, std::floating_point P>
+std::array<W, 4> stationary_points(const std::array<P, 4>& coefficients, P low, P high)
+{
+    const W a = coefficients[0];
+    const W b = coefficients[1];
+    const W c = coefficients[2];
+    std::array<W, 4> points {W(low), W(high), W(low), W(low)};
+    const auto keep_interior = [&points, low, high](std::size_t entry, W root) {
+        if (root > low && root < high) { points[entry] = root; }
+    };
+    if (a == W(0)) {
+        if (b != W(0)) { keep_interior(2, W(-2) * c / b); }
+        return points;
+    }
+    const W discriminant = (b * b) + (W(8) * a * c);
+    if (!(discriminant >= W(0))) { return points; }
+    // q has the larger magnitude of the two numerators b +- sqrt(discriminant),
+    // so no cancellation occurs; the second root follows from the product of
+    // the roots, -2 C / A.
+    const W q = (b + std::copysign(std::sqrt(discriminant), b)) / W(2);
+    keep_interior(2, q / a);
+    if (q != W(0)) { keep_interior(3, W(-2) * c / q); }
+    return points;
+}
+
 }  // namespace detail
 
 // Curve of a fit in a model's units, with temperature_scale tau the SI value
 // of the model's temperature unit in K and value_scale s the SI value of the
 // model's unit of the fitted quantity (both 1 in SI). The coefficients are
-// folded in at least double precision and then rounded to P:
+// folded in W, at least double precision, and then rounded to P:
 //   A' = A, B' = B / tau, C' = C / tau^2, D' = D + A ln tau - ln s,
-// and the breaks are divided by tau. Throws ParameterError when a scale is
-// not finite and positive, the segment count is not in [1, S], the used
-// breaks are not finite, positive and increasing, or a used coefficient is
-// not finite.
+// and the breaks are divided by tau. The range of the stored fit is then
+// certified: on every segment the fit is evaluated in W, from the stored
+// coefficients and breaks, at the two ends and at the stationary points
+// inside the segment, where its extremes lie. Throws ParameterError when:
+// - a scale is not finite and positive, the segment count is not in [1, S],
+//   the used breaks are not finite, positive and increasing, or a used
+//   coefficient is not finite;
+// - a stored break is not finite and positive in P, two neighbouring breaks
+//   are equal in P, or a stored coefficient is not finite in P;
+// - the fit is not finite and positive in P at one of the certified
+//   temperatures.
 template <std::size_t S, std::floating_point P>
     requires(S > 0)
 TransportCurve<P, S>
@@ -226,24 +264,48 @@ TransportCurve<P, S>
     TransportCurve<P, S> curve {};
     curve.segments = input.segments;
     for (std::size_t i = 0; i <= n; ++i) {
-        curve.breaks[i] = static_cast<P>(input.breaks[i] / tau);
+        curve.breaks[i] =
+          detail::positive_parameter<P>(input.breaks[i] / tau,
+                                        std::format("segment boundary {} in the model's units", i));
+        if (i > 0 && !(curve.breaks[i] > curve.breaks[i - 1])) {
+            throw ParameterError(
+              std::format("segment boundaries {} and {} collapse after conversion", i - 1, i));
+        }
     }
     for (std::size_t j = 0; j < n; ++j) {
         const std::array<double, 4>& c = input.coefficients[j];
-        curve.coefficients[j] = {
-          static_cast<P>(c[0]),
-          static_cast<P>(c[1] / tau),
-          static_cast<P>(c[2] / (tau * tau)),
-          static_cast<P>(c[3] + (c[0] * ln_tau) - ln_scale),
+        const std::array<W, 4> folded {
+          c[0],
+          c[1] / tau,
+          c[2] / (tau * tau),
+          c[3] + (c[0] * ln_tau) - ln_scale,
         };
+        for (std::size_t k = 0; k < 4; ++k) {
+            curve.coefficients[j][k] = detail::finite_parameter<P>(
+              folded[k],
+              std::format("coefficient {} of segment {} in the model's units", k, j));
+        }
+    }
+    for (std::size_t j = 0; j < n; ++j) {
+        const std::array<P, 4>& c = curve.coefficients[j];
+        for (const W t : detail::stationary_points<W>(c, curve.breaks[j], curve.breaks[j + 1])) {
+            const W inverse = W(1) / t;
+            const W value = std::exp((W(c[0]) * std::log(t)) +
+                                     ((W(c[1]) + (W(c[2]) * inverse)) * inverse) + W(c[3]));
+            (void)detail::positive_parameter<P>(
+              value,
+              std::format("the fit at temperature {} in segment {}", t, j));
+        }
     }
     // The ends lie inside [breaks[0], breaks[segments]], so these calls
     // evaluate the fit and do not read low or high.
     const auto value_at = [&curve](P t) {
         return detail::transport_curve_value(curve, t, std::log(t), P(1) / t);
     };
-    curve.low = value_at(curve.breaks[0]);
-    curve.high = value_at(curve.breaks[n]);
+    curve.low =
+      detail::positive_parameter<P>(value_at(curve.breaks[0]), "the fit at the lower end");
+    curve.high =
+      detail::positive_parameter<P>(value_at(curve.breaks[n]), "the fit at the upper end");
     return curve;
 }
 
@@ -322,7 +384,9 @@ struct GuptaYosTransport {
 namespace detail
 {
 
-// Checks the species data and the names of a mixture transport builder.
+// Checks the species data and the names of a mixture transport builder: the
+// species count, that no name is listed twice and that every particle mass
+// is finite and positive.
 template <std::floating_point P, UnitSystem U, std::size_t N>
 void check_transport_species(const std::array<std::string_view, N>& names,
                              const SpeciesData<P, U, N>& species)
@@ -334,6 +398,13 @@ void check_transport_species(const std::array<std::string_view, N>& names,
     for (const SpeciesIndex i : species_indices(0, N)) {
         if (species_index(names, names[i.value()]) != OptionalSpeciesIndex {i}) {
             throw ParameterError(std::format("species \"{}\" is named twice", names[i.value()]));
+        }
+        const P mass = species.mass[i.value()].value();
+        if (!std::isfinite(mass) || !(mass > P(0))) {
+            throw ParameterError(
+              std::format("species {}: particle mass must be finite and positive, got {}",
+                          names[i.value()],
+                          mass));
         }
     }
 }
@@ -385,6 +456,17 @@ TransportCurve<P, S> species_transport_curve(const TransportCurveInput<S>& input
     }
 }
 
+// Reduced mass m_i m_j / (m_i + m_j) of a pair in SI, from the particle
+// masses in the unit system of the scales.
+template <std::floating_point W, std::floating_point P, UnitSystem U>
+ParticleMass<W, si>
+  reduced_mass(ParticleMass<W, U> first, ParticleMass<W, U> second, const UnitScales<P, U>& scales)
+{
+    const W a = convert<si>(first, scales).value();
+    const W b = convert<si>(second, scales).value();
+    return ParticleMass<W, si> {a * b / (a + b)};
+}
+
 }  // namespace detail
 
 // Wilke transport of the N species of a thermo model, named in its species
@@ -393,15 +475,21 @@ TransportCurve<P, S> species_transport_curve(const TransportCurveInput<S>& input
 // with the conductivity mixing rule mixing. The fits are folded into the
 // model's units by make_transport_curve, and the constant factor of D_ij,
 //   (3/16) (2 pi k_B^3 / mu_ij)^(1/2) / (pi sigma_ij^2)
-// in SI, is converted to model units of T, p and D. Throws ParameterError
-// when:
+// in SI, is converted to model units of T, p and D. Every stored number is
+// computed in at least double precision and checked after its conversion to
+// P. Throws ParameterError when:
 // - species.n is not N, a name is listed twice, or mixing is not a
 //   ConductivityMixing value;
 // - an entry of input has no name, names an unknown species or a species
 //   listed before, or a species has no entry;
-// and, with the species name in the message, when make_transport_curve
-// rejects its viscosity or conductivity fit, or its Lennard-Jones sigma or
-// epsilon is not finite and positive.
+// - the temperature, viscosity or conductivity scale is not finite and
+//   positive in P;
+// - with the species name in the message, its particle mass is not finite
+//   and positive, make_transport_curve rejects its viscosity or conductivity
+//   fit, or its Lennard-Jones sigma or epsilon is not finite and positive;
+// - with "species <i> and <j>" in the message, a constant of the pair (the
+//   factors of phi_ij, the factor of D_ij, the well depth or its logarithm)
+//   is not finite, or not positive where it must be, in P.
 template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t S, std::size_t K>
     requires(N > 0 && S > 0 && K > 0)
 WilkeTransport<P, U, N, S>
@@ -420,9 +508,11 @@ WilkeTransport<P, U, N, S>
     const std::array<std::size_t, N> entry = detail::transport_entries(input, names);
     const auto& s = scales;
     const auto tau = scale_factor<kind::temperature>(s);
-    const auto mu_scale = static_cast<P>(scale_factor<kind::dynamic_viscosity>(s));
-    const auto k_scale = static_cast<P>(scale_factor<kind::thermal_conductivity>(s));
-    const auto mass_scale = scale_factor<kind::particle_mass>(s);
+    const P temperature_scale = detail::positive_parameter<P>(tau, "temperature scale");
+    const P mu_scale = detail::positive_parameter<P>(scale_factor<kind::dynamic_viscosity>(s),
+                                                     "dynamic viscosity scale");
+    const P k_scale = detail::positive_parameter<P>(scale_factor<kind::thermal_conductivity>(s),
+                                                    "thermal conductivity scale");
     // T^(3/2) / (p D) in model units is tau^(3/2) / (p_ref D_ref) in SI.
     const auto diffusion_scale =
       tau * std::sqrt(tau) /
@@ -436,11 +526,11 @@ WilkeTransport<P, U, N, S>
         const SpeciesTransportInput<S>& data = input[entry[i.value()]];
         try {
             model.viscosity[i.value()] = detail::species_transport_curve(data.viscosity,
-                                                                         static_cast<P>(tau),
+                                                                         temperature_scale,
                                                                          mu_scale,
                                                                          "viscosity");
             model.conductivity[i.value()] = detail::species_transport_curve(data.conductivity,
-                                                                            static_cast<P>(tau),
+                                                                            temperature_scale,
                                                                             k_scale,
                                                                             "conductivity");
             const LennardJonesInput& lj = data.lennard_jones;
@@ -460,27 +550,43 @@ WilkeTransport<P, U, N, S>
     }
     const double boltzmann = constants::boltzmann<double>;
     for (const SpeciesIndex i : species_indices(0, N)) {
-        const auto m_i = static_cast<W>(species.mass[i.value()].value());
+        const ParticleMass<W, U> m_i {species.mass[i.value()]};
         for (const SpeciesIndex j : species_indices(0, N)) {
-            const auto m_j = static_cast<W>(species.mass[j.value()].value());
-            model.mass_ratio[i.value()][j.value()] =
-              static_cast<P>(std::sqrt(std::sqrt(m_j / m_i)));
-            model.mixing_factor[i.value()][j.value()] =
-              static_cast<P>(1.0 / std::sqrt(8.0 * (1.0 + (m_i / m_j))));
-            const auto reduced_mass = mass_scale * (m_i * m_j / (m_i + m_j));
-            const double sigma =
-              (lennard_jones[i.value()].sigma + lennard_jones[j.value()].sigma) / 2.0;
-            const auto well_depth =
-              std::sqrt(lennard_jones[i.value()].epsilon * lennard_jones[j.value()].epsilon) / tau;
-            const auto factor =
-              (3.0 / 16.0) *
-              std::sqrt(2.0 * std::numbers::pi * boltzmann * boltzmann * boltzmann / reduced_mass) /
-              (std::numbers::pi * sigma * sigma);
-            model.diffusion[i.value()][j.value()] = {
-              .factor = static_cast<P>(factor * diffusion_scale),
-              .well_depth = Temperature<P, U> {static_cast<P>(well_depth)},
-              .log_well_depth = static_cast<P>(std::log(well_depth)),
-            };
+            const ParticleMass<W, U> m_j {species.mass[j.value()]};
+            try {
+                model.mass_ratio[i.value()][j.value()] =
+                  detail::positive_parameter<P>(std::sqrt(std::sqrt(m_j.value() / m_i.value())),
+                                                "mass ratio factor");
+                model.mixing_factor[i.value()][j.value()] = detail::positive_parameter<P>(
+                  1.0 / std::sqrt(8.0 * (1.0 + (m_i.value() / m_j.value()))),
+                  "mixing factor");
+                const ParticleMass<W, si> mu_ij = detail::reduced_mass(m_i, m_j, scales);
+                const double sigma =
+                  (lennard_jones[i.value()].sigma + lennard_jones[j.value()].sigma) / 2.0;
+                const auto well_depth =
+                  convert<U>(Temperature<W, si> {std::sqrt(lennard_jones[i.value()].epsilon *
+                                                           lennard_jones[j.value()].epsilon)},
+                             scales);
+                const auto factor = (3.0 / 16.0) *
+                                    std::sqrt(2.0 * std::numbers::pi * boltzmann * boltzmann *
+                                              boltzmann / mu_ij.value()) /
+                                    (std::numbers::pi * sigma * sigma);
+                model.diffusion[i.value()][j.value()] = {
+                  .factor = detail::positive_parameter<P>(factor * diffusion_scale,
+                                                          "binary diffusion factor"),
+                  .well_depth =
+                    detail::positive_thermodynamic_parameter<P>(well_depth,
+                                                                "Lennard-Jones well depth"),
+                  .log_well_depth =
+                    detail::finite_parameter<P>(std::log(well_depth.value()),
+                                                "logarithm of the Lennard-Jones well depth"),
+                };
+            } catch (const ParameterError& error) {
+                throw ParameterError(std::format("species {} and {}: {}",
+                                                 names[i.value()],
+                                                 names[j.value()],
+                                                 error.what()));
+            }
         }
     }
     return model;
@@ -534,18 +640,27 @@ inline void check_collision_fit(const CollisionFitInput& fit, std::string_view r
 // Delta(1) or 16/5 for Delta(2): with ln T_SI = L + a (a = ln tau), the
 // cubic of the fit in L + a, the term -(L + a) / 2 of T^(-1/2) and the
 // constant ln(factor (2 mu_ij / (pi k_B))^(1/2)) - ln(Delta scale), whose
-// SI terms are in log_constant, are expanded into a cubic in L.
+// SI terms are in log_constant, are expanded into a cubic in L. Throws
+// ParameterError, naming the coefficient and the fit (role), when a
+// coefficient of the cubic is not finite in P.
 template <std::floating_point P>
 CollisionTermFit<P> collision_term_fit(const CollisionFitInput& fit,
                                        std::common_type_t<double, P> a,
-                                       std::common_type_t<double, P> log_constant)
+                                       std::common_type_t<double, P> log_constant,
+                                       std::string_view role)
 {
+    const auto stored = [role](std::common_type_t<double, P> value, char name) {
+        return finite_parameter<P>(
+          value,
+          std::format("cubic coefficient {} of ln Delta from {}", name, role));
+    };
     return {
-      .a = static_cast<P>(fit.A),
-      .b = static_cast<P>(fit.B + (3.0 * fit.A * a)),
-      .c = static_cast<P>(fit.C + (2.0 * fit.B * a) + (3.0 * fit.A * a * a) - 0.5),
-      .d = static_cast<P>(fit.D + (fit.C * a) + (fit.B * a * a) + (fit.A * a * a * a) - (0.5 * a) +
-                          log_constant),
+      .a = stored(fit.A, 'a'),
+      .b = stored(fit.B + (3.0 * fit.A * a), 'b'),
+      .c = stored(fit.C + (2.0 * fit.B * a) + (3.0 * fit.A * a * a) - 0.5, 'c'),
+      .d = stored(fit.D + (fit.C * a) + (fit.B * a * a) + (fit.A * a * a * a) - (0.5 * a) +
+                    log_constant,
+                  'd'),
     };
 }
 
@@ -558,13 +673,18 @@ CollisionTermFit<P> collision_term_fit(const CollisionFitInput& fit,
 // scales. Every pair of species, i = j included, needs exactly one entry.
 // The fits are folded with their constant factors and the temperature scale
 // into the cubics of CollisionTermFit, in the model units of Delta (those of
-// a particle mass over a dynamic viscosity). Throws ParameterError when:
+// a particle mass over a dynamic viscosity). Every stored number is computed
+// in at least double precision and checked after its conversion to P. Throws
+// ParameterError when:
 // - species.n is not N, or a name is listed twice;
-// - a number of rotational degrees of freedom is not 0 or 2 (with the
-//   species name in the message);
+// - with the species name in the message, a particle mass is not finite and
+//   positive, a number of rotational degrees of freedom is not 0 or 2, or
+//   the gas constant is not finite and positive in P;
 // - with "collision pair <index> (<first>, <second>)" in the message, a
-//   pair names a species that is null or unknown, is listed twice, or has a
-//   coefficient that is not finite;
+//   pair names a species that is null or unknown, is listed twice, has a
+//   coefficient that is not finite, or gives a cubic coefficient that is not
+//   finite in P;
+// - with "species <i> and <j>" in the message, alpha_ij is not finite in P;
 // - a pair of species has no entry.
 template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t K>
     requires(N > 0 && K > 0)
@@ -622,7 +742,6 @@ GuptaYosTransport<P, U, N> make_gupta_yos_transport(const std::array<CollisionPa
 
     const auto& s = scales;
     const auto ln_tau = std::log(scale_factor<kind::temperature>(s));
-    const auto mass_scale = scale_factor<kind::particle_mass>(s);
     // Delta has the dimension of a particle mass over a dynamic viscosity.
     const Dimension delta_dimension {.length = 1, .time = 1, .count = -1};
     const auto ln_delta_scale = std::log(scale_factor(delta_dimension, s));
@@ -633,29 +752,41 @@ GuptaYosTransport<P, U, N> make_gupta_yos_transport(const std::array<CollisionPa
     model.rotational_degrees = rotational_degrees;
     model.boltzmann = boltzmann_constant(scales);
     for (const SpeciesIndex i : species_indices(0, N)) {
-        const P m_i = species.mass[i.value()].value();
-        model.gas_constant[i.value()] = SpecificGasConstant<P, U> {model.boltzmann.value() / m_i};
+        const ParticleMass<W, U> m_i {species.mass[i.value()]};
+        model.gas_constant[i.value()] = detail::positive_thermodynamic_parameter<P>(
+          specific_gas_constant(BoltzmannConstant<W, U> {model.boltzmann}, m_i),
+          std::format("species {}: gas constant", names[i.value()]));
         for (const SpeciesIndex j : species_indices(0, N)) {
-            const P m_j = species.mass[j.value()].value();
-            const auto r = static_cast<W>(m_i) / static_cast<W>(m_j);
-            model.alpha[i.value()][j.value()] =
-              static_cast<P>(1.0 + ((1.0 - r) * (0.45 - (2.54 * r)) / ((1.0 + r) * (1.0 + r))));
-            const auto a_si = mass_scale * static_cast<W>(m_i);
-            const auto b_si = mass_scale * static_cast<W>(m_j);
-            const auto reduced_mass = a_si * b_si / (a_si + b_si);
+            const ParticleMass<W, U> m_j {species.mass[j.value()]};
+            const W r = m_i.value() / m_j.value();
+            model.alpha[i.value()][j.value()] = detail::finite_parameter<P>(
+              1.0 + ((1.0 - r) * (0.45 - (2.54 * r)) / ((1.0 + r) * (1.0 + r))),
+              std::format("species {} and {}: alpha", names[i.value()], names[j.value()]));
+            const ParticleMass<W, si> mu_ij = detail::reduced_mass(m_i, m_j, scales);
             const auto log_root =
-              0.5 * std::log(2.0 * reduced_mass / (std::numbers::pi * boltzmann));
-            const CollisionPairInput& pair = pairs[entry[i.value()][j.value()]];
-            model.collision[i.value()][j.value()] = {
-              .delta_1 =
-                detail::collision_term_fit<P>(pair.pi_omega_11,
-                                              ln_tau,
-                                              std::log(8.0 / 3.0) + log_root - ln_delta_scale),
-              .delta_2 =
-                detail::collision_term_fit<P>(pair.pi_omega_22,
-                                              ln_tau,
-                                              std::log(16.0 / 5.0) + log_root - ln_delta_scale),
-            };
+              0.5 * std::log(2.0 * mu_ij.value() / (std::numbers::pi * boltzmann));
+            const std::size_t e = entry[i.value()][j.value()];
+            const CollisionPairInput& pair = pairs[e];
+            try {
+                model.collision[i.value()][j.value()] = {
+                  .delta_1 =
+                    detail::collision_term_fit<P>(pair.pi_omega_11,
+                                                  ln_tau,
+                                                  std::log(8.0 / 3.0) + log_root - ln_delta_scale,
+                                                  "pi Omega(1,1)"),
+                  .delta_2 =
+                    detail::collision_term_fit<P>(pair.pi_omega_22,
+                                                  ln_tau,
+                                                  std::log(16.0 / 5.0) + log_root - ln_delta_scale,
+                                                  "pi Omega(2,2)"),
+                };
+            } catch (const ParameterError& error) {
+                throw ParameterError(std::format("collision pair {} ({}, {}): {}",
+                                                 e,
+                                                 pair.first,
+                                                 pair.second,
+                                                 error.what()));
+            }
         }
     }
     return model;

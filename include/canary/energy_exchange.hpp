@@ -49,6 +49,7 @@
 #include <array>
 #include <canary/build.hpp>
 #include <canary/config.hpp>
+#include <canary/detail/parameters.hpp>
 #include <canary/indexed_view.hpp>
 #include <canary/models/thermally_perfect.hpp>
 #include <canary/models/two_temperature.hpp>
@@ -315,31 +316,6 @@ SpeciesIndex known_species(const std::array<std::string_view, N>& names,
     const auto index = species_index(names, name);
     if (!index) { throw ParameterError(std::format("unknown {} \"{}\"", role, name)); }
     return *index;
-}
-
-// A finite value converted to P; throws ParameterError otherwise, naming
-// what.
-template <std::floating_point P>
-P finite_parameter(std::common_type_t<double, P> value, std::string_view what)
-{
-    const auto converted = static_cast<P>(value);
-    if (!std::isfinite(value) || !std::isfinite(converted)) {
-        throw ParameterError(std::format("{} must be finite, got {}", what, value));
-    }
-    return converted;
-}
-
-// A finite, positive value converted to P; throws ParameterError otherwise,
-// naming what.
-template <std::floating_point P>
-P positive_parameter(std::common_type_t<double, P> value, std::string_view what)
-{
-    const auto converted = static_cast<P>(value);
-    if (!std::isfinite(value) || !(value > 0.0) || !std::isfinite(converted) ||
-        !(converted > P(0))) {
-        throw ParameterError(std::format("{} must be finite and positive, got {}", what, value));
-    }
-    return converted;
 }
 
 template <std::floating_point P, UnitSystem U, std::size_t N>

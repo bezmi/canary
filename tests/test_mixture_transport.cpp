@@ -1070,6 +1070,33 @@ void test_mixture_transport()
           },
         .message = "species NO: viscosity: coefficient 2 of segment 1 is not finite",
       },
+      // ln(mu) = 2e5 / T - 5e7 / T^2 + 540 is 290 and 690 at the ends and has
+      // its maximum 740 at T = 500 K, above ln(DBL_MAX) = 709.8.
+      WilkeCase {
+        .name = "a fit that overflows inside a segment",
+        .change =
+          [](WilkeInput& in) {
+              in[0].viscosity = {.segments = 1,
+                                 .breaks = {200.0, 1000.0},
+                                 .coefficients = {{{0.0, 2.0e5, -5.0e7, 540.0}}}};
+          },
+        .message = "species N2: viscosity: the fit at temperature 500 in segment 0 must be finite "
+                   "and positive, got inf",
+      },
+      // ln(k) = -2e5 / T + 5e7 / T^2 - 555 is -305 and -705 at the ends and
+      // has its minimum -755 at T = 500 K, below the logarithm -745.1 of the
+      // smallest positive double.
+      WilkeCase {
+        .name = "a fit that underflows inside a segment",
+        .change =
+          [](WilkeInput& in) {
+              in[1].conductivity = {.segments = 1,
+                                    .breaks = {200.0, 1000.0},
+                                    .coefficients = {{{0.0, -2.0e5, 5.0e7, -555.0}}}};
+          },
+        .message = "species O2: conductivity: the fit at temperature 500 in segment 0 must be "
+                   "finite and positive, got 0",
+      },
       WilkeCase {
         .name = "a sigma that is not positive",
         .change = [](WilkeInput& in) { in[3].lennard_jones.sigma = 0.0; },
@@ -1233,5 +1260,72 @@ void test_mixture_transport()
                                                           canary::air5_rotational_degrees,
                                                           si_scales);
                }) == "species \"N2\" is named twice");
+    };
+    "mixture transport: the builders reject a particle mass that is not finite and positive"_test =
+      [&] {
+          for (const double bad : {0.0, -1.0, quiet_nan, std::numeric_limits<double>::infinity()}) {
+              auto species = air.species;
+              species.mass[2] = canary::ParticleMass<double, si> {bad};
+              const std::string expected =
+                std::format("species N: particle mass must be finite and positive, got {}", bad);
+              const std::string wilke_message =
+                error_message([&] { (void)canary::make_air5_wilke_transport(species, si_scales); });
+              expect(wilke_message == expected) << wilke_message;
+              const std::string gupta_yos_message = error_message(
+                [&] { (void)canary::make_air5_gupta_yos_transport(species, si_scales); });
+              expect(gupta_yos_message == expected) << gupta_yos_message;
+          }
+      };
+    "mixture transport: the Wilke builder rejects breaks that are equal in the stored units"_test =
+      [] {
+          // 1000 K and 1000.00001 K are both 1 in float after division by the
+          // temperature unit of 1000 K.
+          const canary::UnitScales<float, scaled> scales {
+            {.mass = 4.65e-26, .density = 1.0e-3, .temperature = 1000.0, .length = 1.0}};
+          const auto air_float = canary::make_air5<float>(scales);
+          WilkeInput input = canary::air5_species_transport;
+          input[0].viscosity.segments = 1;
+          input[0].viscosity.breaks[0] = 1000.0;
+          input[0].viscosity.breaks[1] = 1000.00001;
+          const std::string message = error_message([&] {
+              (void)canary::make_wilke_transport(input,
+                                                 canary::detail::air5_species_names,
+                                                 air_float.species,
+                                                 scales);
+          });
+          expect(message ==
+                 "species N2: viscosity: segment boundaries 0 and 1 collapse after conversion")
+            << message;
+      };
+    "mixture transport: the builders reject constants that overflow the parameter type"_test = [] {
+        const canary::UnitScales<float, si> scales {};
+        const auto air_float = canary::make_air5<float>(scales);
+        // The factor of D_ij is proportional to 1 / sigma_ij^2: about 6.7e39
+        // in SI for two oxygen atoms with sigma = 1e-31 m, above FLT_MAX.
+        WilkeInput input = canary::air5_species_transport;
+        input[3].lennard_jones.sigma = 1.0e-31;
+        const std::string wilke_message = error_message([&] {
+            (void)canary::make_wilke_transport(input,
+                                               canary::detail::air5_species_names,
+                                               air_float.species,
+                                               scales);
+        });
+        expect(wilke_message.starts_with(
+          "species O and O: binary diffusion factor must be finite and positive, got "))
+          << wilke_message;
+        // The constant D of a collision fit is a term of the cubic
+        // coefficient d.
+        Pairs pairs = canary::air5_collision_integrals;
+        pairs[2].pi_omega_11.D = 1.0e39;
+        const std::string gupta_yos_message = error_message([&] {
+            (void)canary::make_gupta_yos_transport(pairs,
+                                                   canary::detail::air5_species_names,
+                                                   air_float.species,
+                                                   canary::air5_rotational_degrees,
+                                                   scales);
+        });
+        expect(gupta_yos_message == "collision pair 2 (O2, O2): cubic coefficient d of ln Delta "
+                                    "from pi Omega(1,1) must be finite, got 1e+39")
+          << gupta_yos_message;
     };
 }
