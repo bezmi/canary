@@ -676,15 +676,15 @@ inline constexpr MechanismInput<13, 5> air5_kim_jo {
                     },
                     {
                       .name = "NO",
-                      .value = 0.664827586,
+                      .value = 0.6648275862068966,
                     },
                     {
                       .name = "N",
-                      .value = 0.664827586,
+                      .value = 0.6648275862068966,
                     },
                     {
                       .name = "O",
-                      .value = 0.664827586,
+                      .value = 0.6648275862068966,
                     },
                   },
                 },
