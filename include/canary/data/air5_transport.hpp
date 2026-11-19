@@ -9,10 +9,11 @@
 // Gordon, NASA/TP-2002-211556) for N2, O2, NO and Johnston et al., AIAA Paper
 // 2015-3110 for N and O; transport: NASA CEA trans.inp fits as in the GDTk
 // database, Lennard-Jones parameters from GRI-Mech 3.0 (Svehla 1962 for N);
-// Gupta, Yos, Thompson and Lee, A review of reaction rates and thermodynamic
-// and transport properties for an 11-species air model for chemical and
-// thermal nonequilibrium calculations to 30000 K, NASA RP-1232, 1990; from
-// GDTk (gdtk-uq/gdtk commit bf559c3f,
+// electronic levels: NIST, as in the GDTk database; Gupta, Yos, Thompson and
+// Lee, A review of reaction rates and thermodynamic and transport properties
+// for an 11-species air model for chemical and thermal nonequilibrium
+// calculations to 30000 K, NASA RP-1232, 1990; from GDTk (gdtk-uq/gdtk commit
+// bf559c3f,
 // src/gas/species-database/collision-integrals/gupta_etal_1990_CI_data.lua)
 
 #include <array>
@@ -579,7 +580,7 @@ inline constexpr std::array<CollisionPairInput, 15> air5_collision_integrals {
         {
           .A = 0.0,
           .B = -0.0203,
-          .C = 0.0703,
+          .C = 0.073,
           .D = -42.169901859880916,
         },
     },
@@ -741,7 +742,7 @@ inline constexpr std::array<CollisionPairInput, 15> air5_collision_integrals {
         {
           .A = 0.0,
           .B = -0.0203,
-          .C = 0.0703,
+          .C = 0.073,
           .D = -42.169901859880916,
         },
     },
