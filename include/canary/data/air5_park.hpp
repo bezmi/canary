@@ -94,11 +94,11 @@ inline constexpr MechanismInput<5, 5> air5_park {
                     },
                     {
                       .name = "N",
-                      .value = 4.2857,
+                      .value = 4.285714285714286,
                     },
                     {
                       .name = "O",
-                      .value = 4.2857,
+                      .value = 4.285714285714286,
                     },
                   },
                 },
