@@ -16,7 +16,7 @@
             "b": 0.0262,
             "high_temperature_correction": {
                "model": "park_1993",
-               "cross_section": 1e-21,
+               "cross_section": 3e-21,
                "reference_temperature": 50000.0
             }
          }
@@ -31,7 +31,7 @@
             "b": 0.015,
             "high_temperature_correction": {
                "model": "park_1993",
-               "cross_section": 1e-21,
+               "cross_section": 3e-21,
                "reference_temperature": 50000.0
             }
          }
@@ -46,7 +46,7 @@
             "b": 0.029,
             "high_temperature_correction": {
                "model": "park_1993",
-               "cross_section": 1e-21,
+               "cross_section": 3e-21,
                "reference_temperature": 50000.0
             }
          }
@@ -61,7 +61,7 @@
             "b": 0.0295,
             "high_temperature_correction": {
                "model": "park_1993",
-               "cross_section": 1e-21,
+               "cross_section": 3e-21,
                "reference_temperature": 50000.0
             }
          }
@@ -76,7 +76,7 @@
             "b": 0.0293,
             "high_temperature_correction": {
                "model": "park_1993",
-               "cross_section": 1e-21,
+               "cross_section": 3e-21,
                "reference_temperature": 50000.0
             }
          }
@@ -91,7 +91,7 @@
             "b": 0.015,
             "high_temperature_correction": {
                "model": "park_1993",
-               "cross_section": 1e-21,
+               "cross_section": 3e-21,
                "reference_temperature": 50000.0
             }
          }
@@ -106,7 +106,7 @@
             "b": 0.059,
             "high_temperature_correction": {
                "model": "park_1993",
-               "cross_section": 1e-21,
+               "cross_section": 3e-21,
                "reference_temperature": 50000.0
             }
          }
@@ -121,7 +121,7 @@
             "b": 0.0295,
             "high_temperature_correction": {
                "model": "park_1993",
-               "cross_section": 1e-21,
+               "cross_section": 3e-21,
                "reference_temperature": 50000.0
             }
          }
@@ -136,7 +136,7 @@
             "b": 0.03,
             "high_temperature_correction": {
                "model": "park_1993",
-               "cross_section": 1e-21,
+               "cross_section": 3e-21,
                "reference_temperature": 50000.0
             }
          }
@@ -151,7 +151,7 @@
             "b": 0.0298,
             "high_temperature_correction": {
                "model": "park_1993",
-               "cross_section": 1e-21,
+               "cross_section": 3e-21,
                "reference_temperature": 50000.0
             }
          }
@@ -166,7 +166,7 @@
             "b": 0.042,
             "high_temperature_correction": {
                "model": "park_1993",
-               "cross_section": 1e-21,
+               "cross_section": 3e-21,
                "reference_temperature": 50000.0
             }
          }
@@ -181,7 +181,7 @@
             "b": 0.042,
             "high_temperature_correction": {
                "model": "park_1993",
-               "cross_section": 1e-21,
+               "cross_section": 3e-21,
                "reference_temperature": 50000.0
             }
          }
@@ -196,7 +196,7 @@
             "b": 0.042,
             "high_temperature_correction": {
                "model": "park_1993",
-               "cross_section": 1e-21,
+               "cross_section": 3e-21,
                "reference_temperature": 50000.0
             }
          }
@@ -211,7 +211,7 @@
             "b": 0.042,
             "high_temperature_correction": {
                "model": "park_1993",
-               "cross_section": 1e-21,
+               "cross_section": 3e-21,
                "reference_temperature": 50000.0
             }
          }
@@ -226,7 +226,7 @@
             "b": 0.042,
             "high_temperature_correction": {
                "model": "park_1993",
-               "cross_section": 1e-21,
+               "cross_section": 3e-21,
                "reference_temperature": 50000.0
             }
          }

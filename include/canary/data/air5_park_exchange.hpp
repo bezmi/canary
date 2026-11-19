@@ -12,13 +12,13 @@
 // gm-air-5sp-2T and rm-park-5sp-2T.
 
 #include <array>
-#include <concepts>
-#include <cstddef>
 #include <canary/data/air5.hpp>
 #include <canary/data/air5_park.hpp>
 #include <canary/energy_exchange.hpp>
 #include <canary/species.hpp>
 #include <canary/units.hpp>
+#include <concepts>
+#include <cstddef>
 #include <string_view>
 
 namespace canary
@@ -41,7 +41,7 @@ inline constexpr EnergyExchangeInput<15, 3> air5_park_exchange {
           .correction =
             {
               .model = RelaxationCorrection::park_1993,
-              .cross_section = 1e-21,
+              .cross_section = 3e-21,
               .reference_temperature = 50000.0,
               .exponent = 0.0,
             },
@@ -57,7 +57,7 @@ inline constexpr EnergyExchangeInput<15, 3> air5_park_exchange {
           .correction =
             {
               .model = RelaxationCorrection::park_1993,
-              .cross_section = 1e-21,
+              .cross_section = 3e-21,
               .reference_temperature = 50000.0,
               .exponent = 0.0,
             },
@@ -73,7 +73,7 @@ inline constexpr EnergyExchangeInput<15, 3> air5_park_exchange {
           .correction =
             {
               .model = RelaxationCorrection::park_1993,
-              .cross_section = 1e-21,
+              .cross_section = 3e-21,
               .reference_temperature = 50000.0,
               .exponent = 0.0,
             },
@@ -89,7 +89,7 @@ inline constexpr EnergyExchangeInput<15, 3> air5_park_exchange {
           .correction =
             {
               .model = RelaxationCorrection::park_1993,
-              .cross_section = 1e-21,
+              .cross_section = 3e-21,
               .reference_temperature = 50000.0,
               .exponent = 0.0,
             },
@@ -105,7 +105,7 @@ inline constexpr EnergyExchangeInput<15, 3> air5_park_exchange {
           .correction =
             {
               .model = RelaxationCorrection::park_1993,
-              .cross_section = 1e-21,
+              .cross_section = 3e-21,
               .reference_temperature = 50000.0,
               .exponent = 0.0,
             },
@@ -121,7 +121,7 @@ inline constexpr EnergyExchangeInput<15, 3> air5_park_exchange {
           .correction =
             {
               .model = RelaxationCorrection::park_1993,
-              .cross_section = 1e-21,
+              .cross_section = 3e-21,
               .reference_temperature = 50000.0,
               .exponent = 0.0,
             },
@@ -137,7 +137,7 @@ inline constexpr EnergyExchangeInput<15, 3> air5_park_exchange {
           .correction =
             {
               .model = RelaxationCorrection::park_1993,
-              .cross_section = 1e-21,
+              .cross_section = 3e-21,
               .reference_temperature = 50000.0,
               .exponent = 0.0,
             },
@@ -153,7 +153,7 @@ inline constexpr EnergyExchangeInput<15, 3> air5_park_exchange {
           .correction =
             {
               .model = RelaxationCorrection::park_1993,
-              .cross_section = 1e-21,
+              .cross_section = 3e-21,
               .reference_temperature = 50000.0,
               .exponent = 0.0,
             },
@@ -169,7 +169,7 @@ inline constexpr EnergyExchangeInput<15, 3> air5_park_exchange {
           .correction =
             {
               .model = RelaxationCorrection::park_1993,
-              .cross_section = 1e-21,
+              .cross_section = 3e-21,
               .reference_temperature = 50000.0,
               .exponent = 0.0,
             },
@@ -185,7 +185,7 @@ inline constexpr EnergyExchangeInput<15, 3> air5_park_exchange {
           .correction =
             {
               .model = RelaxationCorrection::park_1993,
-              .cross_section = 1e-21,
+              .cross_section = 3e-21,
               .reference_temperature = 50000.0,
               .exponent = 0.0,
             },
@@ -201,7 +201,7 @@ inline constexpr EnergyExchangeInput<15, 3> air5_park_exchange {
           .correction =
             {
               .model = RelaxationCorrection::park_1993,
-              .cross_section = 1e-21,
+              .cross_section = 3e-21,
               .reference_temperature = 50000.0,
               .exponent = 0.0,
             },
@@ -217,7 +217,7 @@ inline constexpr EnergyExchangeInput<15, 3> air5_park_exchange {
           .correction =
             {
               .model = RelaxationCorrection::park_1993,
-              .cross_section = 1e-21,
+              .cross_section = 3e-21,
               .reference_temperature = 50000.0,
               .exponent = 0.0,
             },
@@ -233,7 +233,7 @@ inline constexpr EnergyExchangeInput<15, 3> air5_park_exchange {
           .correction =
             {
               .model = RelaxationCorrection::park_1993,
-              .cross_section = 1e-21,
+              .cross_section = 3e-21,
               .reference_temperature = 50000.0,
               .exponent = 0.0,
             },
@@ -249,7 +249,7 @@ inline constexpr EnergyExchangeInput<15, 3> air5_park_exchange {
           .correction =
             {
               .model = RelaxationCorrection::park_1993,
-              .cross_section = 1e-21,
+              .cross_section = 3e-21,
               .reference_temperature = 50000.0,
               .exponent = 0.0,
             },
@@ -265,7 +265,7 @@ inline constexpr EnergyExchangeInput<15, 3> air5_park_exchange {
           .correction =
             {
               .model = RelaxationCorrection::park_1993,
-              .cross_section = 1e-21,
+              .cross_section = 3e-21,
               .reference_temperature = 50000.0,
               .exponent = 0.0,
             },

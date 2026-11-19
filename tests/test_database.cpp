@@ -1285,7 +1285,7 @@ int main()
         expect(first.relaxation_time.model == "millikan_white");
         expect(first.relaxation_time.a == 180.0_d && first.relaxation_time.b == 0.0262_d);
         expect(first.relaxation_time.high_temperature_correction.has_value());
-        expect(first.relaxation_time.high_temperature_correction->cross_section == 1.0e-21);
+        expect(first.relaxation_time.high_temperature_correction->cross_section == 3.0e-21);
         const db::ChemistryVibrationRecord& coupling = file.chemistry_vibration[1];
         expect(coupling.reaction == 1_i && coupling.species == "O2");
         expect(coupling.model == "impartial_dissociation");
