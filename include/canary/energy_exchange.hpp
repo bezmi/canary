@@ -158,28 +158,23 @@ struct ElectronTranslationInput {
     double maximum_temperature;
 };
 
-// Host input of Candler's vibration-electron relaxation time:
-// log10(p_e tau / (1 atm s)) = f(x) with x = log10(T_e / 1 K),
-// f_low = a_low x^2 + b_low x + c_low for T_e <= blend_lower,
-// f_high = a_high x^2 + b_high x + c_high for T_e >= blend_upper, and
-// w f_low + (1 - w) f_high between, with w = cos^2(pi / 2 (T_e -
-// blend_lower) / (blend_upper - blend_lower)); blend bounds in K.
-struct CandlerFitInput {
-    double a_low;
-    double b_low;
-    double c_low;
-    double a_high;
-    double b_high;
-    double c_high;
-    double blend_lower;
-    double blend_upper;
+// Host input of a vibration-electron relaxation time:
+// ln(p_e tau / (1 atm s)) = constant + exponent ln(T_e / T_ref) + B u +
+// C u^2 + D u^3 with u = T_ref / T_e, the reference temperature T_ref in K
+// and inverse_coefficients = {B, C, D}. p_e tau is proportional to
+// T_e^exponent for T_e much larger than T_ref.
+struct PowerExponentialFitInput {
+    double reference_temperature;
+    double constant;
+    double exponent;
+    std::array<double, 3> inverse_coefficients;
 };
 
 // Host input of one vibration-electron exchange: the species whose
 // vibration relaxes with the free electrons, and its relaxation time.
 struct VibrationElectronInput {
     const char* species;
-    CandlerFitInput relaxation_time;
+    PowerExponentialFitInput relaxation_time;
 };
 
 // Host input of one electron-impact ionisation: the index of the reaction
@@ -968,11 +963,16 @@ CANARY_HOST_DEVICE TwoTemperatureSources<T, U, N>
 //   electron mode:
 //   Q_ET = 3 n_e k_B (T - T_e) sum_q (m_e / m_q) n_q sigma_eq c_e,
 //   c_e = sqrt(8 k_B T_e / (pi m_e)), sigma_eq of ElectronCrossSection;
-// - vibration-electron (Landau-Teller with Candler's relaxation time), of
-//   species p: Q = rho y_p (e_p,m_p(T_e) - e_p,m_p(T_m_p)) / tau_pe, added
-//   to mode m_p and subtracted from the electron mode, with
-//   1 / tau_pe = (p_e / 1 atm) 10^(-f) / (1 s) (see CandlerFitInput), so
-//   that p_e = 0 gives no exchange;
+// - vibration-electron (the Landau-Teller rate of J.-H. Lee, AIAA Paper
+//   85-1035, Eq. (16)), of species p:
+//   Q = rho y_p (e_p,m_p(T_e) - e_p,m_p(T_m_p)) / tau_pe, added to mode m_p
+//   and subtracted from the electron mode, with
+//   1 / tau_pe = (p_e / 1 atm) exp(-f) / (1 s) and f = ln(p_e tau / (1 atm
+//   s)) of PowerExponentialFitInput, so that p_e = 0 gives no exchange.
+//   TODO: Lee recommends the modified rate of his Eq. (18) with s = 3.5,
+//   Q multiplied by ((e(T_e) - e) / (e(T_e) - e_0))^(s - 1) with e_0 the
+//   energy at the start of the relaxation, in place of Eq. (16); check
+//   whether canary should use that rate;
 // - electron-impact ionisation (Gnoffo, Gupta and Shinn 1989), into the
 //   electron mode: Q_CE = -sum (q_f,r - q_b,r) I_s / N_A over the
 //   ionisations, with the rates of progress of reaction r and the
@@ -993,30 +993,25 @@ template <std::floating_point P, UnitSystem U> struct ElectronTranslationPair {
     Temperature<P, U> maximum_temperature;
 };
 
-// Candler's fit in model units: 1 / tau = p_e 10^(-f(x)) with
-// x = log10(T_e), p_e, T_e and tau in model units, f_low = a_low x^2 +
-// b_low x + c_low and f_high likewise, blended between the blend bounds as
-// in CandlerFitInput. With s = log10(tau_T) for the temperature scale tau_T
-// and K = t_ref p_ref / (1 atm (1 s)) for the time scale t_ref and the
-// pressure scale p_ref (in SI, s = 0 and K = 1 / 101325), each fit
-// a x^2 + b x + c of the input becomes
-// a x^2 + (2 a s + b) x + (a s^2 + b s + c - log10 K).
-template <std::floating_point P, UnitSystem U> struct CandlerFit {
-    P a_low;
-    P b_low;
-    P c_low;
-    P a_high;
-    P b_high;
-    P c_high;
-    Temperature<P, U> blend_lower;
-    Temperature<P, U> blend_upper;
+// A vibration-electron relaxation time in model units:
+// 1 / tau = p_e exp(-f) with f = constant + exponent ln(T_e / T_ref) + B u +
+// C u^2 + D u^3, u = T_ref / T_e and inverse_coefficients = {B, C, D}; p_e,
+// T_e, T_ref and tau in model units. T_e / T_ref has no unit, so the input
+// differs only in the constant: with K = t_ref p_ref / (1 atm (1 s)) for the
+// time scale t_ref and the pressure scale p_ref (in SI, K = 1 / 101325), the
+// constant of the input becomes constant - ln K.
+template <std::floating_point P, UnitSystem U> struct PowerExponentialFit {
+    Temperature<P, U> reference_temperature;
+    P constant;
+    P exponent;
+    std::array<P, 3> inverse_coefficients;
 };
 
 // One vibration-electron exchange in model units: the index of the species
 // and its relaxation time.
 template <std::floating_point P, UnitSystem U> struct VibrationElectronCoupling {
     SpeciesIndex species;
-    CandlerFit<P, U> relaxation_time;
+    PowerExponentialFit<P, U> relaxation_time;
 };
 
 // One electron-impact ionisation in model units: the reaction index, the
@@ -1406,16 +1401,14 @@ VibrationElectronCoupling<P, U>
 {
     VibrationElectronCoupling<P, U> coupling {};
     coupling.species = known_species(names, input.species, "species");
-    const CandlerFitInput& fit = input.relaxation_time;
-    const std::array<double, 8> values {
-      fit.a_low,
-      fit.b_low,
-      fit.c_low,
-      fit.a_high,
-      fit.b_high,
-      fit.c_high,
-      fit.blend_lower,
-      fit.blend_upper,
+    const PowerExponentialFitInput& fit = input.relaxation_time;
+    const std::array<double, 6> values {
+      fit.reference_temperature,
+      fit.constant,
+      fit.exponent,
+      fit.inverse_coefficients[0],
+      fit.inverse_coefficients[1],
+      fit.inverse_coefficients[2],
     };
     for (const double v : values) {
         if (!std::isfinite(v)) {
@@ -1423,42 +1416,28 @@ VibrationElectronCoupling<P, U>
               std::format("relaxation-time parameters must be finite, got {}", v));
         }
     }
-    if (!(fit.blend_upper > fit.blend_lower)) {
+    if (!(fit.reference_temperature > 0.0)) {
         throw ParameterError(
-          std::format("relaxation-time blend bounds must satisfy lower < upper, got {} and {}",
-                      fit.blend_lower,
-                      fit.blend_upper));
+          std::format("relaxation-time reference temperature must be positive, got {}",
+                      fit.reference_temperature));
     }
     const auto& s = scales;
     const auto tau = scale_factor<kind::temperature>(s);
-    const auto shift = std::log10(tau);
-    const auto log_k = std::log10(scale_factor(Dimension {.time = 1}, s) *
-                                  scale_factor<kind::pressure>(s) / 101325.0);
-    const auto convert_fit = [&](double a, double b, double c) {
-        return std::array<P, 3> {
-          finite_parameter<P>(a, "relaxation-time coefficient in the model's units"),
-          finite_parameter<P>((2.0 * a * shift) + b,
-                              "relaxation-time coefficient in the model's units"),
-          finite_parameter<P>((((a * shift) + b) * shift) + c - log_k,
-                              "relaxation-time coefficient in the model's units"),
-        };
+    const auto log_k =
+      std::log(scale_factor(Dimension {.time = 1}, s) * scale_factor<kind::pressure>(s) / 101325.0);
+    const auto converted = [](double value) {
+        return finite_parameter<P>(value, "relaxation-time coefficient in the model's units");
     };
-    const std::array<P, 3> low = convert_fit(fit.a_low, fit.b_low, fit.c_low);
-    const std::array<P, 3> high = convert_fit(fit.a_high, fit.b_high, fit.c_high);
     coupling.relaxation_time = {
-      .a_low = low[0],
-      .b_low = low[1],
-      .c_low = low[2],
-      .a_high = high[0],
-      .b_high = high[1],
-      .c_high = high[2],
-      .blend_lower = Temperature<P, U> {static_cast<P>(fit.blend_lower / tau)},
-      .blend_upper = Temperature<P, U> {static_cast<P>(fit.blend_upper / tau)},
+      .reference_temperature = Temperature<P, U> {positive_parameter<P>(
+        fit.reference_temperature / tau,
+        "relaxation-time reference temperature in the model's units")},
+      .constant = converted(fit.constant - log_k),
+      .exponent = converted(fit.exponent),
+      .inverse_coefficients = {converted(fit.inverse_coefficients[0]),
+                               converted(fit.inverse_coefficients[1]),
+                               converted(fit.inverse_coefficients[2])},
     };
-    if (!(coupling.relaxation_time.blend_upper.value() >
-          coupling.relaxation_time.blend_lower.value())) {
-        throw ParameterError("relaxation-time blend bounds are not distinct in P");
-    }
     return coupling;
 }
 
@@ -1567,8 +1546,8 @@ ElectronImpactIonisationCoupling<P, U>
 // - a gnoffo_neutral coefficient is not finite, its maximum temperature
 //   is not finite and positive, or its quadratic is negative/nonfinite on
 //   [0, maximum_temperature] before or after parameter conversion;
-// - a relaxation-time parameter is not finite or blend_upper <=
-//   blend_lower;
+// - a relaxation-time parameter is not finite or its reference temperature
+//   is not positive, before or after parameter conversion;
 // - a coulomb pair or an ionisation is given and the electron charge is not
 //   finite and negative;
 // - an ionisation's reaction index is outside [0, R), or its source is not a
@@ -1887,35 +1866,25 @@ CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M>
     return out;
 }
 
-// log10(p_e tau_pe) of Candler's fit at x = log10(T_e) and temperature
-// t_e; between the blend bounds the weight w is evaluated on value parts,
-// and a dual number receives dw/dT_e times the derivative of T_e.
+// f = ln(p_e tau_pe) of the fit in model units at the electron temperature
+// t_e.
 template <Scalar T, std::floating_point P, UnitSystem U>
-    requires ScalarWith<T, P>
-CANARY_HOST_DEVICE T candler_exponent(const CandlerFit<P, U>& fit, T x, T t_e)
+    requires ScalarWith<T, P> && HasLog<T>
+CANARY_HOST_DEVICE T power_exponential_log(const PowerExponentialFit<P, U>& fit, T t_e)
 {
     using Real = ScalarTraits<T>::value_type;
-    const T f_low = T(T(T(fit.a_low * x) + fit.b_low) * x) + fit.c_low;
-    const T f_high = T(T(T(fit.a_high * x) + fit.b_high) * x) + fit.c_high;
-    const Real t_value = ScalarTraits<T>::value(t_e);
-    const auto lower = static_cast<Real>(fit.blend_lower.value());
-    const auto upper = static_cast<Real>(fit.blend_upper.value());
-    if (t_value <= lower) { return f_low; }
-    if (t_value >= upper) { return f_high; }
-    const Real scale = std::numbers::pi_v<Real> / (Real(2) * (upper - lower));
-    const Real phi = scale * (t_value - lower);
-    const Real cos_phi = std::cos(phi);
-    const Real w_value = cos_phi * cos_phi;
-    const Real dw = -scale * std::sin(Real(2) * phi);
-    const T w = T(w_value) + (T(t_e - T(t_value)) * T(dw));
-    return T(w * f_low) + T(T(T(Real(1)) - w) * f_high);
+    const T ratio = T(t_e / fit.reference_temperature.value());
+    const T u = T(T(Real(1)) / ratio);
+    const auto& c = fit.inverse_coefficients;
+    const T inverse_part = T(T(T(T(T(c[2] * u) + c[1]) * u) + c[0]) * u);
+    return T(T(fit.exponent * math::log(ratio)) + inverse_part) + fit.constant;
 }
 
 // Mode sources of the vibration-electron exchanges, with energy_difference
 // the electron differences of relaxation_energies: zero for VE = 0; otherwise
 // requires free electrons (guaranteed by make_multi_temperature_exchange).
 // Without free electrons, or for an absent molecule, the exchange is exactly
-// zero also when Candler's fit overflows at t_e (safe_product).
+// zero also when the relaxation-time fit overflows at t_e (safe_product).
 template <Scalar T,
           std::floating_point P,
           UnitSystem U,
@@ -1942,15 +1911,13 @@ CANARY_HOST_DEVICE std::array<PowerDensity<T, U>, M>
     const ModeIndex e_mode = *exchange.electron_mode();
     const T t_e = detail::mode_at(state.mode_temp, e_mode).value();
     const T p_e = T(T(d.number[e] * exchange.boltzmann().value()) * t_e);
-    const Real ln10 = std::numbers::ln10_v<Real>;
-    const T x = T(math::log(t_e) / T(ln10));
     std::array<T, M> q {};
     q.fill(T(Real(0)));
     const auto species_mode = exchange.vibration_mode();
     for (const VibrationElectronCoupling<P, U>& coupling : exchange.vibration_electron()) {
         const auto p = coupling.species.value();
-        const T f = candler_exponent(coupling.relaxation_time, x, t_e);
-        const T inverse_tau = safe_product(p_e, math::exp(T(-(f * T(ln10)))));
+        const T f = power_exponential_log(coupling.relaxation_time, t_e);
+        const T inverse_tau = safe_product(p_e, math::exp(T(-f)));
         const T rate = safe_product(d.mass[p], T(energy_difference[p] * inverse_tau));
         const ModeIndex m = *species_mode[coupling.species];
         q[m.value()] = q[m.value()] + rate;
@@ -2381,7 +2348,7 @@ template <> struct InputStorage<ElectronTranslationInput> {
 
 template <> struct InputStorage<VibrationElectronInput> {
     OwnedSpeciesName species {};
-    CandlerFitInput relaxation_time {};
+    PowerExponentialFitInput relaxation_time {};
     using Scratch = std::tuple<>;
     InputStorage() = default;
     explicit InputStorage(const VibrationElectronInput& input) :

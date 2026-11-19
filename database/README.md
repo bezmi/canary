@@ -99,8 +99,9 @@ Millikan-White coefficients and Kim exponents must be finite. Correction
 cross-sections, Park reference temperatures, dissociation energies and
 vibrational temperatures must be finite and positive. Neutral cross-section
 coefficients must be finite and their maximum temperature positive and finite.
-Candler coefficients and blend bounds must be finite, with `lower < upper`;
-these checks do not impose positivity on the bounds. Mechanism-relative index
+The constant, the exponent and the three inverse coefficients of a
+`power_exponential` relaxation time must be finite, and its reference
+temperature finite and positive. Mechanism-relative index
 bounds, charge conservation, oscillator ordering, cross-section validity over
 its interval and representability after conversion still require
 model-construction checks.

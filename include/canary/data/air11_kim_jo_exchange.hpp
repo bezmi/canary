@@ -7,20 +7,23 @@
 // corrections from J. G. Kim and S. M. Jo, Int. J. Heat Mass Transf. 169,
 // 2021, Table 1 (Park's corrections for NO); E-T: elastic electron-heavy
 // exchange with Gnoffo, Gupta and Shinn (NASA TP-2867, 1989) cross-section
-// fits and Coulomb cross-sections; V-E: Candler's relaxation time for N2; C-V:
-// impartial dissociation; C-E: electron-impact ionisation (Gnoffo, Gupta and
-// Shinn 1989). From GDTk (gdtk-uq/gdtk bf559c3f)
-// examples/lmr/2D/RAMCII/3T/ee-kim-air11-2T.inp via prep-kinetics with the
-// RAM-C three-temperature gas; C-E entries from the reactions labelled EII.
+// fits and Coulomb cross-sections; V-E: Landau-Teller rate with the relaxation
+// time of J.-H. Lee, AIAA Paper 85-1035, 1985, Eq. (19) with the rate
+// coefficients of its Table 2, fitted by
+// scripts/electron_vibration_relaxation/fit.py; C-V: impartial dissociation;
+// C-E: electron-impact ionisation (Gnoffo, Gupta and Shinn 1989). From GDTk
+// (gdtk-uq/gdtk bf559c3f) examples/lmr/2D/RAMCII/3T/ee-kim-air11-2T.inp via
+// prep-kinetics with the RAM-C three-temperature gas; C-E entries from the
+// reactions labelled EII.
 
 #include <array>
-#include <concepts>
-#include <cstddef>
 #include <canary/data/air11.hpp>
 #include <canary/data/air11_kim_jo.hpp>
 #include <canary/energy_exchange.hpp>
 #include <canary/species.hpp>
 #include <canary/units.hpp>
+#include <concepts>
+#include <cstddef>
 #include <string_view>
 
 namespace canary
@@ -744,14 +747,17 @@ inline constexpr ElectronExchangeInput<10, 1, 2> air11_kim_jo_exchange_electrons
           .species = "N2",
           .relaxation_time =
             {
-              .a_low = 7.5,
-              .b_low = -57.0,
-              .c_low = 98.7,
-              .a_high = 2.36,
-              .b_high = -17.9,
-              .c_high = 24.35,
-              .blend_lower = 6950.0,
-              .blend_upper = 7050.0,
+              .reference_temperature = 10000.0,
+              .constant = -24.91199,
+              .exponent = 4.475475,
+              .inverse_coefficients =
+                {
+                  {
+                    3.192608,
+                    -0.08318516,
+                    0.002015418,
+                  },
+                },
             },
         },
       },

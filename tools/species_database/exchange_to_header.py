@@ -66,8 +66,10 @@ def electron_translation(entry):
 
 def vibration_electron(entry):
     time = entry["relaxation_time"]
-    keys = ("a_low", "b_low", "c_low", "a_high", "b_high", "c_high", "blend_lower", "blend_upper")
-    fit = "{" + "".join(f".{k} = {number(time[k])}, " for k in keys) + "}"
+    keys = ("reference_temperature", "constant", "exponent")
+    coefficients = "{{" + ", ".join(number(value) for value in time["inverse_coefficients"]) + ",},}"
+    fit = ("{" + "".join(f".{k} = {number(time[k])}, " for k in keys)
+           + f".inverse_coefficients = {coefficients}, }}")
     return f"{{.species = {string(entry['species'])}, .relaxation_time = {fit},}},"
 
 

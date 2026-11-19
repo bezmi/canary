@@ -126,9 +126,10 @@
 //     ],
 //     "vibration_electron": [
 //       {"species": "N2", "model": "landau_teller",
-//        "relaxation_time": {"model": "candler", "a_low": 7.5, "b_low": -57.0,
-//          "c_low": 98.7, "a_high": 2.36, "b_high": -17.9, "c_high": 24.35,
-//          "blend_lower": 6950.0, "blend_upper": 7050.0}}
+//        "relaxation_time": {"model": "power_exponential",
+//          "reference_temperature": 10000.0, "constant": -24.91199,
+//          "exponent": 4.475475,
+//          "inverse_coefficients": [3.192608, -0.08318516, 0.002015418]}}
 //     ],
 //     "electron_impact_ionisation": [{"reaction": 38, "species": "O"}],
 //     "reference": "...", "notes": "..."
@@ -466,31 +467,27 @@ struct ElectronTranslationRecord {
                            const ElectronTranslationRecord&) = default;
 };
 
-// Electron-vibration relaxation time of Candler's form: log10(p_e tau) with
-// p_e in atm and tau in s is a_low x^2 + b_low x + c_low below blend_lower
-// and a_high x^2 + b_high x + c_high above blend_upper, x = log10(T_e / K),
-// blended in between.
-struct CandlerRelaxationRecord {
+// Electron-vibration relaxation time of model "power_exponential":
+// ln(p_e tau) with p_e in atm and tau in s is constant + exponent ln(T_e /
+// T_ref) + B u + C u^2 + D u^3, with u = T_ref / T_e, the reference
+// temperature T_ref in K and inverse_coefficients = [B, C, D].
+struct PowerExponentialRelaxationRecord {
     std::string model;
-    double a_low {};
-    double b_low {};
-    double c_low {};
-    double a_high {};
-    double b_high {};
-    double c_high {};
-    double blend_lower {};
-    double blend_upper {};
+    double reference_temperature {};
+    double constant {};
+    double exponent {};
+    std::array<double, 3> inverse_coefficients {};
 
-    friend bool operator==(const CandlerRelaxationRecord&,
-                           const CandlerRelaxationRecord&) = default;
+    friend bool operator==(const PowerExponentialRelaxationRecord&,
+                           const PowerExponentialRelaxationRecord&) = default;
 };
 
 // Vibration-electron exchange of species: model "landau_teller" with a
-// relaxation time of model "candler".
+// relaxation time of model "power_exponential".
 struct VibrationElectronRecord {
     std::string species;
     std::string model;
-    CandlerRelaxationRecord relaxation_time;
+    PowerExponentialRelaxationRecord relaxation_time;
     std::optional<std::string> reference;
     std::optional<std::string> notes;
 
@@ -970,8 +967,8 @@ OwnedInput<EnergyExchangeInput<V, C>> energy_exchange_input(const EnergyExchange
 // make_multi_temperature_exchange, with the ionisation energies from
 // species. The result owns its names and numeric data. Throws ParameterError when the counts
 // differ, a model is not "elastic" with "gnoffo_neutral" (a, b, c and maximum_temperature given) or
-// "coulomb", or "landau_teller" with "candler", or (with the species) when an ionised species has
-// no ionisation_energy in species; DatabaseError when that species is not in species.
+// "coulomb", or "landau_teller" with "power_exponential", or (with the species) when an ionised
+// species has no ionisation_energy in species; DatabaseError when that species is not in species.
 template <std::size_t E, std::size_t VE, std::size_t I>
 OwnedInput<ElectronExchangeInput<E, VE, I>> electron_exchange_input(const EnergyExchangeFile& file,
                                                                     const SpeciesFile& species)
@@ -1012,26 +1009,22 @@ OwnedInput<ElectronExchangeInput<E, VE, I>> electron_exchange_input(const Energy
     }
     for (std::size_t k = 0; k < VE; ++k) {
         const VibrationElectronRecord& record = file.vibration_electron[k];
-        const CandlerRelaxationRecord& fit = record.relaxation_time;
-        if (record.model != "landau_teller" || fit.model != "candler") {
-            throw ParameterError(std::format(
-              "vibration_electron {} ({}): needs model \"landau_teller\" with a \"candler\" "
-              "relaxation time",
-              k,
-              record.species));
+        const PowerExponentialRelaxationRecord& fit = record.relaxation_time;
+        if (record.model != "landau_teller" || fit.model != "power_exponential") {
+            throw ParameterError(
+              std::format("vibration_electron {} ({}): needs model \"landau_teller\" with a "
+                          "\"power_exponential\" relaxation time",
+                          k,
+                          record.species));
         }
         out.vibration_electron[k] = VibrationElectronInput {
           .species = record.species.c_str(),
           .relaxation_time =
             {
-              .a_low = fit.a_low,
-              .b_low = fit.b_low,
-              .c_low = fit.c_low,
-              .a_high = fit.a_high,
-              .b_high = fit.b_high,
-              .c_high = fit.c_high,
-              .blend_lower = fit.blend_lower,
-              .blend_upper = fit.blend_upper,
+              .reference_temperature = fit.reference_temperature,
+              .constant = fit.constant,
+              .exponent = fit.exponent,
+              .inverse_coefficients = fit.inverse_coefficients,
             },
         };
     }

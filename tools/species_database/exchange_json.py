@@ -85,13 +85,13 @@ def validate(data, source):
         context = f"{source}: vibration_electron {index} ({record['species']})"
         _expect_model(record, ("landau_teller",), context)
         time = record["relaxation_time"]
-        _expect_model(time, ("candler",), context)
-        for field in ("a_low", "b_low", "c_low", "a_high", "b_high", "c_high"):
+        _expect_model(time, ("power_exponential",), context)
+        for field in ("constant", "exponent"):
             _finite_field(time, field, f"{context}: relaxation_time")
-        lower = _finite_field(time, "blend_lower", context)
-        upper = _finite_field(time, "blend_upper", context)
-        if upper <= lower:
-            raise SystemExit(f"{context}: relaxation_time blend bounds must satisfy lower < upper")
+        _positive_field(time, "reference_temperature", f"{context}: relaxation_time")
+        coefficients = time["inverse_coefficients"]
+        if len(coefficients) != 3 or not all(math.isfinite(value) for value in coefficients):
+            raise SystemExit(f"{context}: relaxation_time inverse_coefficients must be 3 finite numbers")
 
 
 def load(path):

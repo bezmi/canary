@@ -159,7 +159,11 @@ bool relative(double a, double b, double bound) { return std::abs(a - b) <= boun
 // production rates in kg/(m^3 s), and the mode sources in W/m^3 (vibration,
 // electron) in total and per exchange (vibration-translation,
 // chemistry-vibration, electron-translation, vibration-electron). It has no
-// electron-impact ionisation source.
+// electron-impact ionisation source. Its vibration-electron relaxation time
+// is two quadratics in log10(T_e); for each state both are set to the
+// constant log10(p_e tau / (1 atm s)) of the fit of air11_kim_jo_exchange at
+// the state's T_e, so that its relaxation time at the state is that of the
+// fit.
 struct ReferenceState {
     const char* name;
     Fractions y;
@@ -187,11 +191,11 @@ const std::array<ReferenceState, 4> reference_states {
      .forward = {0.3311303189768377, 0.052627452969181254, 0.022448973269704985, 0.7025898268797712, 1.8043698160862143, 0.002649094430315865, 0.002105134210015285, 0.00448987674212909, 0.035130867313617975, 0.09022158439289515, 3.757021967031462, 1.1129291152244, 0.14030075107560014, 150.97993731443114, 39.65268737543988, 0.030056764352446936, 0.04451792784182268, 0.02806066324679883, 7.549292548637031, 1.9827023532283474, 2.281594200427389, 96.86190041881451, 13.839049306984272, 485.04950711670284, 132.0638911465566, 13.863990185844353, 42.5310028348855, 0.29336840211948706, 505.0594083052646, 26.676769158815784, 0.3577808907733399, 0.3716723115506606, 0.2994478545082911, 0.0008755228249258909, 15.54304492867512, 3.185563637673142, 44.658250254821446, 7.113714033138841, 1.4569416353480358e-05, 1.0065880537400348e-05},
      .backward = {0.00024092765228365137, 3.233845620010255e-05, 1.379441903154147e-05, 0.0005085202957490465, 0.0011087470697178016, 1.9274589646330224e-06, 1.2935604253122927e-06, 2.7589342477628097e-06, 2.5427010686419434e-05, 5.5439254430611795e-05, 7.034232353912862e-05, 7.572516736183032e-06, 2.6268360716401334e-06, 0.0016517966352282494, 0.0004338203919644147, 5.6274960891158e-07, 3.0290586258444556e-07, 5.253768197656986e-07, 8.259306668158507e-05, 2.1691763382449616e-05, 0.002916028667270711, 0.059519588112821036, 408.70612822019496, 82.53188397798903, 4806.771921048249, 8856.440429922985, 4900.148994199068, 31.059970408170955, 75.88039514271566, 160.92347260393558, 6.311094298776658, 0.3368476267356278, 3.024299066658695, 0.030883887029004877, 9.23703834804622, 55.90978505118614, 4.0074808581059544, 22.51804272893099, 0.5108842557802363, 0.6613783687259123},
      .source = {-27.2363192470121, -24.962422780482374, 211.8704810281958, 366.01847376423103, 24.225885244661498, -8.41499380872576, -0.6073673595083087, -123.34500269987552, -280.0505497386352, -137.48810328826903, -0.010080745275893907},
-     .total = {2997132240.283774, -1983546836.5308173},
+     .total = {3053965029.0983505, -2040379625.3453941},
      .vt = {915035979.6116308, 0.0},
      .cv = {-12993446.726154933, 0.0},
      .et = {0.0, 111542870.86748034},
-     .ve = {2095089707.3982973, -2095089707.3982973},
+     .ve = {2151922496.2128744, -2151922496.2128744},
    },
    {
      .name = "strongly ionised, T_e above T",
@@ -200,11 +204,11 @@ const std::array<ReferenceState, 4> reference_states {
      .forward = {0.0015436797865539034, 0.00022687414659030279, 0.00024194082009703965, 0.032674095910462116, 0.058339066266077856, 0.00015437100177759523, 0.00011343901813825023, 0.0003629178653544314, 0.006535075141185032, 0.01166821334208387, 0.0059401130670267204, 0.0011010873358985613, 0.0005545631168057373, 1.8612427210022535, 0.36662127295767394, 0.0005940229397420298, 0.000550553106848065, 0.0008318598840605525, 0.37226312461911926, 0.07332676887740838, 0.07597563028424267, 13.036584635310339, 0.07657889474983046, 0.9394322571411249, 1.9794729291111564, 0.05076968986777312, 0.4286845401078314, 0.004245006643104379, 6.1417289925808, 0.8236250103810452, 0.004971439702997369, 0.0009621862755506518, 0.008628112706562255, 6.590530295421265e-05, 0.06410497790492585, 0.0771423898198302, 0.3501637348847107, 0.3012488975273424, 0.1983917438380295, 0.43808762302903503},
      .backward = {2.640476979964928e-07, 3.8025854426307823e-08, 4.055114495441056e-08, 5.585398998099e-06, 9.778076852479154e-06, 2.6405286907190576e-08, 1.9013253183837084e-08, 6.082782954372929e-08, 1.117123553964628e-06, 1.955682428471771e-06, 3.066548742884365e-08, 5.032364819835478e-09, 2.8628997621789197e-09, 9.006930278200952e-06, 1.7741545510286254e-06, 3.0666087977718997e-09, 2.5162255490772146e-09, 4.294428158079952e-09, 1.8014566132374844e-06, 3.548430773440072e-07, 9.725645628045439e-06, 0.0021850319968530997, 1.7194071326865983, 1.0895604578132572, 1260.6689412925534, 1340.1850791009358, 894.3528681530463, 0.4852479774358675, 4.5833221147423515, 2.2714652875516053, 0.07300373293963283, 0.0019802748306447806, 0.03638305194972803, 0.0004423407642706451, 0.1183398204868185, 3.1974360726776045, 0.17090475991796752, 0.9868361769248392, 0.32753568988842613, 0.5269828380156827},
      .source = {-0.41272524296158186, -0.20150460538791815, 43.025418822089904, 63.188748780506344, 0.042924673741080915, -0.05104090367064871, -0.004295723638359731, -25.011922117240974, -42.93628486038126, -37.63740258190869, -0.0019161709497631859},
-     .total = {78088448.06792982, -102083005.06012443},
+     .total = {61477359.45782055, -85471916.45001517},
      .vt = {395085.6172234663, 0.0},
      .cv = {-629840.317748761, 0.0},
      .et = {0.0, -23759802.291669354},
-     .ve = {78323202.76845509, -78323202.76845509},
+     .ve = {61712114.15834582, -61712114.15834582},
    },
    {
      .name = "equal temperatures",
@@ -226,11 +230,11 @@ const std::array<ReferenceState, 4> reference_states {
      .forward = {1.6119429237806475e-09, 3.232054402411065e-10, 3.4466945858299213e-10, 3.445004886386648e-08, 8.31099703477131e-08, 1.6119744918590038e-10, 1.6160549074858384e-10, 5.170136404085771e-10, 6.8902796441500495e-09, 1.6622564037080822e-08, 3.178521125121944e-06, 3.7879241777514213e-06, 2.967436077547268e-07, 0.002674184052296462, 0.0005267516967631719, 3.1785833728618953e-07, 1.8939945602626306e-06, 4.451235498033094e-07, 0.0005348577592171515, 0.00010535395181172432, 4.221261147160491e-06, 1.857194898414229e-05, 0.0008187210757294595, 0.00040222184689005854, 0.00034759396528702354, 1.3372122359842202e-11, 1.0178449205757974e-08, 3.494199797631361e-11, 0.19523588761241895, 0.0008797001360215288, 1.017399397211982e-06, 7.226187532637879e-08, 0.00014419097305196522, 1.2204965412864353e-05, 1.945262032123211e-05, 6.467833448559583e-07, 0.001110678010913019, 7.612363316936983e-05, 0.00013770330574934254, 0.00017633476605538178},
      .backward = {1.1429905806240397e-06, 2.6198139040863747e-07, 2.7937953000916177e-07, 2.4529517944916796e-05, 6.736664324793535e-05, 1.1430129648013435e-07, 1.309929409987683e-07, 4.190769569764301e-07, 4.906095745888711e-06, 1.347379064950896e-05, 2.2944264099129995e-08, 6.093982306806669e-08, 2.142053942080338e-09, 2.9538091646649228e-05, 5.818313021744715e-06, 2.2944713436582476e-09, 3.0470433931124946e-08, 3.2131396587894473e-09, 5.907849721903216e-06, 1.1637025062949504e-06, 8.154301028596971e-06, 0.015053908170092325, 1.1151976264789052, 3.9601633233724916, 2647.7476924155444, 491.8640203934629, 1844.6109958379438, 0.4101435460550079, 5.3070553884692595, 2.138368083983717, 0.010457079400294212, 0.004774754006389753, 0.04644968934765906, 0.0014156579418250774, 0.0689608470267417, 3.1231955058862617, 0.22781651622650215, 1.8110828453228263, 165.26129034779856, 304.96261612254784},
      .source = {0.26099539880613537, -0.11706486432372398, 92.90002912533828, 60.85148154715887, -0.08713362143257451, -4.235582152831216, -2.640957593775767, -51.87322624857706, -15.77090099039122, -79.28464829092164, -0.0029921994320760955},
-     .total = {-4772335.081999166, -37480681.79179475},
+     .total = {-4853299.241907535, -37399717.63188638},
      .vt = {-50428.04397051974, 0.0},
      .cv = {-1626.658507542069, 0.0},
      .et = {0.0, -42200962.17131586},
-     .ve = {-4720280.3795211045, 4720280.3795211045},
+     .ve = {-4801244.539429474, 4801244.539429474},
    },
  },
 };
@@ -1245,11 +1249,13 @@ void test_multi_temperature_kinetics()
         }
         const auto& ve = exchange.vibration_electron()[0];
         expect(ve.species == canary::SpeciesIndex {0});
-        // In SI the fit is that of the input with log10(101325) added to c,
-        // for p_e in Pa.
-        expect(ve.relaxation_time.a_low == 7.5_d && ve.relaxation_time.b_high == -17.9_d);
-        expect(relative(ve.relaxation_time.c_high, 24.35 + std::log10(atmosphere), 1.0e-15));
-        expect(ve.relaxation_time.blend_lower.value() == 6950.0_d);
+        // In SI the fit is that of the input with ln(101325) added to the
+        // constant, for p_e in Pa.
+        expect(ve.relaxation_time.reference_temperature.value() == 10000.0_d);
+        expect(ve.relaxation_time.exponent == 4.475475);
+        expect(ve.relaxation_time.inverse_coefficients ==
+               std::array {3.192608, -0.08318516, 0.002015418});
+        expect(relative(ve.relaxation_time.constant, -24.91199 + std::log(atmosphere), 1.0e-15));
         const auto& ce = exchange.electron_impact_ionisation()[1];
         expect(ce.reaction == canary::ReactionIndex {39} && ce.species == canary::SpeciesIndex {2});
         expect(relative(ce.ionisation_energy, 1402330.360173364 / avogadro, 1.0e-15));
@@ -1877,7 +1883,7 @@ void test_multi_temperature_kinetics()
         }
     };
 
-    "multi-temperature kinetics: cross-sections and the Candler fit follow their formulas"_test =
+    "multi-temperature kinetics: cross-sections and the relaxation-time fit follow their formulas"_test =
       [&] {
           const canary::EnergyExchangeInput<0, 0> no_vibration {};
           canary::ElectronExchangeInput<2, 0, 0> electrons {};
@@ -1928,34 +1934,34 @@ void test_multi_temperature_kinetics()
               }
           }
 
-          // The blend weight is 1 at blend_lower and 0 at blend_upper, so the
-          // fit is continuous at both ends.
           const auto& fit = exchange.vibration_electron()[0].relaxation_time;
-          const auto f = [&](double t) {
-              return canary::detail::candler_exponent(fit, std::log10(t), t);
+          const auto f = [&](double t) { return canary::detail::power_exponential_log(fit, t); };
+          // The input fit, ln(p_e tau / (1 atm s)), and the model fit in SI,
+          // ln(p_e tau / (1 Pa s)).
+          const auto input_fit = [](double t) {
+              const double u = 10000.0 / t;
+              return -24.91199 + (4.475475 * std::log(t / 10000.0)) + (3.192608 * u) -
+                     (0.08318516 * u * u) + (0.002015418 * u * u * u);
           };
-          // The input fit in log10(p_e tau / (1 atm s)), and the model fit
-          // in SI, in log10(p_e tau / (1 Pa s)).
-          const auto quadratic = [](double a, double b, double c, double t) {
-              const double x = std::log10(t);
-              return (((a * x) + b) * x) + c;
-          };
-          const auto model_fit = [&](double a, double b, double c, double t) {
-              return quadratic(a, b, c + std::log10(atmosphere), t);
-          };
-          for (const double lower : {6950.0, std::nextafter(6950.0, 1.0e5)}) {
-              // At the bound w = 1; one ulp above, 1 - w is of order 1e-30.
-              expect(relative(f(lower), model_fit(7.5, -57.0, 98.7, lower), 1.0e-14)) << lower;
+          for (const double t :
+               {300.0, 1160.4518121550082, 7000.0, 12000.0, 58022.590607750404, 2.0e5}) {
+              expect(relative(f(t), input_fit(t) + std::log(atmosphere), 1.0e-14)) << t;
           }
-          for (const double upper : {7050.0, std::nextafter(7050.0, 0.0)}) {
-              expect(relative(f(upper), model_fit(2.36, -17.9, 24.35, upper), 1.0e-14)) << upper;
+          // Values of Eq. (19) of J.-H. Lee, AIAA Paper 85-1035, from the rate
+          // coefficients of its Table 2 at 0.1, 0.6, 1.0, 2.0 and 5.0 eV, as
+          // ln(p_e tau / (1 atm s)); the fit follows them to 0.8 % of tau.
+          const std::array<std::array<double, 2>, 5> lee {
+            {
+              {1160.4518121550082, -11.927111},
+              {6962.710872930048, -22.110617},
+              {11604.518121550082, -21.552285},
+              {23209.036243100163, -19.784929},
+              {58022.590607750404, -16.493319},
+            },
+          };
+          for (const auto& [t, value] : lee) {
+              expect(std::abs(input_fit(t) - value) <= 0.008) << t << input_fit(t) << value;
           }
-          // Between the bounds, w f_low + (1 - w) f_high.
-          const double w = std::pow(std::cos(std::numbers::pi / 2.0 * 0.3), 2);
-          expect(relative(f(6980.0),
-                          (w * model_fit(7.5, -57.0, 98.7, 6980.0)) +
-                            ((1.0 - w) * model_fit(2.36, -17.9, 24.35, 6980.0)),
-                          1.0e-13));
 
           // V-E with p_e = 0: no free electrons give exactly zero.
           Fractions y = reference_states[0].y;
@@ -1967,7 +1973,7 @@ void test_multi_temperature_kinetics()
                                               mix,
                                               cell_state(gas, y, 1.0e-3, 12000.0, 5000.0, 8000.0));
           expect(ve[0].value() == 0.0_d && ve[1].value() == 0.0_d);
-          // V-E of N2 from Candler's fit above the blend range.
+          // V-E of N2 from the relaxation-time fit.
           const ReferenceState& s = reference_states[0];
           const auto mix_s = canary::mixture(gas, fractions(s.y));
           const auto state = cell_state(gas, s.y, s.rho, s.temp, s.t_v, s.t_e);
@@ -1976,22 +1982,21 @@ void test_multi_temperature_kinetics()
           const double n_e =
             s.rho * mix_s.fractions[electron].value() / built.species.mass[electron].value();
           const double p_e = n_e * boltzmann * s.t_e;
-          const double inverse_tau =
-            (p_e / atmosphere) * std::pow(10.0, -quadratic(2.36, -17.9, 24.35, s.t_e));
+          const double inverse_tau = (p_e / atmosphere) * std::exp(-input_fit(s.t_e));
           const auto e_te = canary::species_mode_energy(gas, canary::ModeIndex {0}, Temp {s.t_e});
           const auto e_tv = canary::species_mode_energy(gas, canary::ModeIndex {0}, Temp {s.t_v});
           const double expected =
             s.rho * mix_s.fractions[0].value() * (e_te[0].value() - e_tv[0].value()) * inverse_tau;
-          // 10^(-f) from exp(-f ln 10) with f of about -10: a few ulp.
+          // exp(-f) with f of about -20: a few ulp.
           expect(relative(q, expected, 1.0e-13)) << q << expected;
       };
 
     "multi-temperature kinetics: V-E without electrons or molecules is zero when the fit overflows"_test =
       [&] {
-          // c_high = -400 makes 10^(-f) overflow above the blend range.
+          // The constant -1000 makes exp(-f) overflow.
           auto electrons = canary::air11_kim_jo_exchange_electrons;
           expect(std::string_view {electrons.vibration_electron[0].species} == "N2");
-          electrons.vibration_electron[0].relaxation_time.c_high = -400.0;
+          electrons.vibration_electron[0].relaxation_time.constant = -1000.0;
           const auto overflowing = build_exchange(canary::air11_kim_jo_exchange, electrons);
           const ReferenceState& s = reference_states[0];
           const double t_e = 12000.0;
@@ -2106,7 +2111,8 @@ void test_multi_temperature_kinetics()
         };
         const ReferenceState& a = reference_states[0];
         const ReferenceState& b = reference_states[3];
-        // Two reference states, and T_e in the blend range of Candler's fit.
+        // Two reference states, and a state with T_e near the minimum of the
+        // vibration-electron relaxation time.
         const std::array<Point, 3> points {
           {
             {.y = a.y, .rho = a.rho, .temp = a.temp, .t_v = a.t_v, .t_e = a.t_e},
@@ -2256,8 +2262,8 @@ void test_multi_temperature_kinetics()
             expect(relative(to_si(ce_s[1]), ce[1].value(), 1.0e-11)) << s.name;
             // The differences of energies of the exchanges cancel when the
             // temperatures are close; states where they differ by 1000 K or
-            // more. The Candler fit of V-E is shifted by log10 of the scales
-            // (up to about 170 times the coefficients' rounding).
+            // more. The constant of the V-E relaxation-time fit is shifted
+            // by the logarithm of the scales.
             const auto vt = canary::vibration_translation_source(exchange, gas, mix, state);
             const auto vt_s =
               canary::vibration_translation_source(exchange_s, gas_s, mix_s, state_s);
@@ -2521,15 +2527,19 @@ void test_multi_temperature_kinetics()
         starts(base, e, "vibration-electron exchange 0 (O): species \"O\" has no vibration");
         for (const double v : {nan, inf}) {
             e = electrons;
-            e.vibration_electron[0].relaxation_time.b_high = v;
+            e.vibration_electron[0].relaxation_time.exponent = v;
+            starts(base, e, "vibration-electron exchange 0 (N2): relaxation-time parameters");
+            e = electrons;
+            e.vibration_electron[0].relaxation_time.inverse_coefficients[2] = v;
             starts(base, e, "vibration-electron exchange 0 (N2): relaxation-time parameters");
         }
-        for (const double upper : {6950.0, 6000.0}) {
+        for (const double reference : {0.0, -10000.0}) {
             e = electrons;
-            e.vibration_electron[0].relaxation_time.blend_upper = upper;
-            starts(base,
-                   e,
-                   "vibration-electron exchange 0 (N2): relaxation-time blend bounds must satisfy");
+            e.vibration_electron[0].relaxation_time.reference_temperature = reference;
+            starts(
+              base,
+              e,
+              "vibration-electron exchange 0 (N2): relaxation-time reference temperature must be");
         }
 
         for (const int reaction : {-1, 40}) {

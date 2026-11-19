@@ -215,8 +215,7 @@ class ExchangeJsonTests(unittest.TestCase):
             ("vibration_translation", ("relaxation_time",), ("a", "b")),
             ("vibration_translation", ("relaxation_time", "high_temperature_correction"), ("exponent",)),
             ("electron_translation", ("cross_section",), ("a", "b", "c")),
-            ("vibration_electron", ("relaxation_time",),
-             ("a_low", "b_low", "c_low", "a_high", "b_high", "c_high", "blend_lower", "blend_upper")),
+            ("vibration_electron", ("relaxation_time",), ("reference_temperature", "constant", "exponent")),
         ]
         for name, path, fields in paths:
             for field in fields:
@@ -255,15 +254,20 @@ class ExchangeJsonTests(unittest.TestCase):
                     record[field] = value
                     self.assert_rejected(data, name, field)
 
-    def test_candler_bounds_match_double_input_ordering(self):
-        for lower, upper in ((1.0, 1.0), (2.0, 1.0), (2**53, 2**53 + 1)):
-            with self.subTest(lower=lower, upper=upper):
+    def test_power_exponential_relaxation_time_domain(self):
+        for value in (0.0, -1.0):
+            with self.subTest(reference_temperature=value):
                 data = copy.deepcopy(self.data)
-                data["vibration_electron"][0]["relaxation_time"].update(blend_lower=lower, blend_upper=upper)
-                self.assert_rejected(data, "vibration_electron 0", "lower < upper")
-        for lower, upper in ((-2.0, -1.0), (0.0, 1.0), (1.0, 2.0)):
+                data["vibration_electron"][0]["relaxation_time"]["reference_temperature"] = value
+                self.assert_rejected(data, "vibration_electron 0", "reference_temperature")
+        for coefficients in ([1.0, 2.0], [1.0, 2.0, 3.0, 4.0], [1.0, float("nan"), 3.0], [1.0, 2.0, float("inf")]):
+            with self.subTest(coefficients=coefficients):
+                data = copy.deepcopy(self.data)
+                data["vibration_electron"][0]["relaxation_time"]["inverse_coefficients"] = coefficients
+                self.assert_rejected(data, "vibration_electron", "inverse_coefficients")
+        for coefficients in ([0.0, 0.0, 0.0], [-1.0, 2.0, -3.0]):
             data = copy.deepcopy(self.data)
-            data["vibration_electron"][0]["relaxation_time"].update(blend_lower=lower, blend_upper=upper)
+            data["vibration_electron"][0]["relaxation_time"]["inverse_coefficients"] = coefficients
             exchange_json.validate(data, self.source)
         time = self.data["vibration_translation"][0]["relaxation_time"]
         time.update(a=0.0, b=-1.0)
@@ -273,7 +277,7 @@ class ExchangeJsonTests(unittest.TestCase):
 
     def test_invalid_domains_preserve_header_output(self):
         original = copy.deepcopy(self.data)
-        for case in ("correction", "dissociation", "cross_section", "candler"):
+        for case in ("correction", "dissociation", "cross_section", "relaxation_time"):
             for existing in (False, True):
                 with self.subTest(case=case, existing=existing):
                     self.data = copy.deepcopy(original)
@@ -285,7 +289,7 @@ class ExchangeJsonTests(unittest.TestCase):
                         self.data["electron_translation"][0]["cross_section"]["maximum_temperature"] = 0.0
                     else:
                         time = self.data["vibration_electron"][0]["relaxation_time"]
-                        time["blend_upper"] = time["blend_lower"]
+                        time["reference_temperature"] = 0.0
                     if existing:
                         self.output.write_bytes(b"original\n")
                     elif self.output.exists():

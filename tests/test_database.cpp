@@ -1928,14 +1928,12 @@ int main()
                 const auto& a = electrons.vibration_electron[k];
                 const auto& b = compiled.vibration_electron[k];
                 expect(std::string_view(a.species) == b.species) << k;
-                expect(a.relaxation_time.a_low == b.relaxation_time.a_low &&
-                       a.relaxation_time.b_low == b.relaxation_time.b_low &&
-                       a.relaxation_time.c_low == b.relaxation_time.c_low &&
-                       a.relaxation_time.a_high == b.relaxation_time.a_high &&
-                       a.relaxation_time.b_high == b.relaxation_time.b_high &&
-                       a.relaxation_time.c_high == b.relaxation_time.c_high &&
-                       a.relaxation_time.blend_lower == b.relaxation_time.blend_lower &&
-                       a.relaxation_time.blend_upper == b.relaxation_time.blend_upper)
+                expect(a.relaxation_time.reference_temperature ==
+                         b.relaxation_time.reference_temperature &&
+                       a.relaxation_time.constant == b.relaxation_time.constant &&
+                       a.relaxation_time.exponent == b.relaxation_time.exponent &&
+                       a.relaxation_time.inverse_coefficients ==
+                         b.relaxation_time.inverse_coefficients)
                   << k;
             }
             for (std::size_t k = 0; k < 2; ++k) {
