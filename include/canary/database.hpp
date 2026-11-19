@@ -114,7 +114,7 @@
 //     "chemistry_vibration": [
 //       {
 //         "reaction": 0, "species": "N2", "model": "impartial_dissociation",
-//         "dissociation_energy": 945360.0, "vibrational_temperature": 3393.44,
+//         "dissociation_energy": 945360.0, "vibrational_temperature": 3393.4559799744534,
 //         "reference": "...", "notes": "..."
 //       }
 //     ],

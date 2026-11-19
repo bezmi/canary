@@ -238,21 +238,21 @@
          "species": "N2",
          "model": "impartial_dissociation",
          "dissociation_energy": 945360.0,
-         "vibrational_temperature": 3393.44
+         "vibrational_temperature": 3393.4559799744534
       },
       {
          "reaction": 1,
          "species": "O2",
          "model": "impartial_dissociation",
          "dissociation_energy": 498350.006,
-         "vibrational_temperature": 2273.53
+         "vibrational_temperature": 2273.5451503935737
       },
       {
          "reaction": 2,
          "species": "NO",
          "model": "impartial_dissociation",
          "dissociation_energy": 630583.693,
-         "vibrational_temperature": 2739.7
+         "vibrational_temperature": 2739.48872584259
       }
    ],
    "electron_translation": [],

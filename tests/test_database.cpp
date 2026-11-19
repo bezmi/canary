@@ -1289,7 +1289,7 @@ int main()
         const db::ChemistryVibrationRecord& coupling = file.chemistry_vibration[1];
         expect(coupling.reaction == 1_i && coupling.species == "O2");
         expect(coupling.model == "impartial_dissociation");
-        expect(coupling.vibrational_temperature == 2273.53_d);
+        expect(coupling.vibrational_temperature == 2273.5451503935737);
     };
 
     "an energy-exchange file reads, writes and reads again to the same data and text"_test = [] {
@@ -1647,13 +1647,13 @@ int main()
         const auto& n2 = air5.species.at("N2").electronic_levels;
         expect(n2.has_value() && n2->degeneracies.size() == 7_u && n2->temperatures.size() == 7_u);
         expect(n2->temperatures[0] == 0.0_d);
-        // 50203.66 cm^-1 times h c / k_B = 1.438776877... cm K.
-        expect(std::abs(n2->temperatures[1] - (50203.66 * 1.4387768775039338)) <= 1.0e-9 * 7.2e4);
+        // 50203.63 cm^-1 times h c / k_B = 1.438776877... cm K.
+        expect(std::abs(n2->temperatures[1] - (50203.63 * 1.4387768775039338)) <= 1.0e-9 * 7.2e4);
         const db::SpeciesFile air11 = db::read_species_file(air11_path());
         expect(air11.species.size() == 11_u);
         expect(air11.species.at("e-").charge == -1.0_d);
         expect(!air11.species.at("e-").electronic_levels.has_value());
-        expect(air11.species.at("NO+").electronic_levels->notes.has_value());
+        expect(air11.species.at("NO+").electronic_levels->degeneracies.size() == 8_u);
         expect(air11.species.at("N2").thermo == air5.species.at("N2").thermo);
     };
 

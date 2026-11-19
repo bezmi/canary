@@ -138,14 +138,14 @@
             ],
             "temperatures": [
                0.0,
-               72231.86517406914,
-               85778.56814982601,
+               72231.82201076281,
+               85778.94223181416,
                86050.36748975527,
-               95351.34061437946,
+               95351.29745107313,
                98056.47134838725,
-               99682.8647307177
+               99682.86473071769
             ],
-            "reference": "NIST, as in the GDTk species database"
+            "reference": "NIST Chemistry WebBook, constants of diatomic molecules (Huber and Herzberg): X, A, B, W, B', a', a; E / (h c) in cm^-1 converted by h c / k_B = 1.4387768775039338 K cm"
          },
          "notes": "molar mass: from CEA2::thermo.inp",
          "elements": {
@@ -281,13 +281,13 @@
             ],
             "temperatures": [
                0.0,
-               11392.292867151247,
+               11392.379193763898,
                18984.804776352157,
                47562.078872710794,
-               49911.601513674716,
-               50927.80962225574
+               49911.169880611465,
+               50929.53615450875
             ],
-            "reference": "NIST, as in the GDTk species database"
+            "reference": "NIST Chemistry WebBook, constants of diatomic molecules (Huber and Herzberg): X, a, b, c, A', A; E / (h c) in cm^-1 converted by h c / k_B = 1.4387768775039338 K cm"
          },
          "notes": "molar mass: from CEA2::thermo.inp",
          "elements": {
@@ -558,7 +558,9 @@
          },
          "electronic_levels": {
             "degeneracies": [
-               9,
+               5,
+               3,
+               1,
                5,
                1,
                5,
@@ -567,13 +569,15 @@
             ],
             "temperatures": [
                0.0,
-               22830.31006346957,
-               48619.982735201884,
-               106135.9804550857,
-               110490.84153237705,
-               124639.93161120726
+               227.70802251816005,
+               326.5692593252104,
+               22830.312941023323,
+               48619.98705153252,
+               106135.98045508568,
+               110490.8386548233,
+               124639.93055610423
             ],
-            "reference": "NIST, as in the GDTk species database"
+            "reference": "NIST Atomic Spectra Database, O I: the levels of 2p4 3P, 1D, 1S and of 2p3 3s 5S*, 3S*, and the term 2p3 3p 5P as one level with the summed degeneracy and the degeneracy-weighted energy; E / (h c) in cm^-1 converted by h c / k_B = 1.4387768775039338 K cm"
          },
          "notes": "molar mass: CEA2::thermo.inp",
          "elements": {
@@ -700,7 +704,8 @@
          },
          "electronic_levels": {
             "degeneracies": [
-               4,
+               2,
+               2,
                8,
                2,
                4,
@@ -709,13 +714,14 @@
             ],
             "temperatures": [
                0.0,
+               172.39424546252133,
                55306.583171251215,
                63256.8325632747,
-               66086.33117057393,
+               66101.15057241223,
                70039.6583968915,
-               75069.190727582
+               74997.68351677005
             ],
-            "reference": "NIST, as in the GDTk species database"
+            "reference": "NIST Chemistry WebBook, constants of diatomic molecules (Huber and Herzberg): X 2Pi (both components), a, A, B, b, C; E / (h c) in cm^-1 converted by h c / k_B = 1.4387768775039338 K cm"
          },
          "notes": "molar mass: CEA2::thermo.inp",
          "elements": {

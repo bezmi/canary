@@ -16,7 +16,11 @@ from pathlib import Path
 
 # SI dissociation energies [J/mol] and vibrational temperatures [K] from
 # include/canary/data/air5_park_exchange.hpp, in chemistry_vibration order.
-OSCILLATORS = ((945360.0, 3393.44), (498350.006, 2273.53), (630583.693, 2739.7))
+OSCILLATORS = (
+    (945360.0, 3393.4559799744534),
+    (498350.006, 2273.5451503935737),
+    (630583.693, 2739.48872584259),
+)
 GAS_CONSTANT = 6.02214076e23 * 1.380649e-23
 
 
