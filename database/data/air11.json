@@ -345,7 +345,7 @@
             "reference": "NIST Atomic Spectra Database, O I: the levels of 2p4 3P, 1D, 1S and of 2p3 3s 5S*, 3S*, and the term 2p3 3p 5P as one level with the summed degeneracy and the degeneracy-weighted energy; E / (h c) in cm^-1 converted by h c / k_B = 1.4387768775039338 K cm"
          },
          "notes": "molar mass: CEA2::thermo.inp",
-         "ionisation_energy": 1313942.077121842,
+         "ionisation_energy": 1313942.5595485026,
          "elements": {
             "O": 1
          }
@@ -895,5 +895,5 @@
          "elements": {}
       }
    },
-   "reference": "GDTk species database (gdtk-uq/gdtk commit bf559c3f, src/gas/species-database); thermo fits as cited per species (NASA CEA2 thermo.inp, Johnston et al. AIAA Paper 2015-3110); electronic levels: NIST, as in the GDTk database; ionisation energies of N (14.53413 eV) and O (13.61805 eV): NIST Atomic Spectra Database"
+   "reference": "GDTk species database (gdtk-uq/gdtk commit bf559c3f, src/gas/species-database); thermo fits as cited per species (NASA CEA2 thermo.inp, Johnston et al. AIAA Paper 2015-3110); electronic levels: NIST, as in the GDTk database; ionisation energies of N (14.53413 eV) and O (13.618055 eV): NIST Atomic Spectra Database"
 }

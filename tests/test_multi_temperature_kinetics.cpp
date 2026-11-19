@@ -1406,7 +1406,7 @@ void test_multi_temperature_kinetics()
             double ce = 0;
             double ce_scale = 0;
             for (const auto& [k, energy] : {
-                   std::pair {std::size_t {38}, 1313942.077121842},
+                   std::pair {std::size_t {38}, 1313942.5595485026},
                    std::pair {std::size_t {39}, 1402330.360173364},
                  }) {
                 ce -= (got.forward[k] - got.backward[k]) * energy / avogadro;

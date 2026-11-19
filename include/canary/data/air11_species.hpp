@@ -7,7 +7,7 @@
 // src/gas/species-database); thermo fits as cited per species (NASA CEA2
 // thermo.inp, Johnston et al. AIAA Paper 2015-3110); electronic levels: NIST,
 // as in the GDTk database; ionisation energies of N (14.53413 eV) and O
-// (13.61805 eV): NIST Atomic Spectra Database
+// (13.618055 eV): NIST Atomic Spectra Database
 
 #include <array>
 #include <canary/models/multi_temperature.hpp>

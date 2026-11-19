@@ -768,7 +768,7 @@ inline constexpr ElectronExchangeInput<10, 1, 2> air11_kim_jo_exchange_electrons
         {
           .reaction = 38,
           .species = "O",
-          .ionisation_energy = 1313942.077121842,
+          .ionisation_energy = 1313942.5595485026,
         },
         {
           .reaction = 39,
