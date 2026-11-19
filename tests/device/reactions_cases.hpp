@@ -25,12 +25,12 @@
 namespace canary::test
 {
 
-// The including file defines CANARY_CHECK_ENTRY (see thermodynamics_cases.hpp).
+// Entries: see thermodynamics_cases.hpp.
 
 // Rates of progress of the selected cell at one temperature, or with the scalar
 // T_ve of a one-mode model as the extra argument.
 template <Storage S, std::size_t N, typename M, typename G, typename T, typename... Extra>
-CANARY_CHECK_ENTRY void
+CANARY_HOST_DEVICE void
   rates_check(Output<RatesOfProgress<T, typename G::units, M::reaction_count>> out,
               const M* mechanism,
               const G* gas,
@@ -48,7 +48,7 @@ CANARY_CHECK_ENTRY void
 }
 
 template <Storage S, std::size_t N, typename M, typename G, typename T, typename... Extra>
-CANARY_CHECK_ENTRY void
+CANARY_HOST_DEVICE void
   production_check(Output<std::array<MassProductionRate<T, typename G::units>, N>> out,
                    const M* mechanism,
                    const G* gas,
@@ -67,7 +67,7 @@ CANARY_CHECK_ENTRY void
 
 // As above with the mode temperatures of the selected cell in form F.
 template <ModeForm F, Storage S, std::size_t N, typename M, typename G, typename T>
-CANARY_CHECK_ENTRY void
+CANARY_HOST_DEVICE void
   modal_rates_check(Output<RatesOfProgress<T, typename G::units, M::reaction_count>> out,
                     const M* mechanism,
                     const G* gas,
@@ -86,7 +86,7 @@ CANARY_CHECK_ENTRY void
 }
 
 template <ModeForm F, Storage S, std::size_t N, typename M, typename G, typename T>
-CANARY_CHECK_ENTRY void
+CANARY_HOST_DEVICE void
   modal_production_check(Output<std::array<MassProductionRate<T, typename G::units>, N>> out,
                          const M* mechanism,
                          const G* gas,

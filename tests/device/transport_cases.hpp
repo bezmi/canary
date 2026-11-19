@@ -33,16 +33,16 @@
 namespace canary::test
 {
 
-// The including file defines CANARY_CHECK_ENTRY (see thermodynamics_cases.hpp).
+// Entries: see thermodynamics_cases.hpp.
 
 template <typename L, typename T, UnitSystem U>
-CANARY_CHECK_ENTRY void
+CANARY_HOST_DEVICE void
   viscosity_check(Output<DynamicViscosity<T, U>> out, const L* law, Temperature<T, U> temp)
 { out[0] = viscosity(*law, temp); }
 
 // Transport of a model without composition input at an owning state.
 template <typename X, typename G, typename State>
-CANARY_CHECK_ENTRY void transport_check(
+CANARY_HOST_DEVICE void transport_check(
   Output<decltype(transport(
     std::declval<const X&>(), std::declval<const G&>(), std::declval<const State&>()))> out,
   const X* model,
@@ -55,7 +55,7 @@ CANARY_CHECK_ENTRY void transport_check(
 template <typename G, typename State> using CellMixture = mixture_t<G, typename State::value_type>;
 
 template <Storage S, std::size_t N, typename X, typename G, typename State>
-CANARY_CHECK_ENTRY void
+CANARY_HOST_DEVICE void
   mixture_transport_check(Output<decltype(transport(std::declval<const X&>(),
                                                     std::declval<const G&>(),
                                                     std::declval<CellMixture<G, State>>(),
@@ -72,7 +72,7 @@ CANARY_CHECK_ENTRY void
 }
 
 template <std::size_t N, typename X, typename G, typename State>
-CANARY_CHECK_ENTRY void binary_diffusion_check(
+CANARY_HOST_DEVICE void binary_diffusion_check(
   Output<decltype(binary_diffusion_coefficients(std::declval<const X&>(),
                                                 std::declval<const G&>(),
                                                 std::declval<CellMixture<G, State>>(),
@@ -90,7 +90,7 @@ CANARY_CHECK_ENTRY void binary_diffusion_check(
 }
 
 template <std::size_t N, typename X, typename G, typename State>
-CANARY_CHECK_ENTRY void mixture_diffusion_check(
+CANARY_HOST_DEVICE void mixture_diffusion_check(
   Output<decltype(mixture_diffusion_coefficients(std::declval<const X&>(),
                                                  std::declval<const G&>(),
                                                  std::declval<CellMixture<G, State>>(),

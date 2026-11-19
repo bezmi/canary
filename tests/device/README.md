@@ -50,6 +50,7 @@ operation accepts and writes the complete result to a one-element output view.
 check entries of each subsystem and, in one group function per subsystem part,
 the fixtures they are evaluated at: each group builds its models and inputs on
 the host, runs every entry through `native_runtime.hpp` and checks the result.
+An entry is a host-and-device function; a backend calls it from a kernel.
 A group compiles exactly the entries it runs. `CMakeLists.txt`
 lists the required instances once and generates one source per instance from
 `check.in` for each language (host `.cpp`, CUDA `.cu`, HIP `.hip`), covering:
@@ -116,14 +117,31 @@ ctest --test-dir build/cuda-runtime -L canary.device --output-on-failure
 ```
 
 Each fixture state is evaluated once without a derivative seed and, for Dual
-state scalars, once per seeded input (see `host_inputs.hpp`). The report lists:
+state scalars, once per seeded input (see `host_inputs.hpp`). Every evaluation
+runs on the device and, with the same inputs, as an ordinary function on the
+host. Each number of the device result (a value, or the derivative of a Dual)
+is compared with the same number of the host result. The two agree when they
+are equal, or both NaN, or both finite with
+
+```
+|device - host| <= 1e-9 * max(|device|, |host|, scale)
+```
+
+where `scale` is 0 for a value and, for a derivative, the magnitude of the
+value of the same field. The second form lets a derivative whose exact value
+is zero differ by the rounding of the value. Two fixtures state wider limits
+where the result is a difference of nearly equal numbers; the reason is given
+at each (`nasa9_curve` in `thermodynamics_cases.hpp`, `two_temperature_terms`
+in `exchange_cases.hpp`). The host results themselves are checked by the host
+test suite, not here.
+
+The report lists:
 
 | Entry | Meaning | Test result |
 | --- | --- | --- |
 | error | A device call failed or a group could not run. | Fail |
-| mismatch | An exact field (status, reason, diagnostic mode) differs from the fixture's declared value. | Fail |
-| open | A numerical field has no acceptance interval yet. | Fail |
+| mismatch | An exact field (status, reason, diagnostic mode) of the device result differs from the fixture's declared value. | Fail |
+| disagreement with the host | A number of the device result does not agree with the host result. | Fail |
 
 A test passes only when at least one evaluation ran and nothing is listed. A
-missing device, a device error or a missing acceptance criterion is a failure,
-never a skip.
+missing device or a device error is a failure, never a skip.

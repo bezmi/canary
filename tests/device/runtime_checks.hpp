@@ -5,12 +5,13 @@
 //
 // Exact fields (status, reason, diagnostic mode, species count) are compared
 // with the values a fixture declares. Every numerical field is visited by name
-// with each scalar component (the value, and the derivative of a Dual). A
-// numerical field without an acceptance interval is open: it is counted, and an
-// open field fails the run as a missing criterion, not as a pass.
+// with each scalar component (the value, and the derivative of a Dual), and
+// the component computed on the backend is compared with the same component
+// computed on the host (see agree).
 
 #include "../dual.hpp"
 
+#include <algorithm>
 #include <array>
 #include <canary/energy_exchange.hpp>
 #include <canary/models/calorically_perfect.hpp>
@@ -22,6 +23,7 @@
 #include <canary/state.hpp>
 #include <canary/status.hpp>
 #include <canary/transport/transport.hpp>
+#include <cmath>
 #include <concepts>
 #include <cstddef>
 #include <cstdio>
@@ -35,18 +37,59 @@
 namespace canary::test
 {
 
+// Limits of the difference between the backend and the host result of one
+// scalar component (see agree).
+struct Agreement {
+    double relative = 1e-9;
+    double absolute = 0.0;
+};
+
+// True when the backend result device and the host result host of one scalar
+// component agree within limits. Equal results and two NaN agree; otherwise
+// both must be finite with
+//   |device - host| <= relative * max(|device|, |host|, scale) + absolute.
+// scale is 0 for a value. For the derivative of a Dual it is the magnitude of
+// the value of the same field, so that a derivative whose exact value is zero
+// may differ by the rounding of that value.
+inline bool agree(double device, double host, double scale, const Agreement& limits)
+{
+    if (device == host || (std::isnan(device) && std::isnan(host))) { return true; }
+    if (!std::isfinite(device) || !std::isfinite(host)) { return false; }
+    const double magnitude = std::max({std::abs(device), std::abs(host), scale});
+    return std::abs(device - host) <= limits.relative * magnitude + limits.absolute;
+}
+
 // The result of running the checks of one subsystem.
 class Report
 {
   public:
-    // One evaluation of operation, with open_numbers scalar components that have
-    // no acceptance interval.
-    void evaluated(const std::string& operation, std::size_t open_numbers)
+    // One evaluation of operation.
+    void evaluated(const std::string& operation)
     {
-        Open& open = open_[operation];
-        ++open.evaluations;
-        open.numbers += open_numbers;
+        ++operations_[operation].evaluations;
         ++evaluations_;
+    }
+
+    // One scalar component of an evaluation of operation, computed on the
+    // backend (device) and on the host, with the scale and limits of agree.
+    void compared(const std::string& operation,
+                  std::string_view fixture,
+                  const std::string& field,
+                  std::string_view component,
+                  double device,
+                  double host,
+                  double scale,
+                  const Agreement& limits)
+    {
+        Operation& entry = operations_[operation];
+        ++entry.numbers;
+        if (agree(device, host, scale, limits)) { return; }
+        if (entry.disagreements++ == 0) {
+            char values[96];
+            std::snprintf(values, sizeof(values), "device %a, host %a", device, host);
+            entry.first = "fixture " + std::string(fixture) + ", " + field + " " +
+                          std::string(component) + ": " + values;
+        }
     }
 
     // An exact field of an evaluation that differs from the declared value.
@@ -66,47 +109,58 @@ class Report
 
     void merge(const Report& other)
     {
-        for (const auto& [operation, open] : other.open_) {
-            open_[operation].evaluations += open.evaluations;
-            open_[operation].numbers += open.numbers;
+        for (const auto& [operation, entry] : other.operations_) {
+            Operation& mine = operations_[operation];
+            if (mine.disagreements == 0) { mine.first = entry.first; }
+            mine.evaluations += entry.evaluations;
+            mine.numbers += entry.numbers;
+            mine.disagreements += entry.disagreements;
         }
         evaluations_ += other.evaluations_;
         mismatches_.insert(mismatches_.end(), other.mismatches_.begin(), other.mismatches_.end());
         errors_.insert(errors_.end(), other.errors_.begin(), other.errors_.end());
     }
 
-    // True when at least one evaluation ran and every evaluated field met its
-    // criterion, with no error.
+    // True when at least one evaluation ran, every exact field had its
+    // declared value and every scalar component agreed with the host, with no
+    // error.
     [[nodiscard]] bool passed() const
-    {
-        std::size_t open_numbers = 0;
-        for (const auto& entry : open_) { open_numbers += entry.second.numbers; }
-        return evaluations_ > 0 && open_numbers == 0 && mismatches_.empty() && errors_.empty();
-    }
+    { return evaluations_ > 0 && disagreements() == 0 && mismatches_.empty() && errors_.empty(); }
 
     void print(std::ostream& out) const
     {
         for (const std::string& error : errors_) { out << "error: " << error << '\n'; }
         for (const std::string& mismatch : mismatches_) { out << "mismatch: " << mismatch << '\n'; }
-        std::size_t open_numbers = 0;
-        for (const auto& [operation, open] : open_) {
-            if (open.numbers > 0) {
-                out << "open (no acceptance interval): " << operation << "\n    "
-                    << open.evaluations << " evaluations, " << open.numbers
-                    << " scalar components\n";
+        std::size_t numbers = 0;
+        for (const auto& [operation, entry] : operations_) {
+            if (entry.disagreements > 0) {
+                out << "disagreement with the host: " << operation << "\n    "
+                    << entry.disagreements << " of " << entry.numbers
+                    << " scalar components; first: " << entry.first << '\n';
             }
-            open_numbers += open.numbers;
+            numbers += entry.numbers;
         }
         out << evaluations_ << " evaluations, " << mismatches_.size() << " mismatches, "
-            << open_numbers << " open scalar components, " << errors_.size() << " errors\n";
+            << disagreements() << " of " << numbers << " scalar components disagree with the host, "
+            << errors_.size() << " errors\n";
     }
 
   private:
-    struct Open {
+    struct Operation {
         std::size_t evaluations = 0;
         std::size_t numbers = 0;
+        std::size_t disagreements = 0;
+        std::string first;
     };
-    std::map<std::string, Open> open_;
+
+    [[nodiscard]] std::size_t disagreements() const
+    {
+        std::size_t count = 0;
+        for (const auto& entry : operations_) { count += entry.second.disagreements; }
+        return count;
+    }
+
+    std::map<std::string, Operation> operations_;
     std::size_t evaluations_ = 0;
     std::vector<std::string> mismatches_;
     std::vector<std::string> errors_;
@@ -443,23 +497,41 @@ void check_exact(Report& report,
     for_each_number(result, "result", zero);
 }
 
-// Records one evaluation of result: its exact fields against expected (when
-// the result has any) and its numerical fields, which are all open until
-// acceptance intervals exist, unless an expectation declares them exactly.
+// Records one evaluation: the exact fields of the backend result device
+// against expected (when the result has any), and every scalar component of
+// device against the same component of the host result within limits.
 template <typename Result, typename... Expected>
 void check_result(Report& report,
                   const std::string& operation,
-                  [[maybe_unused]] std::string_view fixture,
-                  const Result& result,
+                  std::string_view fixture,
+                  const Result& device,
+                  const Result& host,
+                  const Agreement& limits,
                   const Expected&... expected)
 {
-    (check_exact(report, operation, fixture, result, expected), ...);
-    std::size_t open = 0;
-    if constexpr (!(std::same_as<Expected, ZeroExpectation> || ...)) {
-        auto count = [&open](const std::string&, std::string_view, double) { ++open; };
-        for_each_number(result, "result", count);
-    }
-    report.evaluated(operation, open);
+    (check_exact(report, operation, fixture, device, expected), ...);
+    std::vector<double> host_numbers;
+    auto store = [&](const std::string&, std::string_view, double number) {
+        host_numbers.push_back(number);
+    };
+    for_each_number(host, "result", store);
+    std::size_t index = 0;
+    double value = 0.0;
+    auto compare = [&](const std::string& field, std::string_view component, double number) {
+        const double host_number = host_numbers[index++];
+        const bool derivative = component == "derivative";
+        if (!derivative) { value = std::max(std::abs(number), std::abs(host_number)); }
+        report.compared(operation,
+                        fixture,
+                        field,
+                        component,
+                        number,
+                        host_number,
+                        derivative ? value : 0.0,
+                        limits);
+    };
+    for_each_number(device, "result", compare);
+    report.evaluated(operation);
 }
 
 }  // namespace canary::test

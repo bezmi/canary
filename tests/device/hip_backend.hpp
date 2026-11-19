@@ -37,10 +37,15 @@ inline void copy_to_device(void* destination, const void* source, std::size_t by
 inline void copy_to_host(void* destination, const void* source, std::size_t bytes)
 { check(hipMemcpy(destination, source, bytes, hipMemcpyDeviceToHost), "hipMemcpy to host"); }
 
-// Launches Entry with one block of one thread and waits for it to complete.
+// Kernel that calls the host-and-device function Entry with args.
+template <auto Entry, typename... Args> __global__ void entry_kernel(Args... args)
+{ Entry(args...); }
+
+// Calls Entry with args on the device, in one block of one thread, and waits
+// for it to complete.
 template <auto Entry, typename... Args> void launch(const Args&... args)
 {
-    Entry<<<1, 1>>>(args...);
+    entry_kernel<Entry, Args...><<<1, 1>>>(args...);
     check(hipGetLastError(), "kernel launch");
     check(hipDeviceSynchronize(), "kernel execution");
 }

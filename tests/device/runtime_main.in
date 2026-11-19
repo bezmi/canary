@@ -3,7 +3,7 @@
 // subsystem is thermodynamics, reactions, exchange or transport. Runs every
 // group instance of that subsystem on the current device and prints the report
 // of each and their total. Exit status 0 when every check passed, 1 when a
-// check failed or was open or the device failed, and 2 for an unknown
+// check failed or the device failed, and 2 for an unknown
 // subsystem or a wrong argument count.
 @CANARY_CHECK_ANNOTATION@
 #include "@CANARY_CHECK_BACKEND@"

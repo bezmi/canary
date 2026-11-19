@@ -33,13 +33,13 @@
 namespace canary::test
 {
 
-// Checks. The including file defines CANARY_CHECK_ENTRY as the function
-// specifier of an entry: __global__ for a native kernel, empty for the host
-// companion. Each entry writes the complete public result to out[0].
+// Checks. Each entry is a host-and-device function that writes the complete
+// public result to out[0]. A backend calls it on the host or from a kernel on
+// the device (see native_runtime.hpp).
 
 // Closure of a model without composition input from two state variables.
 template <typename G, typename A, typename B>
-CANARY_CHECK_ENTRY void
+CANARY_HOST_DEVICE void
   closure_check(Output<ClosureOf<state_t<G, typename A::value_type>>> out, const G* gas, A a, B b)
 { out[0] = thermo_state(*gas, a, b); }
 
@@ -52,7 +52,7 @@ template <Composition F,
           typename A,
           typename B,
           typename... Extra>
-CANARY_CHECK_ENTRY void
+CANARY_HOST_DEVICE void
   mixture_closure_check(Output<ClosureOf<state_t<G, typename A::value_type>>> out,
                         const G* gas,
                         const typename A::value_type* composition,
@@ -70,7 +70,7 @@ template <Composition F,
           typename G,
           typename A,
           typename B>
-CANARY_CHECK_ENTRY void
+CANARY_HOST_DEVICE void
   modal_closure_check(Output<ClosureOf<state_t<G, typename A::value_type>>> out,
                       const G* gas,
                       const typename A::value_type* composition,
@@ -87,13 +87,13 @@ CANARY_CHECK_ENTRY void
 
 // Mixture of the selected cell from mass fractions.
 template <Storage S, std::size_t N, typename G, typename T>
-CANARY_CHECK_ENTRY void
+CANARY_HOST_DEVICE void
   fractions_mixture_check(Output<mixture_t<G, T>> out, const G* gas, const T* composition)
 { out[0] = cell_composition<Composition::Mixture, S, N>(*gas, composition); }
 
 // Mixture of the selected cell from partial densities and the density.
 template <Storage S, std::size_t N, typename G, typename T>
-CANARY_CHECK_ENTRY void densities_mixture_check(Output<mixture_t<G, T>> out,
+CANARY_HOST_DEVICE void densities_mixture_check(Output<mixture_t<G, T>> out,
                                                 const G* gas,
                                                 const T* composition,
                                                 Density<T, typename G::units> rho)
@@ -104,7 +104,7 @@ CANARY_CHECK_ENTRY void densities_mixture_check(Output<mixture_t<G, T>> out,
 
 // Properties of an owning state of a model without composition input.
 template <typename G, typename State>
-CANARY_CHECK_ENTRY void properties_check(
+CANARY_HOST_DEVICE void properties_check(
   Output<decltype(properties(std::declval<const G&>(), std::declval<State>()))> out,
   const G* gas,
   State state)
@@ -113,7 +113,7 @@ CANARY_CHECK_ENTRY void properties_check(
 // Properties of an owning state of a mixture model, with the mixture prepared
 // from the mass fractions of the selected cell.
 template <std::size_t N, typename G, typename State>
-CANARY_CHECK_ENTRY void mixture_properties_check(
+CANARY_HOST_DEVICE void mixture_properties_check(
   Output<decltype(properties(std::declval<const G&>(),
                              std::declval<mixture_t<G, typename State::value_type>>(),
                              std::declval<State>()))> out,
@@ -129,7 +129,7 @@ CANARY_CHECK_ENTRY void mixture_properties_check(
 
 // Electron pressure of an owning state of a multi-temperature model.
 template <std::size_t N, typename G, typename State>
-CANARY_CHECK_ENTRY void electron_pressure_check(
+CANARY_HOST_DEVICE void electron_pressure_check(
   Output<decltype(electron_pressure(std::declval<const G&>(),
                                     std::declval<mixture_t<G, typename State::value_type>>(),
                                     std::declval<State>()))> out,
@@ -145,7 +145,7 @@ CANARY_CHECK_ENTRY void electron_pressure_check(
 
 // Per-species properties at one temperature.
 template <typename G, typename T>
-CANARY_CHECK_ENTRY void species_properties_check(
+CANARY_HOST_DEVICE void species_properties_check(
   Output<decltype(species_properties(std::declval<const G&>(),
                                      std::declval<Temperature<T, typename G::units>>()))> out,
   const G* gas,
@@ -153,7 +153,7 @@ CANARY_CHECK_ENTRY void species_properties_check(
 { out[0] = species_properties(*gas, temp); }
 
 template <typename G, typename T>
-CANARY_CHECK_ENTRY void species_isobaric_specific_heat_check(
+CANARY_HOST_DEVICE void species_isobaric_specific_heat_check(
   Output<decltype(species_isobaric_specific_heat(
     std::declval<const G&>(), std::declval<Temperature<T, typename G::units>>()))> out,
   const G* gas,
@@ -161,7 +161,7 @@ CANARY_CHECK_ENTRY void species_isobaric_specific_heat_check(
 { out[0] = species_isobaric_specific_heat(*gas, temp); }
 
 template <typename G, typename T>
-CANARY_CHECK_ENTRY void species_vibrational_electronic_energy_check(
+CANARY_HOST_DEVICE void species_vibrational_electronic_energy_check(
   Output<decltype(species_vibrational_electronic_energy(
     std::declval<const G&>(), std::declval<Temperature<T, typename G::units>>()))> out,
   const G* gas,
@@ -169,7 +169,7 @@ CANARY_CHECK_ENTRY void species_vibrational_electronic_energy_check(
 { out[0] = species_vibrational_electronic_energy(*gas, temp); }
 
 template <typename G, typename T>
-CANARY_CHECK_ENTRY void species_mode_energy_check(
+CANARY_HOST_DEVICE void species_mode_energy_check(
   Output<decltype(species_mode_energy(std::declval<const G&>(),
                                       ModeIndex {},
                                       std::declval<Temperature<T, typename G::units>>()))> out,
@@ -180,11 +180,11 @@ CANARY_CHECK_ENTRY void species_mode_energy_check(
 
 // NASA9 cp/R and h/R, and s/R, of a curve at temperature t.
 template <typename Curve, typename T>
-CANARY_CHECK_ENTRY void nasa9_cp_h_check(Output<Nasa9CpH<T>> out, const Curve* curve, T t)
+CANARY_HOST_DEVICE void nasa9_cp_h_check(Output<Nasa9CpH<T>> out, const Curve* curve, T t)
 { out[0] = nasa9_cp_h(*curve, t, math::log(t)); }
 
 template <typename Curve, typename T>
-CANARY_CHECK_ENTRY void nasa9_s_check(Output<T> out, const Curve* curve, T t)
+CANARY_HOST_DEVICE void nasa9_s_check(Output<T> out, const Curve* curve, T t)
 { out[0] = nasa9_s(*curve, t, math::log(t)); }
 
 // Runners. Each evaluates the entries of one model at every state of a
@@ -798,7 +798,10 @@ template <std::floating_point P, typename T, UnitSystem U> Report thermodynamic_
 }
 
 // NASA9 cp/R, h/R and s/R of curve at each temperature value t of the
-// evaluation units, seeded by one kelvin.
+// evaluation units, seeded by one kelvin. Within 1e-6 t of 298.15 K the
+// limits of agreement of cp/R and h/R gain the absolute part 1e-9 t: there
+// h/R of a species with zero enthalpy of formation is a rounding residue of
+// terms of magnitude t.
 template <typename T, typename Curve, typename P, typename U>
 void nasa9_curve(Report& report,
                  const std::string& name,
@@ -808,12 +811,17 @@ void nasa9_curve(Report& report,
 {
     using V = ScalarTraits<T>::value_type;
     const V kelvin = fixed_quantity<kind::temperature, V>(1.0, scales).value();
+    const V reference = fixed_quantity<kind::temperature, V>(298.15, scales).value();
     for (const V value : temperatures) {
+        Agreement limits {};
+        if (std::abs(value - reference) <= V(1e-6) * value) {
+            limits.absolute = 1e-9 * static_cast<double>(value);
+        }
         for_each_seed<T>([&](Seeds<T>& seeds) {
             const T t = seeds.converted("t", value, kelvin);
             const std::string label =
               name + " at t = " + std::to_string(value) + ", " + seeds.label();
-            evaluate<&nasa9_cp_h_check<Curve, T>>(report, label, curve, t);
+            evaluate_within<&nasa9_cp_h_check<Curve, T>>(report, label, limits, curve, t);
             evaluate<&nasa9_s_check<Curve, T>>(report, label, curve, t);
         });
     }

@@ -19,6 +19,7 @@
 #include <canary/quantity.hpp>
 #include <canary/reactions.hpp>
 #include <canary/state.hpp>
+#include <cmath>
 #include <concepts>
 #include <cstddef>
 #include <string>
@@ -29,11 +30,11 @@
 namespace canary::test
 {
 
-// The including file defines CANARY_CHECK_ENTRY (see thermodynamics_cases.hpp).
+// Entries: see thermodynamics_cases.hpp.
 
 // Two-temperature terms at (rho, T, T_ve) of the selected cell.
 template <std::size_t N, typename X, typename G, typename T>
-CANARY_CHECK_ENTRY void
+CANARY_HOST_DEVICE void
   two_temperature_vibration_translation_check(Output<PowerDensity<T, typename G::units>> out,
                                               const X* exchange,
                                               const G* gas,
@@ -52,7 +53,7 @@ CANARY_CHECK_ENTRY void
 }
 
 template <typename X, typename M, typename T>
-CANARY_CHECK_ENTRY void two_temperature_chemistry_vibration_check(
+CANARY_HOST_DEVICE void two_temperature_chemistry_vibration_check(
   Output<PowerDensity<T, typename X::units>> out,
   const X* exchange,
   const M* mechanism,
@@ -62,7 +63,7 @@ CANARY_CHECK_ENTRY void two_temperature_chemistry_vibration_check(
 { out[0] = chemistry_vibration_source(*exchange, *mechanism, *rates, temp, temp_ve); }
 
 template <std::size_t N, typename M, typename X, typename G, typename T>
-CANARY_CHECK_ENTRY void
+CANARY_HOST_DEVICE void
   two_temperature_sources_check(Output<TwoTemperatureSources<T, typename G::units, N>> out,
                                 const M* mechanism,
                                 const X* exchange,
@@ -91,7 +92,7 @@ template <typename G, typename T>
 using CellState = MultiTemperatureState<T, typename G::units, G::mode_count>;
 
 template <StateForm F, std::size_t N, typename X, typename G, typename T>
-CANARY_CHECK_ENTRY void vibration_translation_check(Output<ModeSources<G, T>> out,
+CANARY_HOST_DEVICE void vibration_translation_check(Output<ModeSources<G, T>> out,
                                                     const X* exchange,
                                                     const G* gas,
                                                     const T* composition,
@@ -107,7 +108,7 @@ CANARY_CHECK_ENTRY void vibration_translation_check(Output<ModeSources<G, T>> ou
 }
 
 template <StateForm F, typename X, typename M, typename G, typename T>
-CANARY_CHECK_ENTRY void
+CANARY_HOST_DEVICE void
   chemistry_vibration_check(Output<ModeSources<G, T>> out,
                             const X* exchange,
                             const M* mechanism,
@@ -123,7 +124,7 @@ CANARY_CHECK_ENTRY void
 }
 
 template <StateForm F, std::size_t N, typename X, typename G, typename T>
-CANARY_CHECK_ENTRY void electron_translation_check(Output<ModeSources<G, T>> out,
+CANARY_HOST_DEVICE void electron_translation_check(Output<ModeSources<G, T>> out,
                                                    const X* exchange,
                                                    const G* gas,
                                                    const T* composition,
@@ -138,7 +139,7 @@ CANARY_CHECK_ENTRY void electron_translation_check(Output<ModeSources<G, T>> out
 }
 
 template <StateForm F, std::size_t N, typename X, typename G, typename T>
-CANARY_CHECK_ENTRY void vibration_electron_check(Output<ModeSources<G, T>> out,
+CANARY_HOST_DEVICE void vibration_electron_check(Output<ModeSources<G, T>> out,
                                                  const X* exchange,
                                                  const G* gas,
                                                  const T* composition,
@@ -154,14 +155,14 @@ CANARY_CHECK_ENTRY void vibration_electron_check(Output<ModeSources<G, T>> out,
 }
 
 template <typename X, typename M, typename G, typename T>
-CANARY_CHECK_ENTRY void electron_impact_ionisation_check(
+CANARY_HOST_DEVICE void electron_impact_ionisation_check(
   Output<ModeSources<G, T>> out,
   const X* exchange,
   const RatesOfProgress<T, typename G::units, M::reaction_count>* rates)
 { out[0] = electron_impact_ionisation_source(*exchange, *rates); }
 
 template <StateForm F, std::size_t N, typename M, typename X, typename G, typename T>
-CANARY_CHECK_ENTRY void multi_temperature_sources_check(
+CANARY_HOST_DEVICE void multi_temperature_sources_check(
   Output<MultiTemperatureSources<T, typename G::units, N, G::mode_count>> out,
   const M* mechanism,
   const X* exchange,
@@ -182,7 +183,7 @@ CANARY_CHECK_ENTRY void multi_temperature_sources_check(
 // Runners. Each evaluates the entries of one exchange at every state of a
 // fixture and every seed (see host_inputs.hpp). A standalone term of a
 // process the exchange does not configure is exactly zero, value and
-// derivative; every other result is open until acceptance intervals exist.
+// derivative; every result is compared with the host result.
 
 // The process counts of an exchange type.
 template <typename X> struct ExchangeCounts;
@@ -285,6 +286,14 @@ void two_temperature_terms(Report& report,
     using Counts = ExchangeCounts<X>;
     for (std::size_t s = 0; s < C; ++s) {
         const auto& state = fixture.states[s];
+        // The vibration-translation source is proportional to the difference of
+        // the vibrational energies at T and T_ve. When the temperatures differ
+        // by at most 1e-6 T, rounding differences are amplified by at least
+        // 1e6, and the relative limit of agreement is 1e-5.
+        Agreement vibration_translation_limits {};
+        if (std::abs(state.temp - state.modes[0]) <= 1e-6 * state.temp) {
+            vibration_translation_limits.relative = 1e-5;
+        }
         for_each_seed<T>([&](Seeds<T>& seeds) {
             const auto composition =
               cell_storage<Storage::Contiguous>(seeds.fractions("y", state.y));
@@ -294,9 +303,29 @@ void two_temperature_terms(Report& report,
             const auto temp_ve =
               seeds.template quantity<kind::temperature>("temp_ve", state.modes[0], scales);
             const std::string label = state_label(fixture.name, s, seeds.label());
-            evaluate_term<&two_temperature_vibration_translation_check<N, X, G, T>,
-                          Counts::vibration_translation ==
-                            0>(report, label, exchange, gas, composition, rho, temp, temp_ve);
+            if constexpr (Counts::vibration_translation == 0) {
+                evaluate_expecting<&two_temperature_vibration_translation_check<N, X, G, T>>(
+                  report,
+                  label,
+                  ZeroExpectation {},
+                  exchange,
+                  gas,
+                  composition,
+                  rho,
+                  temp,
+                  temp_ve);
+            } else {
+                evaluate_within<&two_temperature_vibration_translation_check<N, X, G, T>>(
+                  report,
+                  label,
+                  vibration_translation_limits,
+                  exchange,
+                  gas,
+                  composition,
+                  rho,
+                  temp,
+                  temp_ve);
+            }
             evaluate<&two_temperature_sources_check<N, M, X, G, T>>(report,
                                                                     label,
                                                                     mechanism,

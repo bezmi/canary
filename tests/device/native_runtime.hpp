@@ -9,6 +9,8 @@
 // storage, passes every other argument by value, launches the entry once,
 // copies its complete result back and releases the storage. Arguments are
 // host values only; views over backend storage are built inside the entry.
+// run_on_host<entry>(args...) calls the same entry as an ordinary host
+// function on the host values.
 
 #include "cell_inputs.hpp"
 #include "runtime_checks.hpp"
@@ -106,17 +108,64 @@ Result run(void (* /*entry*/)(Output<Result>, Params...), const Args&... args)
     return result.front();
 }
 
+// The argument a host call passes to an entry parameter: for a pointer
+// parameter const V* the address of the host value, or of the first value of
+// a contiguous range of V; for any other parameter the argument unchanged.
+template <typename V, typename Arg>
+const V* host_argument(std::type_identity<const V*> /*parameter*/, const Arg& argument)
+{
+    if constexpr (std::same_as<Arg, V>) {
+        return &argument;
+    } else {
+        return std::ranges::data(argument);
+    }
+}
+
+template <typename Param, typename Arg>
+Param host_argument(std::type_identity<Param> /*parameter*/, const Arg& argument)
+{ return argument; }
+
+template <auto Entry, typename Result, typename... Params, typename... Args>
+Result run_on_host(void (* /*entry*/)(Output<Result>, Params...), const Args&... args)
+{
+    Result result {};
+    Entry(Output<Result>(&result), host_argument(std::type_identity<Params> {}, args)...);
+    return result;
+}
+
 }  // namespace detail
 
-// The complete result of one evaluation of Entry with args (see above).
+// The complete result of one evaluation of Entry with args on the backend
+// (see above).
 template <auto Entry, typename... Args> auto run(const Args&... args)
 { return detail::run<Entry>(Entry, args...); }
 
-// Evaluates Entry with args and records the result in report under fixture
-// (see check_result). The result has no exact fields.
+// The complete result of one call of Entry with args on the host, reading the
+// arguments from host memory.
+template <auto Entry, typename... Args> auto run_on_host(const Args&... args)
+{ return detail::run_on_host<Entry>(Entry, args...); }
+
+// Evaluates Entry with args on the backend and on the host and records both
+// results in report under fixture (see check_result), with the limits of
+// agreement limits. The result has no exact fields.
+template <auto Entry, typename... Args>
+void evaluate_within(Report& report,
+                     const std::string& fixture,
+                     const Agreement& limits,
+                     const Args&... args)
+{
+    check_result(report,
+                 entry_name<Entry>(),
+                 fixture,
+                 run<Entry>(args...),
+                 run_on_host<Entry>(args...),
+                 limits);
+}
+
+// As evaluate_within, with the default limits.
 template <auto Entry, typename... Args>
 void evaluate(Report& report, const std::string& fixture, const Args&... args)
-{ check_result(report, entry_name<Entry>(), fixture, run<Entry>(args...)); }
+{ evaluate_within<Entry>(report, fixture, Agreement {}, args...); }
 
 // As evaluate, for a result with exact fields declared by expected.
 template <auto Entry, typename Expected, typename... Args>
@@ -124,7 +173,15 @@ void evaluate_expecting(Report& report,
                         const std::string& fixture,
                         const Expected& expected,
                         const Args&... args)
-{ check_result(report, entry_name<Entry>(), fixture, run<Entry>(args...), expected); }
+{
+    check_result(report,
+                 entry_name<Entry>(),
+                 fixture,
+                 run<Entry>(args...),
+                 run_on_host<Entry>(args...),
+                 Agreement {},
+                 expected);
+}
 
 }  // namespace canary::test
 

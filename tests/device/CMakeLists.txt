@@ -34,7 +34,7 @@ endforeach()
 # Generates one source per required instance with the given extension and
 # returns their paths in out_var. backend is the header that defines
 # canary::test::backend for that language.
-function(canary_device_check_sources out_var language extension annotation entry backend)
+function(canary_device_check_sources out_var language extension annotation backend)
   set(sources)
   set(index 0)
   foreach(instance IN LISTS canary_device_check_instances)
@@ -46,7 +46,6 @@ function(canary_device_check_sources out_var language extension annotation entry
     list(GET parts 4 CANARY_CHECK_UNITS)
     set(CANARY_CHECK_LANGUAGE "${language}")
     set(CANARY_CHECK_ANNOTATION "${annotation}")
-    set(CANARY_CHECK_ENTRY "${entry}")
     set(CANARY_CHECK_BACKEND "${backend}")
     set(source "${CMAKE_CURRENT_BINARY_DIR}/${language}/${CANARY_CHECK_GROUP}_${index}.${extension}")
     configure_file(check.in "${source}" @ONLY)
@@ -58,7 +57,7 @@ endfunction()
 
 # Host companion: the same entries as ordinary functions, with the default empty
 # annotation, built whenever a native check is selected.
-canary_device_check_sources(host_sources host cpp "" "" host_backend.hpp)
+canary_device_check_sources(host_sources host cpp "" host_backend.hpp)
 add_library(canary_device_host_check OBJECT ${host_sources})
 target_include_directories(canary_device_host_check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(canary_device_host_check PRIVATE canary::canary)
@@ -78,7 +77,7 @@ target_compile_options(canary_device_derive_inputs PRIVATE
 set(native_annotation "#define CANARY_HOST_DEVICE __host__ __device__")
 
 if(CANARY_BUILD_CUDA_CHECKS)
-  canary_device_check_sources(cuda_sources CUDA cu "${native_annotation}" __global__ cuda_backend.hpp)
+  canary_device_check_sources(cuda_sources CUDA cu "${native_annotation}" cuda_backend.hpp)
   add_library(canary_cuda_check OBJECT ${cuda_sources})
   target_include_directories(canary_cuda_check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   target_link_libraries(canary_cuda_check PRIVATE canary::canary)
@@ -91,7 +90,7 @@ if(CANARY_BUILD_CUDA_CHECKS)
 endif()
 
 if(CANARY_BUILD_HIP_CHECKS)
-  canary_device_check_sources(hip_sources HIP hip "${native_annotation}" __global__ hip_backend.hpp)
+  canary_device_check_sources(hip_sources HIP hip "${native_annotation}" hip_backend.hpp)
   set_source_files_properties(${hip_sources} PROPERTIES LANGUAGE HIP)
   add_library(canary_hip_check OBJECT ${hip_sources})
   target_include_directories(canary_hip_check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
