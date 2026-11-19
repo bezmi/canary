@@ -948,5 +948,5 @@
          "label": "EII"
       }
    ],
-   "reference": "J. G. Kim and S. M. Jo, Modification of chemical-kinetic parameters for 11-air species in re-entry flows, Int. J. Heat Mass Transf. 169, 2021, Table 3 (with Park's exchange reactions); from GDTk (gdtk-uq/gdtk bf559c3f) examples/lmr/2D/RAMCII/3T/chem.lua; electron-impact forward rates at the electron temperature as that file states"
+   "reference": "Dissociation by heavy particles: J. G. Kim and S. M. Jo, Modification of chemical-kinetic parameters for 11-air species in re-entry flows, Int. J. Heat Mass Transf. 169, 2021, Table 3; N2 + e-, exchange, associative ionisation, charge exchange and electron-impact ionisation: C. Park, Review of chemical-kinetic problems of future NASA missions, I: Earth entries, J. Thermophys. Heat Transf. 7(3), 1993, Table 2; rate coefficients converted from cm^3/(mol s) to SI; third-body efficiencies of NO + M are ratios of the tabulated rate coefficients. Controlling temperatures: sqrt(T T_v) for dissociation by heavy particles; sqrt(T T_e) for N2 + e- and T_e for electron-impact ionisation, with T_e the temperature of the model's electron mode. The cited papers have one temperature for vibration and electrons, for which these are their forms"
 }

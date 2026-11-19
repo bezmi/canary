@@ -3,9 +3,7 @@
 
 // Five-species air: N2, O2, N, O and NO, in this order.
 // Each species cites the source of its fit and of its molar mass. The
-// values were taken from the species database distributed with GDTk
-// (gdtk-uq/gdtk, commit bf559c3f, src/gas/species-database), which cites
-// the same sources; they are data only.
+// values are those of database/data/air5.json.
 
 #include <array>
 #include <concepts>

@@ -3,18 +3,22 @@
 
 // Generated from database/data/air11_kim_jo_exchange.json by
 // tools/species_database/exchange_to_header.py; do not edit.
-// Reference: V-T: Landau-Teller with Millikan-White and high-temperature
-// corrections from J. G. Kim and S. M. Jo, Int. J. Heat Mass Transf. 169,
-// 2021, Table 1 (Park's corrections for NO); E-T: elastic electron-heavy
-// exchange with Gnoffo, Gupta and Shinn (NASA TP-2867, 1989) cross-section
-// fits and Coulomb cross-sections; V-E: Landau-Teller rate with the relaxation
-// time of J.-H. Lee, AIAA Paper 85-1035, 1985, Eq. (19) with the rate
-// coefficients of its Table 2, fitted by
-// scripts/electron_vibration_relaxation/fit.py; C-V: impartial dissociation;
-// C-E: electron-impact ionisation (Gnoffo, Gupta and Shinn 1989). From GDTk
-// (gdtk-uq/gdtk bf559c3f) examples/lmr/2D/RAMCII/3T/ee-kim-air11-2T.inp via
-// prep-kinetics with the RAM-C three-temperature gas; C-E entries from the
-// reactions labelled EII.
+// Reference: V-T: Landau-Teller with Millikan-White constants and limiting
+// cross-sections from J. G. Kim and S. M. Jo, Modification of chemical-kinetic
+// parameters for 11-air species in re-entry flows, Int. J. Heat Mass Transf.
+// 169, 2021, Table 1; E-T: elastic electron-heavy exchange with the
+// cross-section fits of Gnoffo, Gupta and Shinn (NASA TP-2867, 1989) and
+// Coulomb cross-sections; V-E: Landau-Teller rate with the relaxation time of
+// J.-H. Lee, AIAA Paper 85-1035, 1985, Eq. (19) with the rate coefficients of
+// its Table 2, fitted by scripts/electron_vibration_relaxation/fit.py; C-V:
+// impartial dissociation (Treanor and Marrone, Phys. Fluids 5, 1962; Knab,
+// Fruhauf and Messerschmid, J. Thermophys. Heat Transf. 9(2), 1995), with the
+// dissociation energies 2 Hf(N), 2 Hf(O) and Hf(N) + Hf(O) - Hf(NO) from the
+// heats of formation of the NASA CEA thermo.inp and the vibrational
+// temperatures omega_e h c / k_B with omega_e of the NIST Chemistry WebBook
+// (Huber and Herzberg); C-E: electron-impact ionisation (Gnoffo, Gupta and
+// Shinn 1989) for the two electron-impact ionisation reactions of the
+// mechanism, with the ionisation energies of the species file
 
 #include <array>
 #include <canary/data/air11.hpp>

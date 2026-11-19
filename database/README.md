@@ -6,9 +6,9 @@ valid gas, reaction mechanism or energy-exchange model.
 
 Supported source importers are `tools/species_database/thermo_inp_to_json.py`
 for NASA Glenn records and `tools/species_database/cantera_to_json.py` for
-Cantera NASA9 YAML. GDTk Lua import is not supported. Existing GDTk-derived
-Canary datasets retain their data and provenance; the JSON-to-header tools
-consume those datasets directly.
+Cantera NASA9 YAML. The shipped datasets cite the publications of their
+values in their `reference` fields; the JSON-to-header tools consume the
+datasets directly.
 
 ## Check a file
 

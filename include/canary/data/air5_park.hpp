@@ -3,10 +3,11 @@
 
 // Generated from database/data/air5_park.json by
 // tools/species_database/reactions_to_header.py; do not edit.
-// Reference: C. Park, Review of chemical kinetic problems of future NASA
-// missions, I: Earth entries, J. Thermophys. Heat Transf. 7(3), 1993, reduced
-// to five species; from GDTk (gdtk-uq/gdtk bf559c3f)
-// examples/lmr/3D/cylinder-larc/rm-park-5sp-2T.inp
+// Reference: C. Park, Review of chemical-kinetic problems of future NASA
+// missions, I: Earth entries, J. Thermophys. Heat Transf. 7(3), 1993, Table 2,
+// for the species N2, O2, N, O and NO; rate coefficients converted from
+// cm^3/(mol s) to SI; third-body efficiencies are ratios of the tabulated rate
+// coefficients
 
 #include <array>
 #include <canary/data/air5.hpp>

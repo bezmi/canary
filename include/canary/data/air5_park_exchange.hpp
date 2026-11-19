@@ -3,13 +3,15 @@
 
 // Generated from database/data/air5_park_exchange.json by
 // tools/species_database/exchange_to_header.py; do not edit.
-// Reference: V-T: Landau-Teller with Millikan-White a, b from C. Park, J.
+// Reference: V-T: Landau-Teller with Millikan-White a, b from C. Park, Review
+// of chemical-kinetic problems of future NASA missions, I: Earth entries, J.
 // Thermophys. Heat Transf. 7(3), 1993, Table 1, and Park's high-temperature
 // correction (ibid. p. 387); C-V: impartial dissociation (Treanor and Marrone,
 // Phys. Fluids 5, 1962; Knab, Fruhauf and Messerschmid, J. Thermophys. Heat
-// Transf. 9(2), 1995). From GDTk (gdtk-uq/gdtk bf559c3f)
-// examples/lmr/3D/cylinder-larc/eem-park-5sp-2T.inp via prep-kinetics with
-// gm-air-5sp-2T and rm-park-5sp-2T.
+// Transf. 9(2), 1995), with the dissociation energies 2 Hf(N), 2 Hf(O) and
+// Hf(N) + Hf(O) - Hf(NO) from the heats of formation of the NASA CEA
+// thermo.inp and the vibrational temperatures omega_e h c / k_B with omega_e
+// of the NIST Chemistry WebBook (Huber and Herzberg)
 
 #include <array>
 #include <canary/data/air5.hpp>

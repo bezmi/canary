@@ -300,5 +300,5 @@
          }
       }
    ],
-   "reference": "Kim and Jo, Int. J. Heat Mass Transf. 169 (2021) (dissociation) and Park (1993) (NO exchange), as given in GDTk examples/lmr/2D/shock-tunnel-nozzles/five-species-air/rr-kim-air5-1T.inp (gdtk-uq/gdtk commit bf559c3f), converted to SI"
+   "reference": "Dissociation: J. G. Kim and S. M. Jo, Modification of chemical-kinetic parameters for 11-air species in re-entry flows, Int. J. Heat Mass Transf. 169, 2021, Table 3; NO + O and N2 + O exchange: C. Park, Review of chemical-kinetic problems of future NASA missions, I: Earth entries, J. Thermophys. Heat Transf. 7(3), 1993, Table 2; rate coefficients converted from cm^3/(mol s) to SI; third-body efficiencies of NO + M are ratios of the tabulated rate coefficients"
 }

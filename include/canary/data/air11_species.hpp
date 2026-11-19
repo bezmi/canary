@@ -3,11 +3,12 @@
 
 // Generated from database/data/air11.json by
 // tools/species_database/species_to_header.py; do not edit.
-// Reference: GDTk species database (gdtk-uq/gdtk commit bf559c3f,
-// src/gas/species-database); thermo fits as cited per species (NASA CEA2
-// thermo.inp, Johnston et al. AIAA Paper 2015-3110); electronic levels: NIST,
-// as in the GDTk database; ionisation energies of N (14.53413 eV) and O
-// (13.618055 eV): NIST Atomic Spectra Database
+// Reference: Molar masses and NASA9 fits: NASA CEA thermo.inp (McBride, Zehe
+// and Gordon, NASA/TP-2002-211556), except the fits of N and O and, from 1000
+// K, of N+ and O+: C. O. Johnston, J. Samareh and A. M. Brandis, AIAA Paper
+// 2015-3110, Tables 1, 2, 4 and 5; electronic levels as cited per species;
+// ionisation energies of N (14.53413 eV) and O (13.618055 eV): NIST Atomic
+// Spectra Database
 
 #include <array>
 #include <canary/models/multi_temperature.hpp>

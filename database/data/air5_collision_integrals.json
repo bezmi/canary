@@ -276,5 +276,5 @@
          }
       }
    ],
-   "reference": "Gupta, Yos, Thompson and Lee, A review of reaction rates and thermodynamic and transport properties for an 11-species air model for chemical and thermal nonequilibrium calculations to 30000 K, NASA RP-1232, 1990; from GDTk (gdtk-uq/gdtk commit bf559c3f, src/gas/species-database/collision-integrals/gupta_etal_1990_CI_data.lua)"
+   "reference": "Gupta, Yos, Thompson and Lee, A review of reaction rates and thermodynamic and transport properties for an 11-species air model for chemical and thermal nonequilibrium calculations to 30000 K, NASA RP-1232, 1990, Tables VIII and IX; ln(1e-20) is added to D for cross-sections in m^2"
 }

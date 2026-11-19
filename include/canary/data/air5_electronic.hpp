@@ -3,12 +3,12 @@
 
 // Generated from database/data/air5.json by
 // tools/species_database/species_to_header.py; do not edit.
-// Reference: GDTk species database (gdtk-uq/gdtk commit bf559c3f,
-// src/gas/species-database); fits: NASA CEA2 thermo.inp (McBride, Zehe and
-// Gordon, NASA/TP-2002-211556) for N2, O2, NO and Johnston et al., AIAA Paper
-// 2015-3110 for N and O; transport: NASA CEA trans.inp fits as in the GDTk
-// database, Lennard-Jones parameters from GRI-Mech 3.0 (Svehla 1962 for N);
-// electronic levels: NIST, as in the GDTk database
+// Reference: Molar masses and NASA9 fits of N2, O2 and NO: NASA CEA thermo.inp
+// (McBride, Zehe and Gordon, NASA/TP-2002-211556); NASA9 fits of N and O: C.
+// O. Johnston, J. Samareh and A. M. Brandis, AIAA Paper 2015-3110, Tables 1
+// and 4; viscosity and conductivity fits: NASA CEA trans.inp; Lennard-Jones
+// parameters: GRI-Mech 3.0 transport file; electronic levels as cited per
+// species
 
 #include <array>
 #include <canary/models/multi_temperature.hpp>

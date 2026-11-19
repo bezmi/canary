@@ -58,7 +58,7 @@
                   -1672.09974
                ]
             ],
-            "reference": "from CEA2::thermo.inp"
+            "reference": "NASA CEA thermo.inp"
          },
          "transport": {
             "viscosity": {
@@ -147,7 +147,7 @@
             ],
             "reference": "NIST Chemistry WebBook, constants of diatomic molecules (Huber and Herzberg): X, A, B, W, B', a', a; E / (h c) in cm^-1 converted by h c / k_B = 1.4387768775039338 K cm"
          },
-         "notes": "molar mass: from CEA2::thermo.inp",
+         "notes": "molar mass: NASA CEA thermo.inp",
          "elements": {
             "N": 2
          }
@@ -289,7 +289,7 @@
             ],
             "reference": "NIST Chemistry WebBook, constants of diatomic molecules (Huber and Herzberg): X, a, b, c, A', A; E / (h c) in cm^-1 converted by h c / k_B = 1.4387768775039338 K cm"
          },
-         "notes": "molar mass: from CEA2::thermo.inp",
+         "notes": "molar mass: NASA CEA thermo.inp",
          "elements": {
             "O": 2
          }
@@ -358,7 +358,7 @@
                   -111649.232
                ]
             ],
-            "reference": "Johnston et al. AIAA Paper 2015-3110"
+            "reference": "C. O. Johnston, J. Samareh and A. M. Brandis, AIAA Paper 2015-3110"
          },
          "transport": {
             "viscosity": {
@@ -408,7 +408,7 @@
             "lennard_jones": {
                "sigma": 3.298e-10,
                "epsilon": 71.4,
-               "reference": "Svehla (1962)"
+               "reference": "GRI-Mech 3.0 transport file."
             },
             "notes": "CEA transport fits with D converted to SI (Pa s, W/(m K)) by adding ln(1e-7) and ln(1e-4)"
          },
@@ -433,7 +433,7 @@
             ],
             "reference": "NIST Atomic Spectra Database, N I: the terms 2p3 4S*, 2D*, 2P*, 2p2 3s 4P, 2P, 2s 2p4 4P and 2p2 3p 2S*, each as one level with the summed degeneracy and the degeneracy-weighted energy; E / (h c) in cm^-1 converted by h c / k_B = 1.4387768775039338 K cm"
          },
-         "notes": "molar mass: CEA2::thermo.inp",
+         "notes": "molar mass: NASA CEA thermo.inp",
          "elements": {
             "N": 1
          }
@@ -502,7 +502,7 @@
                   -71640.1144
                ]
             ],
-            "reference": "Johnston et al. AIAA Paper 2015-3110"
+            "reference": "C. O. Johnston, J. Samareh and A. M. Brandis, AIAA Paper 2015-3110"
          },
          "transport": {
             "viscosity": {
@@ -579,7 +579,7 @@
             ],
             "reference": "NIST Atomic Spectra Database, O I: the levels of 2p4 3P, 1D, 1S and of 2p3 3s 5S*, 3S*, and the term 2p3 3p 5P as one level with the summed degeneracy and the degeneracy-weighted energy; E / (h c) in cm^-1 converted by h c / k_B = 1.4387768775039338 K cm"
          },
-         "notes": "molar mass: CEA2::thermo.inp",
+         "notes": "molar mass: NASA CEA thermo.inp",
          "elements": {
             "O": 1
          }
@@ -723,12 +723,12 @@
             ],
             "reference": "NIST Chemistry WebBook, constants of diatomic molecules (Huber and Herzberg): X 2Pi (both components), a, A, B, b, C; E / (h c) in cm^-1 converted by h c / k_B = 1.4387768775039338 K cm"
          },
-         "notes": "molar mass: CEA2::thermo.inp",
+         "notes": "molar mass: NASA CEA thermo.inp",
          "elements": {
             "N": 1,
             "O": 1
          }
       }
    },
-   "reference": "GDTk species database (gdtk-uq/gdtk commit bf559c3f, src/gas/species-database); fits: NASA CEA2 thermo.inp (McBride, Zehe and Gordon, NASA/TP-2002-211556) for N2, O2, NO and Johnston et al., AIAA Paper 2015-3110 for N and O; transport: NASA CEA trans.inp fits as in the GDTk database, Lennard-Jones parameters from GRI-Mech 3.0 (Svehla 1962 for N); electronic levels: NIST, as in the GDTk database"
+   "reference": "Molar masses and NASA9 fits of N2, O2 and NO: NASA CEA thermo.inp (McBride, Zehe and Gordon, NASA/TP-2002-211556); NASA9 fits of N and O: C. O. Johnston, J. Samareh and A. M. Brandis, AIAA Paper 2015-3110, Tables 1 and 4; viscosity and conductivity fits: NASA CEA trans.inp; Lennard-Jones parameters: GRI-Mech 3.0 transport file; electronic levels as cited per species"
 }
