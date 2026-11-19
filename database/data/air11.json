@@ -240,14 +240,14 @@
             ],
             "temperatures": [
                0.0,
-               27664.729861801763,
-               41493.145350173894,
-               119901.33435291682,
-               124012.1932595523,
-               126802.93121777158,
+               27664.728710780262,
+               41493.14151343556,
+               119901.33195495536,
+               124012.19325955228,
+               126802.92881981008,
                134642.97030097825
             ],
-            "reference": "NIST, as in the GDTk species database"
+            "reference": "NIST Atomic Spectra Database, N I: the terms 2p3 4S*, 2D*, 2P*, 2p2 3s 4P, 2P, 2s 2p4 4P and 2p2 3p 2S*, each as one level with the summed degeneracy and the degeneracy-weighted energy; E / (h c) in cm^-1 converted by h c / k_B = 1.4387768775039338 K cm"
          },
          "notes": "molar mass: CEA2::thermo.inp",
          "ionisation_energy": 1402330.360173364,
