@@ -117,7 +117,9 @@ ctest --test-dir build/cuda-runtime -L canary.device --output-on-failure
 ```
 
 Each fixture state is evaluated once without a derivative seed and, for Dual
-state scalars, once per seeded input (see `host_inputs.hpp`). Every evaluation
+state scalars, once per seeded input. The derivative of the seeded input is the
+size of that input (see `host_inputs.hpp`), so the derivative of a result is of
+the order of the result. Every evaluation
 runs on the device and, with the same inputs, as an ordinary function on the
 host. Each number of the device result (a value, or the derivative of a Dual)
 is compared with the same number of the host result. The two agree when they

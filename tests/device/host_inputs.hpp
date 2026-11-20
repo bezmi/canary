@@ -7,17 +7,24 @@
 // A fixture declares each state input as a binary64 value in SI units. An
 // input of state scalar T with value type V is that value rounded to V,
 // converted to the unit system U with the fixture scales in parameter type P,
-// and stored in T. For a Dual T, each evaluation seeds at most one input: its
-// derivative is one SI unit of its kind, converted the same way (one for a raw
-// mass-fraction weight); every other input has derivative zero.
+// and stored in T. For a Dual T, each evaluation seeds at most one input;
+// every other input has derivative zero. The derivative of the seeded input is
+// a size of that input, so that the derivative of a result is of the order of
+// the result itself:
+// - a scalar input: its magnitude, or one SI unit of its kind when it is zero;
+// - an input of an array (Seeds::values): the largest magnitude in the array,
+//   or one SI unit when every value is zero;
+// - a raw mass-fraction weight: one.
 
 #include "../dual.hpp"
 #include "cell_inputs.hpp"
 
+#include <algorithm>
 #include <array>
 #include <canary/quantity.hpp>
 #include <canary/scalar.hpp>
 #include <canary/units.hpp>
+#include <cmath>
 #include <concepts>
 #include <cstddef>
 #include <optional>
@@ -130,11 +137,8 @@ template <typename T> class Seeds
     Quantity<K, T, U>
       quantity(const std::string& name, double value_si, const UnitScales<P, U>& scales)
     {
-        const auto value =
-          convert<U>(Quantity<K, value_type, si> {static_cast<value_type>(value_si)}, scales)
-            .value();
-        const auto unit = convert<U>(Quantity<K, value_type, si> {value_type(1)}, scales).value();
-        return Quantity<K, T, U> {scalar(name, value, unit)};
+        const value_type value = converted_value<K>(value_si, scales);
+        return Quantity<K, T, U> {scalar(name, value, size<K>(std::abs(value), scales))};
     }
 
     // The values of the inputs name[i] of kind K, given in SI units, in U.
@@ -143,10 +147,16 @@ template <typename T> class Seeds
                             const std::array<double, C>& values_si,
                             const UnitScales<P, U>& scales)
     {
+        std::array<value_type, C> converted {};
+        value_type largest = 0;
+        for (std::size_t i = 0; i < C; ++i) {
+            converted[i] = converted_value<K>(values_si[i], scales);
+            largest = std::max(largest, std::abs(converted[i]));
+        }
+        const value_type seed = size<K>(largest, scales);
         std::array<T, C> out {};
         for (std::size_t i = 0; i < C; ++i) {
-            out[i] =
-              quantity<K>(name + "[" + std::to_string(i) + "]", values_si[i], scales).value();
+            out[i] = scalar(name + "[" + std::to_string(i) + "]", converted[i], seed);
         }
         return out;
     }
@@ -164,10 +174,10 @@ template <typename T> class Seeds
         return out;
     }
 
-    // The input name with value and seed unit already in the units of the
+    // The nonzero input name with value already in the units of the
     // evaluation (for inputs constructed in those units).
-    T converted(const std::string& name, value_type value, value_type unit)
-    { return scalar(name, value, unit); }
+    T converted(const std::string& name, value_type value)
+    { return scalar(name, value, std::abs(value)); }
 
     // The number of inputs requested so far.
     [[nodiscard]] std::size_t count() const { return count_; }
@@ -177,7 +187,21 @@ template <typename T> class Seeds
     { return seeded_name_.empty() ? std::string("no seed") : "seed " + seeded_name_; }
 
   private:
-    T scalar(const std::string& name, value_type value, value_type unit)
+    // value_si of kind K rounded to value_type and converted to U.
+    template <KindTag K, std::floating_point P, UnitSystem U>
+    static value_type converted_value(double value_si, const UnitScales<P, U>& scales)
+    {
+        return convert<U>(Quantity<K, value_type, si> {static_cast<value_type>(value_si)}, scales)
+          .value();
+    }
+
+    // magnitude, or one SI unit of kind K in U when magnitude is zero.
+    template <KindTag K, std::floating_point P, UnitSystem U>
+    static value_type size(value_type magnitude, const UnitScales<P, U>& scales)
+    { return magnitude > value_type(0) ? magnitude : converted_value<K>(1.0, scales); }
+
+    // The next input, with derivative seed when it is the seeded input.
+    T scalar(const std::string& name, value_type value, value_type seed)
     {
         const bool seeded = seeded_ == count_;
         ++count_;
@@ -185,7 +209,7 @@ template <typename T> class Seeds
             return value;
         } else {
             if (seeded) { seeded_name_ = name; }
-            return T(value, seeded ? unit : value_type(0));
+            return T(value, seeded ? seed : value_type(0));
         }
     }
 

@@ -798,7 +798,7 @@ template <std::floating_point P, typename T, UnitSystem U> Report thermodynamic_
 }
 
 // NASA9 cp/R, h/R and s/R of curve at each temperature value t of the
-// evaluation units, seeded by one kelvin. Within 1e-6 t of 298.15 K the
+// evaluation units, seeded by t. Within 1e-6 t of 298.15 K the
 // limits of agreement of cp/R and h/R gain the absolute part 1e-9 t: there
 // h/R of a species with zero enthalpy of formation is a rounding residue of
 // terms of magnitude t.
@@ -810,7 +810,6 @@ void nasa9_curve(Report& report,
                  const UnitScales<P, U>& scales)
 {
     using V = ScalarTraits<T>::value_type;
-    const V kelvin = fixed_quantity<kind::temperature, V>(1.0, scales).value();
     const V reference = fixed_quantity<kind::temperature, V>(298.15, scales).value();
     for (const V value : temperatures) {
         Agreement limits {};
@@ -818,7 +817,7 @@ void nasa9_curve(Report& report,
             limits.absolute = 1e-9 * static_cast<double>(value);
         }
         for_each_seed<T>([&](Seeds<T>& seeds) {
-            const T t = seeds.converted("t", value, kelvin);
+            const T t = seeds.converted("t", value);
             const std::string label =
               name + " at t = " + std::to_string(value) + ", " + seeds.label();
             evaluate_within<&nasa9_cp_h_check<Curve, T>>(report, label, limits, curve, t);
