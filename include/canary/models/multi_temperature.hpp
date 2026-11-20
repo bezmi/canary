@@ -205,6 +205,10 @@ template <std::size_t N, std::size_t M> class ModeTopology
 // Membership and its summaries are prepared together during validated host
 // construction. Rebuild dependent mechanisms and exchange descriptors after
 // replacing a model with different species or mode assignments.
+// State scalars with a single-precision value type are experimental: a
+// closure that solves for a temperature can return Status::NotConverged or a
+// diagnostic with ClosureReason::PrecisionLimit, so callers check the status of
+// every closure.
 template <std::floating_point P,
           UnitSystem U,
           std::size_t N,

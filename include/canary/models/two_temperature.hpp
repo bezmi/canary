@@ -53,6 +53,10 @@ namespace canary
 //   input;
 // - translational_rotational_cp: cp_tr,i;
 // - formation_enthalpy: dh_f,i.
+// State scalars with a single-precision value type are experimental: a
+// closure that solves for a temperature can return Status::NotConverged or a
+// diagnostic with ClosureReason::PrecisionLimit, so callers check the status of
+// every closure.
 template <std::floating_point P, UnitSystem U, std::size_t N, std::size_t S = 4>
     requires(N > 0 && S > 0)
 struct TwoTemperatureMixture {
