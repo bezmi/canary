@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-Canary-Cerberus-Exception
+# Copyright (C) 2026 Shahzeb Imran and the canary contributors
 # Species database files (JSON). The public header is C++20; the sources are
 # C++23 and use glaze, which consumers do not see.
 add_library(canary_database STATIC species_file.cpp reactions_file.cpp exchange_file.cpp collision_file.cpp file_io.cpp)

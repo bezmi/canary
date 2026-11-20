@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-Canary-Cerberus-Exception
+# Copyright (C) 2026 Shahzeb Imran and the canary contributors
 """Writes a canary energy-exchange file (format canary-energy-exchange-1) as a
 C++ header of host input records (canary::EnergyExchangeInput, see
 include/canary/energy_exchange.hpp) and a builder of the energy exchange for
@@ -182,7 +184,9 @@ template <std::floating_point P, UnitSystem U>
 {{
     return make_energy_exchange({args.name}, detail::{args.name}_species_names, species, mechanism, scales);
 }}"""
-    header = f"""#ifndef {guard}
+    header = f"""// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-Canary-Cerberus-Exception
+// Copyright (C) 2026 Shahzeb Imran and the canary contributors
+#ifndef {guard}
 #define {guard}
 
 // Generated from database/data/{source} by

@@ -1,4 +1,6 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-Canary-Cerberus-Exception
+# Copyright (C) 2026 Shahzeb Imran and the canary contributors
 # Regenerates tests/device/derived_inputs.hpp, the inputs of the device-check
 # fixtures derived by forward closures (see tests/device/derive_inputs.cpp).
 #

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-Canary-Cerberus-Exception
+# Copyright (C) 2026 Shahzeb Imran and the canary contributors
 """Writes a canary reactions file (format canary-reactions-2) as a C++ header
 of host input records (canary::MechanismInput, see include/canary/reactions.hpp)
 and a builder of the mechanism for one thermo model's species.
@@ -113,7 +115,9 @@ def main():
     reference = data.get("reference", "")
     source = Path(args.reactions).name
 
-    header = f"""#ifndef {guard}
+    header = f"""// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-Canary-Cerberus-Exception
+// Copyright (C) 2026 Shahzeb Imran and the canary contributors
+#ifndef {guard}
 #define {guard}
 
 // Generated from database/data/{source} by

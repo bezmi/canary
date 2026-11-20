@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-Canary-Cerberus-Exception
+// Copyright (C) 2026 Shahzeb Imran and the canary contributors
 #ifndef CANARY_MODELS_TWO_TEMPERATURE_HPP
 #define CANARY_MODELS_TWO_TEMPERATURE_HPP
 

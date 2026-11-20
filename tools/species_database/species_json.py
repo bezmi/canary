@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-Canary-Cerberus-Exception
+# Copyright (C) 2026 Shahzeb Imran and the canary contributors
 """Shared output structure of canary species files (format canary-species-2).
 
 Numbers are written by Python's json module in the shortest form that reads

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-Canary-Cerberus-Exception
+// Copyright (C) 2026 Shahzeb Imran and the canary contributors
 // The one-species closure from (rho, rho_e) through canary, and the same
 // arithmetic and validity check on plain doubles, as separate functions for comparing their
 // generated code.

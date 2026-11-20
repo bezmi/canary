@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-Canary-Cerberus-Exception
+# Copyright (C) 2026 Shahzeb Imran and the canary contributors
 """Convert NASA thermo.inp and Cantera NASA9 excerpts and compare molar masses,
 charges, temperature ranges, blend widths and coefficients with the shipped
 five-species air file. Check malformed inputs, explicit roles, generated

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-Canary-Cerberus-Exception
+# Copyright (C) 2026 Shahzeb Imran and the canary contributors
 """Converts species from a NASA Glenn thermo.inp file (CEA format, McBride,
 Zehe and Gordon, NASA/TP-2002-211556, appendix C) to a canary species file.
 

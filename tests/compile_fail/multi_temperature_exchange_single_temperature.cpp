@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-Canary-Cerberus-Exception
+// Copyright (C) 2026 Shahzeb Imran and the canary contributors
 // vibration_translation_source of a multi-temperature exchange needs a
 // model with the energy of every species in each mode; the
 // single-temperature model has none.

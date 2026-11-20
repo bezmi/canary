@@ -208,6 +208,11 @@ Canary is distributed in the hope that it will be useful, but without any
 warranty; without even the implied warranty of merchantability or fitness for
 a particular purpose.
 
+Each source file states this licence with the identifier
+`AGPL-3.0-or-later WITH AdditionRef-Canary-Cerberus-Exception`, where
+`AdditionRef-Canary-Cerberus-Exception` denotes the text of
+`LICENSE.CERBERUS-EXCEPTION`.
+
 The exception concerns [Cerberus](https://github.com/PlasmaSimUQ/cerberus)
 only. Cerberus, and works based on it, may be combined with Canary without
 the AGPL extending to their own code, on condition that they state that they

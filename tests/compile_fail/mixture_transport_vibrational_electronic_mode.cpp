@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-Canary-Cerberus-Exception
+// Copyright (C) 2026 Shahzeb Imran and the canary contributors
 // The Gupta-Yos mode conductivity needs a model whose single mode holds the
 // vibrational and electronic energy of every species. The two-temperature
 // mixture declares that mode; a multi-temperature mixture with one mode does

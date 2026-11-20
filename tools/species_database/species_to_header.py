@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-Canary-Cerberus-Exception
+# Copyright (C) 2026 Shahzeb Imran and the canary contributors
 """Writes species of a canary species file (format canary-species-2) as a C++
 header of host input records: with --thermo, the NASA-9 species
 (canary::Nasa9Species, see include/canary/models/thermally_perfect.hpp); with
@@ -130,7 +132,9 @@ inline constexpr std::array<ElectronicLevelsInput<{args.levels}>, {count}> {args
 {chr(10).join(levels_entry(n, species[n], args.levels) for n in args.species)}
 }},}};""")
     reference = data.get("reference", "")
-    header = f"""#ifndef {guard}
+    header = f"""// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-Canary-Cerberus-Exception
+// Copyright (C) 2026 Shahzeb Imran and the canary contributors
+#ifndef {guard}
 #define {guard}
 
 // Generated from database/data/{source} by

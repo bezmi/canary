@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-Canary-Cerberus-Exception
+# Copyright (C) 2026 Shahzeb Imran and the canary contributors
 """Shared structural and rate-model validation for reaction JSON tools.
 
 Checks cover file structure, model fields and SI input domains. Integer storage,

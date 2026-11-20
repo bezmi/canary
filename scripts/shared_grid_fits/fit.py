@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-Canary-Cerberus-Exception
+# Copyright (C) 2026 Shahzeb Imran and the canary contributors
 """Generate atomic thermodynamic fits with shared energy and capacity endpoints.
 
 The fixed 44-interval grid covers 1000--50000 K for N, O, N+ and O+. Energy is (u(T)-u(1000 K))/R. Degree-seven

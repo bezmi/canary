@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-Canary-Cerberus-Exception
+# Copyright (C) 2026 Shahzeb Imran and the canary contributors
 # Numerical device checks: the public numerical operations compiled as native
 # kernels (CUDA, HIP) and, with the same sources, as ordinary host functions.
 # The runtime tests link the native objects into one executable per backend

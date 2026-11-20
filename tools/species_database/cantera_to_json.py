@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-Canary-Cerberus-Exception
+# Copyright (C) 2026 Shahzeb Imran and the canary contributors
 """Converts NASA9 species from a Cantera YAML file to a canary species file.
 
 Cantera files give each species' composition but not its molar mass, so the

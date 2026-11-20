@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-Canary-Cerberus-Exception
+// Copyright (C) 2026 Shahzeb Imran and the canary contributors
 // make_reaction_mechanism with a gas model resolves the other temperatures
 // of the rates to the model's energy modes; the single-temperature model has
 // none.

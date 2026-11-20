@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-Canary-Cerberus-Exception
+# Copyright (C) 2026 Shahzeb Imran and the canary contributors
 """Shared structural, model-field and SI input-domain validation for energy-exchange tools.
 
 These checks match the file converters and source parameter domains in the

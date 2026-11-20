@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-Canary-Cerberus-Exception
+// Copyright (C) 2026 Shahzeb Imran and the canary contributors
 // Closure throughput from (rho, rho_e) over 10^6 cells: the one-species
 // model through canary and on plain doubles, mixtures of 5 and 11 species
 // with the exact capacity and with capacity 16, and the thermally perfect

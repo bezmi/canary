@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-Canary-Cerberus-Exception
+// Copyright (C) 2026 Shahzeb Imran and the canary contributors
 // Tests of the species database library: reading and writing species,
 // reactions and energy-exchange files, errors, the generated schemas,
 // conversion to model inputs, cp/R of the shipped five-species air file

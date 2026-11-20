@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-Canary-Cerberus-Exception
+// Copyright (C) 2026 Shahzeb Imran and the canary contributors
 // Construct models from headers emitted by the Python database tools.
 #include "generated_exchange.hpp"
 #include "generated_reactions.hpp"

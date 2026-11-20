@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-Canary-Cerberus-Exception
+# Copyright (C) 2026 Shahzeb Imran and the canary contributors
 """Writes the transport data of a canary species file (format canary-species-2,
 the "transport" record of each species) and a collision-integral file (format
 canary-collision-integrals-1) as a C++ header of host input records
@@ -85,7 +87,9 @@ def main():
     collision_source = Path(args.collision_file).name
     references = "; ".join(r for r in (species.get("reference"), collisions.get("reference")) if r)
 
-    header = f"""#ifndef {guard}
+    header = f"""// SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-Canary-Cerberus-Exception
+// Copyright (C) 2026 Shahzeb Imran and the canary contributors
+#ifndef {guard}
 #define {guard}
 
 // Generated from database/data/{species_source} and

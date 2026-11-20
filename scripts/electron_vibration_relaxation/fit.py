@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later WITH AdditionRef-Canary-Cerberus-Exception
+# Copyright (C) 2026 Shahzeb Imran and the canary contributors
 """Fit the electron-vibration relaxation time of N2 to Lee's rate coefficients.
 
 Input: lee_1985_table2.txt, the excitation rate coefficients k_0,v (cm^3/s,
