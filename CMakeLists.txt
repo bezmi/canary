@@ -1,7 +1,9 @@
 cmake_minimum_required(VERSION 3.29)
 
+# Calendar version YYYY.MM of the release.
 project(
   canary
+  VERSION 2026.11
   DESCRIPTION "Header-only gas thermodynamics, transport and rate functions for one cell"
   LANGUAGES CXX)
 
@@ -95,7 +97,12 @@ set(canary_cmake_install_dir "${CMAKE_INSTALL_LIBDIR}/cmake/canary")
 configure_package_config_file(cmake/canaryConfig.cmake.in
   "${CMAKE_CURRENT_BINARY_DIR}/canaryConfig.cmake"
   INSTALL_DESTINATION "${canary_cmake_install_dir}")
+# A consumer that requests a version receives exactly that release: releases
+# make no compatibility promise to each other.
+write_basic_package_version_file("${CMAKE_CURRENT_BINARY_DIR}/canaryConfigVersion.cmake"
+  COMPATIBILITY ExactVersion)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/canaryConfig.cmake"
+  "${CMAKE_CURRENT_BINARY_DIR}/canaryConfigVersion.cmake"
   DESTINATION "${canary_cmake_install_dir}")
 install(EXPORT canaryTargets NAMESPACE canary::
   DESTINATION "${canary_cmake_install_dir}")

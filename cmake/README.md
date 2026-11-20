@@ -44,7 +44,13 @@ cmake --build /path/to/consumer-build --parallel 2
 
 `find_package(canary)` requires the separately installed `mdspan::mdspan` target.
 The Canary installation can be moved to another prefix; update the consumer's
-`CMAKE_PREFIX_PATH` to the new location. No package version is declared yet.
+`CMAKE_PREFIX_PATH` to the new location.
+
+The package version is the calendar version of the release, `YYYY.MM` (for
+example `2026.11`). A requested version must equal the installed one:
+`find_package(canary 2026.11 CONFIG REQUIRED)` accepts only release 2026.11.
+Releases make no compatibility promise to each other. Without a version,
+`find_package(canary CONFIG REQUIRED)` accepts any installed release.
 
 ## Numerical device checks
 
