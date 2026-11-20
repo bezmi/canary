@@ -39,8 +39,8 @@
 #include <optional>
 #include <random>
 #include <sstream>
-#include <streambuf>
 #include <stdexcept>
+#include <streambuf>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -557,7 +557,8 @@ int main()
             std::istringstream input(contents);
             expect(db::detail::read_contents(input, "sample.json", "species") == contents);
         }
-        class FailedRead : public std::streambuf {
+        class FailedRead : public std::streambuf
+        {
             std::streamsize xsgetn(char* output, std::streamsize count) override
             {
                 if (read_once_) { throw std::ios_base::failure("injected read failure"); }
@@ -604,10 +605,14 @@ int main()
             expect(std::filesystem::is_empty(directory.path()));
         };
         check(db::read_species_file(air5_path()), db::write_species_file, db::write_species);
-        check(db::read_reactions_file(kim_jo_path()), db::write_reactions_file, db::write_reactions);
-        check(db::read_energy_exchange_file(exchange_path()), db::write_energy_exchange_file,
+        check(db::read_reactions_file(kim_jo_path()),
+              db::write_reactions_file,
+              db::write_reactions);
+        check(db::read_energy_exchange_file(exchange_path()),
+              db::write_energy_exchange_file,
               db::write_energy_exchange);
-        check(db::read_collision_integrals_file(collision_path()), db::write_collision_integrals_file,
+        check(db::read_collision_integrals_file(collision_path()),
+              db::write_collision_integrals_file,
               db::write_collision_integrals);
     };
 
@@ -634,7 +639,8 @@ int main()
         check(db::read_species_file(air5_path()), db::write_species_file);
         check(db::read_reactions_file(kim_jo_path()), db::write_reactions_file);
         check(db::read_energy_exchange_file(exchange_path()), db::write_energy_exchange_file);
-        check(db::read_collision_integrals_file(collision_path()), db::write_collision_integrals_file);
+        check(db::read_collision_integrals_file(collision_path()),
+              db::write_collision_integrals_file);
     };
 
     "database serialization failure preserves the destination"_test = [] {
@@ -1170,8 +1176,8 @@ int main()
             db::PhysicalTemperatureRecord {.kind = "free_electron", .species = {}},
           .temperature = {},
         };
-        const auto owner = db::mechanism_input<40, 11>(
-          db::parse_reactions(db::write_reactions(file)));
+        const auto owner =
+          db::mechanism_input<40, 11>(db::parse_reactions(db::write_reactions(file)));
         canary::detail::with_input(owner, [&](const auto& input) {
             const canary::ArrheniusInput expected {
               .A = 2.5e8,
@@ -1265,9 +1271,8 @@ int main()
     };
 
     "a forward rate requires an explicit model"_test = [] {
-        expect(throws_database_error([] {
-            (void)db::parse_reactions(kim_jo_with(R"("model": "arrhenius",)", ""));
-        }));
+        expect(throws_database_error(
+          [] { (void)db::parse_reactions(kim_jo_with(R"("model": "arrhenius",)", "")); }));
     };
 
     "an equilibrium backward rate with a translational exponent is an error"_test = [] {
@@ -1364,17 +1369,17 @@ int main()
             if (field == "energy") { file.units.energy = "J/kmol"; }
             if (field == "temperature") { file.units.temperature = "degC"; }
             if (field == "area") { file.units.area = "cm^2"; }
-            expect(throws_database_error([&] {
-                (void)db::parse_energy_exchange(db::write_energy_exchange(file));
-            })) << field;
+            expect(throws_database_error(
+              [&] { (void)db::parse_energy_exchange(db::write_energy_exchange(file)); }))
+              << field;
         }
         for (const std::string_view token : {R"("energy": "J/mol",)",
                                              R"("temperature": "K",)",
                                              R"(,
       "area": "m^2")"}) {
-            expect(throws_database_error([&] {
-                (void)db::parse_energy_exchange(exchange_with(token, ""));
-            })) << token;
+            expect(throws_database_error(
+              [&] { (void)db::parse_energy_exchange(exchange_with(token, "")); }))
+              << token;
         }
     };
 
@@ -1773,8 +1778,8 @@ int main()
     };
 
     "exchange JSON rejects noninteger and unrepresentable ionisation reaction indices"_test = [] {
-        const auto json = db::write_energy_exchange(
-          db::read_energy_exchange_file(air11_exchange_path()));
+        const auto json =
+          db::write_energy_exchange(db::read_energy_exchange_file(air11_exchange_path()));
         const auto section = json.find("\"electron_impact_ionisation\"");
         expect(fatal(section != std::string::npos));
         const auto key = json.find("\"reaction\"", section);
@@ -1785,7 +1790,8 @@ int main()
         for (const auto token : {"0.5", "true", "\"38\"", "2147483648", "-2147483649"}) {
             auto changed = json;
             changed.replace(start, end - start, token);
-            expect(throws_database_error([&] { (void)db::parse_energy_exchange(changed); })) << token;
+            expect(throws_database_error([&] { (void)db::parse_energy_exchange(changed); }))
+              << token;
         }
     };
 
@@ -1879,31 +1885,25 @@ int main()
                                   &db::ElectronCrossSectionRecord::maximum_temperature}) {
             auto changed = file;
             (changed.electron_translation[0].cross_section.*member).reset();
-            expect(throws_parameter_error([&] {
-                (void)db::electron_exchange_input<10, 1, 2>(changed, species);
-            }));
+            expect(throws_parameter_error(
+              [&] { (void)db::electron_exchange_input<10, 1, 2>(changed, species); }));
         }
         auto changed = file;
         changed.electron_translation[0].model = "inelastic";
-        expect(throws_parameter_error([&] {
-            (void)db::electron_exchange_input<10, 1, 2>(changed, species);
-        }));
+        expect(throws_parameter_error(
+          [&] { (void)db::electron_exchange_input<10, 1, 2>(changed, species); }));
         changed = file;
         changed.vibration_electron[0].model = "ssh";
-        expect(throws_parameter_error([&] {
-            (void)db::electron_exchange_input<10, 1, 2>(changed, species);
-        }));
-        expect(throws_parameter_error([&] {
-            (void)db::electron_exchange_input<10, 0, 2>(file, species);
-        }));
-        expect(throws_parameter_error([&] {
-            (void)db::electron_exchange_input<10, 1, 1>(file, species);
-        }));
+        expect(throws_parameter_error(
+          [&] { (void)db::electron_exchange_input<10, 1, 2>(changed, species); }));
+        expect(throws_parameter_error(
+          [&] { (void)db::electron_exchange_input<10, 0, 2>(file, species); }));
+        expect(throws_parameter_error(
+          [&] { (void)db::electron_exchange_input<10, 1, 1>(file, species); }));
         auto absent = species;
         absent.species.erase("O");
-        expect(throws_database_error([&] {
-            (void)db::electron_exchange_input<10, 1, 2>(file, absent);
-        }));
+        expect(throws_database_error(
+          [&] { (void)db::electron_exchange_input<10, 1, 2>(file, absent); }));
     };
 
     "the eleven-species exchange file reads and maps to the compiled electron exchanges"_test = [] {

@@ -587,7 +587,7 @@ template <typename V, Scalar T, UnitSystem U>
              std::same_as<typename range_quantity_t<V>::value_type, T> &&
              std::same_as<typename range_quantity_t<V>::units, U>
 CANARY_HOST_DEVICE constexpr CompositionCheck check_composition(const V& partial_densities,
-                                                       Density<T, U> rho)
+                                                                Density<T, U> rho)
 { return detail::check_composition(partial_densities, rho.value()); }
 
 namespace detail

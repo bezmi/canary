@@ -511,8 +511,11 @@ void test_mixture_transport()
             const std::array<std::string_view, 1> names {"N2"};
             const auto built = canary::make_thermally_perfect_mixture(species, scales);
             const auto wilke = canary::make_wilke_transport(input, names, built.species, scales);
-            const auto gupta = canary::make_gupta_yos_transport(
-              pairs, names, built.species, std::array<int, 1> {2}, scales);
+            const auto gupta = canary::make_gupta_yos_transport(pairs,
+                                                                names,
+                                                                built.species,
+                                                                std::array<int, 1> {2},
+                                                                scales);
             const auto state_check = [&]<typename T>() {
                 using V = canary::ScalarTraits<T>::value_type;
                 std::array<T, 1> weights {T(V(1))};
@@ -520,14 +523,15 @@ void test_mixture_transport()
                   Kokkos::mdspan<const T, Kokkos::extents<std::size_t, 1>>(weights.data()));
                 const auto mix = canary::mixture(built.model, composition);
                 const auto p = canary::convert<U>(canary::Pressure<T, si> {T(V(10000))}, scales);
-                const auto temp = canary::convert<U>(canary::Temperature<T, si> {T(V(3000))}, scales);
+                const auto temp =
+                  canary::convert<U>(canary::Temperature<T, si> {T(V(3000))}, scales);
                 const auto state = canary::thermo_state(built.model, mix, p, temp);
                 expect(fatal(state.status == canary::Status::Valid));
                 const auto transport_check = [&](const auto& model) {
-                    const auto all = canary::binary_diffusion_coefficients(
-                      model, built.model, mix, state.state);
-                    const auto mixture = canary::mixture_diffusion_coefficients(
-                      model, built.model, mix, state.state);
+                    const auto all =
+                      canary::binary_diffusion_coefficients(model, built.model, mix, state.state);
+                    const auto mixture =
+                      canary::mixture_diffusion_coefficients(model, built.model, mix, state.state);
                     expect(canary::ScalarTraits<T>::value(all[0][0].value()) > V(0));
                     expect(canary::math::isfinite(all[0][0].value()));
                     expect(canary::ScalarTraits<T>::value(mixture[0].value()) == V(0));

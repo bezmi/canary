@@ -4,9 +4,9 @@
 #define CANARY_DETAIL_NASA9_INTEGRALS_HPP
 
 #include <array>
-#include <cmath>
 #include <canary/config.hpp>
 #include <canary/scalar.hpp>
+#include <cmath>
 #include <limits>
 #include <utility>
 
@@ -67,12 +67,8 @@ CANARY_HOST_DEVICE std::array<T, 7>
 // inv must equal 1 / t.
 template <bool Entropy, HasLog T, std::floating_point P>
     requires ScalarWith<T, P>
-CANARY_HOST_DEVICE T nasa9_integral(const std::array<P, 9>& lower,
-                                    const std::array<P, 9>& upper,
-                                    T t,
-                                    T inv,
-                                    P start,
-                                    P end) noexcept
+CANARY_HOST_DEVICE T nasa9_integral(
+  const std::array<P, 9>& lower, const std::array<P, 9>& upper, T t, T inv, P start, P end) noexcept
 {
     using V = ScalarTraits<T>::value_type;
     const T d = T(t - start);

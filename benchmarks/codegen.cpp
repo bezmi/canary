@@ -4,10 +4,10 @@
 // arithmetic and validity check on plain doubles, as separate functions for comparing their
 // generated code.
 
-#include <cmath>
 #include <canary/models/calorically_perfect.hpp>
 #include <canary/quantity.hpp>
 #include <canary/state.hpp>
+#include <cmath>
 
 // The functions have external linkage so that the compiler emits them.
 // NOLINTBEGIN(misc-use-internal-linkage)

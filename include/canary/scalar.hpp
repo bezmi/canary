@@ -4,11 +4,11 @@
 #define CANARY_SCALAR_HPP
 
 #include <bit>
+#include <canary/config.hpp>
 #include <cmath>
 #include <concepts>
 #include <cstdint>
 #include <limits>
-#include <canary/config.hpp>
 
 namespace canary
 {

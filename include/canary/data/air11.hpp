@@ -7,7 +7,6 @@
 // this order (air11_species and air11_electronic_levels).
 
 #include <array>
-#include <concepts>
 #include <canary/build.hpp>
 #include <canary/data/air11_species.hpp>
 #include <canary/models/multi_temperature.hpp>
@@ -15,6 +14,7 @@
 #include <canary/quantity.hpp>
 #include <canary/species.hpp>
 #include <canary/units.hpp>
+#include <concepts>
 
 namespace canary
 {

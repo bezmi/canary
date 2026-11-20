@@ -7,12 +7,12 @@
 // concepts. Each is an ideal gas with constant cv, in SI units, with values
 // of type double for parameters.
 
-#include <concepts>
 #include <canary/quantity.hpp>
 #include <canary/scalar.hpp>
 #include <canary/species.hpp>
 #include <canary/state.hpp>
 #include <canary/status.hpp>
+#include <concepts>
 
 namespace canary::test
 {

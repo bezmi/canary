@@ -3,12 +3,12 @@
 // An SI quantity cannot be passed to a thermally perfect model in scaled
 // units.
 #include <array>
-#include <cstddef>
 #include <canary/data/air5.hpp>
 #include <canary/quantity.hpp>
 #include <canary/species.hpp>
 #include <canary/thermo.hpp>
 #include <canary/units.hpp>
+#include <cstddef>
 #include <mdspan/mdspan.hpp>
 
 namespace

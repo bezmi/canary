@@ -4,7 +4,6 @@
 // model with the energy of every species in each mode; the
 // single-temperature model has none.
 #include <array>
-#include <cstddef>
 #include <canary/data/air11.hpp>
 #include <canary/data/air11_kim_jo.hpp>
 #include <canary/data/air11_kim_jo_exchange.hpp>
@@ -14,6 +13,7 @@
 #include <canary/species.hpp>
 #include <canary/state.hpp>
 #include <canary/units.hpp>
+#include <cstddef>
 #include <mdspan/mdspan.hpp>
 
 namespace

@@ -5,9 +5,9 @@
 #include "test_suites.hpp"
 
 #include <boost/ut.hpp>
+#include <canary/scalar.hpp>
 #include <cmath>
 #include <concepts>
-#include <canary/scalar.hpp>
 #include <limits>
 #include <numbers>
 

@@ -5,9 +5,6 @@
 
 #include <array>
 #include <boost/ut.hpp>
-#include <cmath>
-#include <concepts>
-#include <cstddef>
 #include <canary/build.hpp>
 #include <canary/config.hpp>
 #include <canary/models/calorically_perfect.hpp>
@@ -16,6 +13,9 @@
 #include <canary/state.hpp>
 #include <canary/status.hpp>
 #include <canary/thermo.hpp>
+#include <cmath>
+#include <concepts>
+#include <cstddef>
 #include <limits>
 #include <mdspan/mdspan.hpp>
 #include <string>

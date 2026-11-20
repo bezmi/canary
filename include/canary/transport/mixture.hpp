@@ -1146,8 +1146,8 @@ CANARY_HOST_DEVICE DiffusionCoefficient<T, U>
         if (j == i) { continue; }
         others = others + x[j.value()];
     }
-    return DiffusionCoefficient<T, U> {
-      ScalarTraits<T>::value(sum) == V(0) ? T(V(0)) : T(others / sum)};
+    return DiffusionCoefficient<T, U> {ScalarTraits<T>::value(sum) == V(0) ? T(V(0))
+                                                                           : T(others / sum)};
 }
 
 // Accumulate direct p Delta(1)_ij / (k_B T) values without pair matrices.
@@ -1360,8 +1360,10 @@ CANARY_HOST_DEVICE std::array<DiffusionCoefficient<T, U>, N>
                                  const NormalisedComposition<T, U, N>& mix,
                                  const State& state)
 {
-    return detail::mixture_diffusion(
-      model, detail::mole_fractions(model.mass, mix), state.temp, state.p);
+    return detail::mixture_diffusion(model,
+                                     detail::mole_fractions(model.mass, mix),
+                                     state.temp,
+                                     state.p);
 }
 
 namespace detail

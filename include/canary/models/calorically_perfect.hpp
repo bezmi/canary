@@ -498,9 +498,7 @@ CANARY_HOST_DEVICE auto mixture(const CaloricallyPerfectMixture<P, U, Capacity>&
                                 const V& partial_densities,
                                 Density<T, U> rho,
                                 CompositionCheck check) noexcept
-{
-    return detail::mix(gas, partial_densities, rho.value(), check);
-}
+{ return detail::mix(gas, partial_densities, rho.value(), check); }
 
 // Closures of the mixture model, with the coefficients of a per-cell mixture
 // value and the same formulas as the one-species model. The status combines

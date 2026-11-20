@@ -2,8 +2,8 @@
 // Copyright (C) 2026 Shahzeb Imran and the canary contributors
 // A view of partial densities is not accepted where mass fractions are.
 #include <array>
-#include <cstddef>
 #include <canary/species.hpp>
+#include <cstddef>
 #include <mdspan/mdspan.hpp>
 
 namespace

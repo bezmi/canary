@@ -5,8 +5,6 @@
 
 #include <array>
 #include <boost/ut.hpp>
-#include <cmath>
-#include <concepts>
 #include <canary/build.hpp>
 #include <canary/models/calorically_perfect.hpp>
 #include <canary/quantity.hpp>
@@ -14,6 +12,8 @@
 #include <canary/status.hpp>
 #include <canary/thermo.hpp>
 #include <canary/units.hpp>
+#include <cmath>
+#include <concepts>
 #include <limits>
 #include <type_traits>
 

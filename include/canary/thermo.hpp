@@ -4,13 +4,13 @@
 #define CANARY_THERMO_HPP
 
 #include <array>
-#include <concepts>
-#include <cstddef>
 #include <canary/config.hpp>
 #include <canary/quantity.hpp>
 #include <canary/scalar.hpp>
 #include <canary/species.hpp>
 #include <canary/state.hpp>
+#include <concepts>
+#include <cstddef>
 #include <mdspan/mdspan.hpp>
 #include <tuple>
 #include <type_traits>

@@ -1785,8 +1785,8 @@ void test_multi_temperature_kinetics()
         const double value = canary::detail::rate_exponent<2>(rate, 4.0, 0.5, logarithms);
         expect(value == 6.5_d);
         const std::array<D, 2> dual_logarithms {D {nan, nan}, D {nan, nan}};
-        const D dual = canary::detail::rate_exponent<2>(
-          rate, D {4.0, 1.0}, D {0.5, -0.25}, dual_logarithms);
+        const D dual =
+          canary::detail::rate_exponent<2>(rate, D {4.0, 1.0}, D {0.5, -0.25}, dual_logarithms);
         expect(dual.real() == 6.5_d);
         expect(dual.dual() == 2.75_d);
     };
@@ -2562,9 +2562,10 @@ void test_multi_temperature_kinetics()
         // Reaction 38 ionises O, not N.
         e = electrons;
         e.electron_impact_ionisation[0].species = "N";
-        starts(base,
-               e,
-               "electron-impact ionisation 0 (N): reaction 38 must consume one \"N\" (net change -1)");
+        starts(
+          base,
+          e,
+          "electron-impact ionisation 0 (N): reaction 38 must consume one \"N\" (net change -1)");
         for (const double energy : {nan, inf, 0.0, -1.0}) {
             e = electrons;
             e.electron_impact_ionisation[1].ionisation_energy = energy;
@@ -2630,8 +2631,13 @@ void test_multi_temperature_kinetics()
         input.electron_impact_ionisation[0] =
           canary::air11_kim_jo_exchange_electrons.electron_impact_ionisation[0];
         const auto build = [&](const auto& species, const auto& mechanism, const auto& labels) {
-            return canary::make_multi_temperature_exchange(
-              heavy, input, labels, species, mechanism, gas, si_scales);
+            return canary::make_multi_temperature_exchange(heavy,
+                                                           input,
+                                                           labels,
+                                                           species,
+                                                           mechanism,
+                                                           gas,
+                                                           si_scales);
         };
         const auto rejects = [&](const auto& species, const auto& mechanism, auto reason) {
             const auto message = error_message([&] { (void)build(species, mechanism, names); });
@@ -2740,17 +2746,18 @@ void test_multi_temperature_kinetics()
                 scales,
                 canary::convert<U>(canary::Pressure<P, si> {P(atmosphere)}, scales),
                 built.model);
-              const auto exchange = canary::make_air11_kim_jo_exchange(
-                built.species, mechanism, built.model, scales);
+              const auto exchange =
+                canary::make_air11_kim_jo_exchange(built.species, mechanism, built.model, scales);
               expect(exchange.electron() == canary::electron_species_index(built.model));
               for (const auto& coupling : exchange.electron_impact_ionisation()) {
-                  expect(std::isfinite(coupling.ionisation_energy) && coupling.ionisation_energy > P(0));
+                  expect(std::isfinite(coupling.ionisation_energy) &&
+                         coupling.ionisation_energy > P(0));
               }
           };
           check(canary::UnitScales<float, si> {});
           check(canary::UnitScales<double, si> {});
-          check(canary::UnitScales<float, scaled> {{
-            .mass = 4.65e-26F, .density = 1e-3F, .temperature = 1000.0F, .length = 1.0F}});
+          check(canary::UnitScales<float, scaled> {
+            {.mass = 4.65e-26F, .density = 1e-3F, .temperature = 1000.0F, .length = 1.0F}});
           check(reference_scales);
       };
     "multi-temperature exchange rejects duplicate physical electron processes"_test = [&] {

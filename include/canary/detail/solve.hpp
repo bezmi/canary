@@ -7,11 +7,11 @@
 // from internal energy. Internal to the models.
 
 #include <algorithm>
-#include <cmath>
-#include <concepts>
 #include <canary/config.hpp>
 #include <canary/scalar.hpp>
 #include <canary/status.hpp>
+#include <cmath>
+#include <concepts>
 #include <numeric>
 #include <type_traits>
 
@@ -63,7 +63,7 @@ enum class SolveReason : unsigned char {
 
 template <Scalar T> struct SolveResult {
     T root;
-    Status status;  // Valid, NotConverged, or Invalid for bracket or full-residual failures
+    Status status;       // Valid, NotConverged, or Invalid for bracket or full-residual failures
     SolveReason reason;  // None exactly when status is Valid
 };
 
@@ -111,7 +111,9 @@ CANARY_HOST_DEVICE SolveResult<T> solve(const FValue& f_value,
     const V lower = bracket.lower;
     const V upper = bracket.upper;
     if (!std::isfinite(lower) || !std::isfinite(upper)) {
-        return {.root = T(guess), .status = Status::Invalid, .reason = SolveReason::NonfiniteBounds};
+        return {.root = T(guess),
+                .status = Status::Invalid,
+                .reason = SolveReason::NonfiniteBounds};
     }
     if (lower > upper) {
         return {.root = T(guess), .status = Status::Invalid, .reason = SolveReason::ReversedBounds};
@@ -241,7 +243,9 @@ CANARY_HOST_DEVICE SolveResult<T> solve(const FValue& f_value,
                     .reason = SolveReason::NonfiniteFullDerivative};
         }
         if (derivative == V(0)) {
-            return {.root = T(x), .status = Status::Invalid, .reason = SolveReason::ZeroFullDerivative};
+            return {.root = T(x),
+                    .status = Status::Invalid,
+                    .reason = SolveReason::ZeroFullDerivative};
         }
         const T input_residual = r.value - T(value);
         return {.root = T(x) - T(input_residual / derivative), .status = status, .reason = reason};

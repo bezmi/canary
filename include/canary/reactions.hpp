@@ -662,7 +662,8 @@ std::array<P, N> third_body_efficiencies(const SpeciesCoefficients<K>& list,
                           eff));
         }
         out[index[e].value()] = stored_reaction_parameter<P>(
-          eff, std::format("third-body efficiency of \"{}\"", list.entries[e].name));
+          eff,
+          std::format("third-body efficiency of \"{}\"", list.entries[e].name));
     }
     return out;
 }
@@ -732,8 +733,8 @@ ArrheniusRate<P, U> arrhenius_rate(const ArrheniusInput& input,
                       s_t));
     }
     const P n = stored_reaction_parameter<P>(input.n, std::format("{} rate: n", role));
-    const P exponent = stored_reaction_parameter<P>(
-      s_t, std::format("{} rate: translational exponent", role));
+    const P exponent =
+      stored_reaction_parameter<P>(s_t, std::format("{} rate: translational exponent", role));
     const auto theta_name = std::format("{} rate: activation temperature", role);
     const auto theta = thermodynamic_parameter<P>(
       convert<U>(Temperature<W, si> {static_cast<W>(input.activation_temperature)}, scales),
@@ -1041,9 +1042,11 @@ ReactionMechanism<P, U, N, R> build_mechanism(const MechanismInput<R, K>& input,
     mech.configured_mode_count_ = OtherMode::mode_count;
     using W = std::common_type_t<double, P>;
     mech.temperature_lower = positive_thermodynamic_parameter<P>(
-      convert<U>(Temperature<W, si> {static_cast<W>(lower)}, scales), "temperature lower limit");
+      convert<U>(Temperature<W, si> {static_cast<W>(lower)}, scales),
+      "temperature lower limit");
     mech.temperature_upper = positive_thermodynamic_parameter<P>(
-      convert<U>(Temperature<W, si> {static_cast<W>(upper)}, scales), "temperature upper limit");
+      convert<U>(Temperature<W, si> {static_cast<W>(upper)}, scales),
+      "temperature upper limit");
     if (!(mech.temperature_lower < mech.temperature_upper)) {
         throw ParameterError("temperature limits must remain ordered after conversion");
     }

@@ -233,7 +233,8 @@ void test_species()
                 const std::array<T, 5> storage {T(V(99)), T(first), T(V(99)), T(second), T(V(99))};
                 const auto view = canary::as_kind<kind::density, U>(
                   Kokkos::mdspan<const T, Extents, Layout>(storage.data() + 1, mapping));
-                const auto result = canary::check_composition(view, canary::Density<T, U> {T(total)});
+                const auto result =
+                  canary::check_composition(view, canary::Density<T, U> {T(total)});
                 expect(result.status == status && result.reason == reason);
             };
             const V nan = std::numeric_limits<V>::quiet_NaN();
@@ -309,7 +310,8 @@ void test_species()
         const std::array all_zero {0.0, 0.0};
         expect(check_composition(fractions(view_of(valid))).status == Status::Valid);
         expect(check_composition(fractions(view_of(over))).status == Status::CompositionViolation);
-        expect(check_composition(fractions(view_of(negative))).status == Status::CompositionViolation);
+        expect(check_composition(fractions(view_of(negative))).status ==
+               Status::CompositionViolation);
         expect(check_composition(fractions(view_of(not_finite))).status == Status::Invalid);
         expect(check_composition(fractions(view_of(all_zero))).status == Status::Invalid);
     };
@@ -317,13 +319,12 @@ void test_species()
     "composition status of partial densities scales the tolerance with the density"_test = [] {
         const std::array valid {0.5, 1.5};
         const std::array over {0.5, 1.5 + 1.0e-9};
-        expect(check_composition(densities(view_of(valid)),
-                                  canary::Density<double, scaled> {2.0}).status == Status::Valid);
-        expect(
-          check_composition(densities(view_of(over)), canary::Density<double, scaled> {2.0}).status ==
-          Status::CompositionViolation);
-        expect(check_composition(densities(view_of(valid)),
-                                  canary::Density<double, scaled> {0.0}).status == Status::Invalid);
+        expect(check_composition(densities(view_of(valid)), canary::Density<double, scaled> {2.0})
+                 .status == Status::Valid);
+        expect(check_composition(densities(view_of(over)), canary::Density<double, scaled> {2.0})
+                 .status == Status::CompositionViolation);
+        expect(check_composition(densities(view_of(valid)), canary::Density<double, scaled> {0.0})
+                 .status == Status::Invalid);
     };
 
     "mean mass and charge follow the number-weighted definitions"_test = [] {

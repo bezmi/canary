@@ -203,7 +203,8 @@ class Nasa9Curve
         const T inv = T(T(V(1)) / t);
         const T s = detail::nasa9_entropy(b[r.lower], t, ln_t, inv);
         if (!r.transition) { return s; }
-        return T(s + detail::nasa9_integral<true>(b[r.lower], b[r.lower + 1], t, inv, r.start, r.end));
+        return T(s +
+                 detail::nasa9_integral<true>(b[r.lower], b[r.lower + 1], t, inv, r.start, r.end));
     }
 
     template <std::size_t M, std::floating_point Q>

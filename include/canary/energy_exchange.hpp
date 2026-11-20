@@ -1486,9 +1486,9 @@ void check_ionisation_participants(const Reaction<P, U, N>& r,
           std::format("reaction {} must produce one ion (net change +1)", reaction.value()));
     }
     if (species.charge[(*ion).value()].value() != -electron_charge) {
-        throw ParameterError(std::format(
-          R"(product ion "{}" must have charge opposite to the electron charge)",
-          names[(*ion).value()]));
+        throw ParameterError(
+          std::format(R"(product ion "{}" must have charge opposite to the electron charge)",
+                      names[(*ion).value()]));
     }
 }
 

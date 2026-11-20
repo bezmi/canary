@@ -532,9 +532,7 @@ CANARY_HOST_DEVICE auto mixture(const ThermallyPerfectMixture<P, U, N, S>& gas,
                                 const V& partial_densities,
                                 Density<T, U> rho,
                                 CompositionCheck check) noexcept
-{
-    return detail::normalise(gas, partial_densities, rho.value(), check);
-}
+{ return detail::normalise(gas, partial_densities, rho.value(), check); }
 
 // Closure from density and energy per unit mass, with the default initial
 // guess (see detail::default_temperature_guess and

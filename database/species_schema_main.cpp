@@ -2,8 +2,8 @@
 // Copyright (C) 2026 Shahzeb Imran and the canary contributors
 // Writes the JSON Schema of species files to standard output.
 
-#include <cstdio>
 #include <canary/database.hpp>
+#include <cstdio>
 
 int main()
 {

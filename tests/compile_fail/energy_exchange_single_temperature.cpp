@@ -4,7 +4,6 @@
 // vibrational-electronic energy of every species; the single-temperature
 // model has none.
 #include <array>
-#include <cstddef>
 #include <canary/data/air5.hpp>
 #include <canary/data/air5_park.hpp>
 #include <canary/data/air5_park_exchange.hpp>
@@ -12,6 +11,7 @@
 #include <canary/quantity.hpp>
 #include <canary/species.hpp>
 #include <canary/units.hpp>
+#include <cstddef>
 #include <mdspan/mdspan.hpp>
 
 namespace

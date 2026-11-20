@@ -4,13 +4,13 @@
 #define CANARY_TRANSPORT_TRANSPORT_HPP
 
 #include <array>
-#include <concepts>
-#include <cstddef>
 #include <canary/config.hpp>
 #include <canary/quantity.hpp>
 #include <canary/scalar.hpp>
 #include <canary/state.hpp>
 #include <canary/thermo.hpp>
+#include <concepts>
+#include <cstddef>
 #include <type_traits>
 
 namespace canary

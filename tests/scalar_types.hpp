@@ -5,8 +5,8 @@
 
 // Minimal scalar types for concept tests.
 
-#include <cmath>
 #include <canary/scalar.hpp>
+#include <cmath>
 
 namespace canary::test
 {

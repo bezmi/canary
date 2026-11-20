@@ -19,8 +19,8 @@ namespace
 using canary::Status;
 using canary::detail::Bracket;
 using canary::detail::Residual;
-using canary::detail::SolveSettings;
 using canary::detail::SolveReason;
+using canary::detail::SolveSettings;
 using D = canary::test::Dual<double>;
 
 constexpr double eps = std::numeric_limits<double>::epsilon();
@@ -524,33 +524,38 @@ void test_solve()
             using Dual = canary::test::Dual<V>;
             const Bracket<V> bracket {.lower = V(0), .upper = V(2)};
             const SolveSettings<V> limits {.relative_tolerance = V(0.01), .max_iterations = 50};
-            const auto check_invalid = [&](Bracket<V> bounds, V guess, SolveSettings<V> options,
-                                           SolveReason reason) {
-                int value_calls = 0;
-                int full_calls = 0;
-                const auto f_value = [&](V x) {
-                    ++value_calls;
-                    return Residual<V> {.value = x, .derivative = V(1)};
-                };
-                const auto f_full = [&](Dual x) {
-                    ++full_calls;
-                    return Residual<Dual> {.value = x, .derivative = Dual(V(1))};
-                };
-                const auto plain = solve<V>(f_value, f_value, bounds, guess, options);
-                const auto dual = solve<Dual>(f_value, f_full, bounds, guess, options);
-                expect(plain.status == Status::Invalid);
-                expect(dual.status == Status::Invalid);
-                expect(plain.reason == reason);
-                expect(dual.reason == reason);
-                expect(std::isnan(guess) ? std::isnan(plain.root) : plain.root == guess);
-                expect(std::isnan(guess) ? std::isnan(dual.root.real())
-                                         : dual.root.real() == guess);
-                expect(dual.root.dual() == V(0));
-                expect(value_calls == 0_i);
-                expect(full_calls == 0_i);
-            };
-            check_invalid({.lower = V(2), .upper = V(0)}, V(1), limits, SolveReason::ReversedBounds);
-            check_invalid(bracket, V(1), {.relative_tolerance = V(-1), .max_iterations = 50},
+            const auto check_invalid =
+              [&](Bracket<V> bounds, V guess, SolveSettings<V> options, SolveReason reason) {
+                  int value_calls = 0;
+                  int full_calls = 0;
+                  const auto f_value = [&](V x) {
+                      ++value_calls;
+                      return Residual<V> {.value = x, .derivative = V(1)};
+                  };
+                  const auto f_full = [&](Dual x) {
+                      ++full_calls;
+                      return Residual<Dual> {.value = x, .derivative = Dual(V(1))};
+                  };
+                  const auto plain = solve<V>(f_value, f_value, bounds, guess, options);
+                  const auto dual = solve<Dual>(f_value, f_full, bounds, guess, options);
+                  expect(plain.status == Status::Invalid);
+                  expect(dual.status == Status::Invalid);
+                  expect(plain.reason == reason);
+                  expect(dual.reason == reason);
+                  expect(std::isnan(guess) ? std::isnan(plain.root) : plain.root == guess);
+                  expect(std::isnan(guess) ? std::isnan(dual.root.real())
+                                           : dual.root.real() == guess);
+                  expect(dual.root.dual() == V(0));
+                  expect(value_calls == 0_i);
+                  expect(full_calls == 0_i);
+              };
+            check_invalid({.lower = V(2), .upper = V(0)},
+                          V(1),
+                          limits,
+                          SolveReason::ReversedBounds);
+            check_invalid(bracket,
+                          V(1),
+                          {.relative_tolerance = V(-1), .max_iterations = 50},
                           SolveReason::InvalidRelativeTolerance);
             check_invalid(
               bracket,
@@ -560,12 +565,18 @@ void test_solve()
             for (const V invalid : {std::numeric_limits<V>::quiet_NaN(),
                                     -std::numeric_limits<V>::infinity(),
                                     std::numeric_limits<V>::infinity()}) {
-                check_invalid({.lower = invalid, .upper = V(2)}, V(1), limits,
+                check_invalid({.lower = invalid, .upper = V(2)},
+                              V(1),
+                              limits,
                               SolveReason::NonfiniteBounds);
-                check_invalid({.lower = V(0), .upper = invalid}, V(1), limits,
+                check_invalid({.lower = V(0), .upper = invalid},
+                              V(1),
+                              limits,
                               SolveReason::NonfiniteBounds);
                 check_invalid(bracket, invalid, limits, SolveReason::NonfiniteGuess);
-                check_invalid(bracket, V(1), {.relative_tolerance = invalid, .max_iterations = 50},
+                check_invalid(bracket,
+                              V(1),
+                              {.relative_tolerance = invalid, .max_iterations = 50},
                               SolveReason::InvalidRelativeTolerance);
                 check_invalid(bracket,
                               V(1),
@@ -802,51 +813,83 @@ void test_solve()
                 using X = decltype(x);
                 return Residual<X> {.value = x * x - X(V(2)), .derivative = X(V(2)) * x};
             };
-            const auto check_reason = [&](auto value, Bracket<V> bounds, V guess,
-                                          SolveSettings<V> limits, Status status,
+            const auto check_reason = [&](auto value,
+                                          Bracket<V> bounds,
+                                          V guess,
+                                          SolveSettings<V> limits,
+                                          Status status,
                                           SolveReason reason) {
                 const auto plain = solve<V>(value, value, bounds, guess, limits);
                 const auto dual = solve<Dual>(value, f, bounds, guess, limits);
                 expect(plain.status == status && dual.status == status);
                 expect(plain.reason == reason && dual.reason == reason);
                 expect(std::isnan(plain.root) ? std::isnan(dual.root.real())
-                                             : plain.root == dual.root.real());
+                                              : plain.root == dual.root.real());
                 expect(dual.root.dual() == V(0));
             };
             const Bracket<V> bounds {.lower = V(0), .upper = V(2)};
             const SolveSettings<V> limits {.relative_tolerance = V(0), .max_iterations = 0};
-            check_reason(f, bounds, V(1), limits, Status::NotConverged,
+            check_reason(f,
+                         bounds,
+                         V(1),
+                         limits,
+                         Status::NotConverged,
                          SolveReason::IterationLimit);
-            check_reason(f, {.lower = V(2), .upper = V(3)}, V(2), limits, Status::Invalid,
+            check_reason(f,
+                         {.lower = V(2), .upper = V(3)},
+                         V(2),
+                         limits,
+                         Status::Invalid,
                          SolveReason::NoBracket);
             const auto nonfinite = [=](V) {
                 return Residual<V> {.value = nan, .derivative = V(1)};
             };
-            check_reason(nonfinite, bounds, V(1), limits, Status::Invalid,
+            check_reason(nonfinite,
+                         bounds,
+                         V(1),
+                         limits,
+                         Status::Invalid,
                          SolveReason::NonfiniteEndpointResidual);
             const V low = std::sqrt(V(2));
             const V high = std::nextafter(low, V(2));
             const auto between = [=](V x) {
-                return Residual<V> {.value = (x - low) / (high - low) - V(0.5),
-                                    .derivative = V(0)};
+                return Residual<V> {.value = (x - low) / (high - low) - V(0.5), .derivative = V(0)};
             };
-            check_reason(between, {.lower = low, .upper = high}, low,
+            check_reason(between,
+                         {.lower = low, .upper = high},
+                         low,
                          {.relative_tolerance = V(0), .max_iterations = 50},
-                         Status::NotConverged, SolveReason::PrecisionLimit);
+                         Status::NotConverged,
+                         SolveReason::PrecisionLimit);
             const SolveSettings<V> invalid {.relative_tolerance = V(-1),
                                             .max_iterations = 0,
                                             .absolute_tolerance = V(-1)};
-            check_reason(f, {.lower = nan, .upper = V(0)}, nan, invalid,
-                         Status::Invalid, SolveReason::NonfiniteBounds);
-            check_reason(f, {.lower = V(2), .upper = V(0)}, nan, invalid,
-                         Status::Invalid, SolveReason::ReversedBounds);
+            check_reason(f,
+                         {.lower = nan, .upper = V(0)},
+                         nan,
+                         invalid,
+                         Status::Invalid,
+                         SolveReason::NonfiniteBounds);
+            check_reason(f,
+                         {.lower = V(2), .upper = V(0)},
+                         nan,
+                         invalid,
+                         Status::Invalid,
+                         SolveReason::ReversedBounds);
             check_reason(f, bounds, nan, invalid, Status::Invalid, SolveReason::NonfiniteGuess);
-            check_reason(f, bounds, V(1), invalid, Status::Invalid,
+            check_reason(f,
+                         bounds,
+                         V(1),
+                         invalid,
+                         Status::Invalid,
                          SolveReason::InvalidRelativeTolerance);
-            check_reason(f, bounds, V(1),
-                         {.relative_tolerance = V(0), .max_iterations = 0,
-                          .absolute_tolerance = V(-1)},
-                         Status::Invalid, SolveReason::InvalidAbsoluteTolerance);
+            check_reason(
+              f,
+              bounds,
+              V(1),
+              {.relative_tolerance = V(0), .max_iterations = 0, .absolute_tolerance = V(-1)},
+              Status::Invalid,
+              SolveReason::InvalidAbsoluteTolerance);
         };
         check.template operator()<float>();
         check.template operator()<double>();
