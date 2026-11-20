@@ -196,6 +196,23 @@ calculations and with the GDTk gas package.
 
 ## Licence
 
-Canary is free software, licensed under the GNU Affero General Public License,
-version 3 or (at your option) any later version; see [LICENSE](LICENSE).
-Copyright Shahzeb Imran and the canary contributors.
+Copyright (C) 2026 Shahzeb Imran and the canary contributors.
+
+Canary is free software: you can redistribute it and/or modify it under the
+terms of the GNU Affero General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option) any
+later version, along with the Canary Cerberus Exception. See
+[LICENSE](LICENSE) and [LICENSE.CERBERUS-EXCEPTION](LICENSE.CERBERUS-EXCEPTION).
+
+Canary is distributed in the hope that it will be useful, but without any
+warranty; without even the implied warranty of merchantability or fitness for
+a particular purpose.
+
+The exception concerns [Cerberus](https://github.com/PlasmaSimUQ/cerberus)
+only. Cerberus, and works based on it, may be combined with Canary without
+the AGPL extending to their own code, on condition that they state that they
+use Canary and make the source of the Canary version they use available to
+everyone who receives the program or uses it over a network. Canary itself,
+modified or not, stays under the AGPL. Any other software that uses Canary is
+subject to the AGPL as a whole. The licence files are authoritative; this
+paragraph is a summary.

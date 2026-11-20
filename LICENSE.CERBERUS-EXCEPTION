@@ -1,0 +1,82 @@
+CANARY CERBERUS EXCEPTION
+
+Version 1, November 2026
+
+Copyright (C) 2026 Shahzeb Imran and the canary contributors
+
+This Canary Cerberus Exception ("Exception") is an additional permission
+under section 7 of the GNU Affero General Public License, version 3
+("AGPLv3"). It applies to a given file that bears a notice placed by the
+copyright holder of the file stating that the file is governed by AGPLv3
+along with this Exception, and to every file of a work that is accompanied
+by such a notice for the work as a whole.
+
+When you use AGPLv3 section 14 to apply a later version of the GNU Affero
+General Public License to such a file, this Exception continues to apply as
+an additional permission under that version.
+
+0. Definitions.
+
+"Canary" means the work to which this Exception applies, as published at
+https://github.com/bezmi/canary, and any work based on it.
+
+"Cerberus" means the work published at
+https://github.com/PlasmaSimUQ/cerberus, and any work based on it that
+contains a substantial portion of its source code.
+
+A "Combined Work" is a work produced by compiling or linking Cerberus with
+Canary. The object code form of a Combined Work may incorporate material from
+the header files of Canary, including data structure layouts, templates,
+inline functions and data tables.
+
+The "Canary Source" for a Combined Work means the Corresponding Source of the
+version of Canary from which the Combined Work was produced, including any
+modifications made to that version.
+
+"Corresponding Source", "convey", "propagate" and "modify" have the meanings
+given in AGPLv3.
+
+1. Grant of Additional Permission.
+
+You may propagate and convey a Combined Work, and you may make it available
+for remote interaction through a computer network, under terms of your
+choice for the portions of the Combined Work other than Canary, provided that
+you comply with section 2. AGPLv3, including its section 13, does not extend
+to those other portions by reason of their combination with Canary.
+
+2. Conditions.
+
+You may rely on the permission of section 1 only if you do both of the
+following:
+
+  a) Give prominent notice, with each copy of the Combined Work and to all
+     users interacting with it remotely through a computer network, that
+     Canary is used in it, that Canary is covered by AGPLv3 and this
+     Exception, and where the Canary Source may be obtained.
+
+  b) Make the Canary Source available under AGPLv3, at no charge, to each
+     recipient of the Combined Work and to all users interacting with it
+     remotely through a computer network. If the Combined Work was produced
+     from an unmodified version of Canary published at the location given in
+     section 0, a reference to that location and to that version satisfies
+     this condition.
+
+3. No Other Permission.
+
+This Exception does not alter the terms under which Canary itself is
+licensed. Canary and any work based on it remain governed by AGPLv3,
+including its section 13, whether conveyed separately or as part of a
+Combined Work.
+
+This Exception grants no permission for a work that combines Canary with
+software other than Cerberus.
+
+If you do not comply with section 2, this Exception does not apply to you,
+and your Combined Work as a whole is governed by AGPLv3.
+
+4. Removal of this Exception.
+
+As provided in AGPLv3 section 7, you may remove this Exception from a copy
+of Canary, or from any part of it, when you convey that copy. A version of
+Canary from which this Exception has been removed may not be combined with
+Cerberus in reliance on this Exception.
