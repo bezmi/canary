@@ -121,6 +121,8 @@ class Report
         errors_.insert(errors_.end(), other.errors_.begin(), other.errors_.end());
     }
 
+    [[nodiscard]] bool has_errors() const { return !errors_.empty(); }
+
     // True when at least one evaluation ran, every exact field had its
     // declared value and every scalar component agreed with the host, with no
     // error.

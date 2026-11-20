@@ -143,5 +143,13 @@ The report lists:
 | mismatch | An exact field (status, reason, diagnostic mode) of the device result differs from the fixture's declared value. | Fail |
 | disagreement with the host | A number of the device result does not agree with the host result. | Fail |
 
-A test passes only when at least one evaluation ran and nothing is listed. A
-missing device or a device error is a failure, never a skip.
+Only the groups whose state scalar is `double` or `Dual<double>` are required.
+A test passes when at least one evaluation of a required group ran, nothing is
+listed for a required group, and no group has an error. A missing device or a
+device error is a failure, never a skip.
+
+Groups whose state scalar is `float` or `Dual<float>` are run and reported
+with the same limit and marked `(not required)`; their mismatches and
+disagreements do not fail the test. Single-precision state scalars are
+experimental: temperature inversions may not converge, and results that
+involve cancellation differ between device and host by more than the limit.

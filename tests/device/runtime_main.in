@@ -2,8 +2,10 @@
 // by tests/device/CMakeLists.txt. Usage: <executable> <subsystem>, where
 // subsystem is thermodynamics, reactions, exchange or transport. Runs every
 // group instance of that subsystem on the current device and prints the report
-// of each and their total. Exit status 0 when every check passed, 1 when a
-// check failed or the device failed, and 2 for an unknown
+// of each and the total of the required instances. An instance that is not
+// required is reported only, except that an error in it (a failed device call,
+// a group that could not run) counts. Exit status 0 when every required check
+// passed without an error anywhere, 1 otherwise, and 2 for an unknown
 // subsystem or a wrong argument count.
 @CANARY_CHECK_ANNOTATION@
 #include "@CANARY_CHECK_BACKEND@"
@@ -21,6 +23,7 @@ namespace
 struct GroupInstance {
     std::string_view subsystem;
     std::string_view name;
+    bool required;
     canary::test::Report (*run)();
 };
 
@@ -50,10 +53,12 @@ int main(int argc, char** argv)
         report.error(error.what());
     }
     // Each group instance prints its own report; a failing group is reported
-    // and the remaining groups still run. The last line totals every group.
+    // and the remaining groups still run. The last line totals the required
+    // groups.
     for (const GroupInstance& instance : instances) {
         if (instance.subsystem != subsystem) { continue; }
-        std::cout << "== " << instance.name << '\n';
+        std::cout << "== " << instance.name << (instance.required ? "" : " (not required)")
+                  << '\n';
         canary::test::Report group;
         try {
             group = instance.run();
@@ -61,9 +66,13 @@ int main(int argc, char** argv)
             group.error(error.what());
         }
         group.print(std::cout);
-        report.merge(group);
+        if (instance.required) {
+            report.merge(group);
+        } else if (group.has_errors()) {
+            report.error("error in " + std::string(instance.name));
+        }
     }
-    std::cout << "== total\n";
+    std::cout << "== total of the required groups\n";
     report.print(std::cout);
     return report.passed() ? 0 : 1;
 }

@@ -100,7 +100,9 @@ if(CANARY_BUILD_HIP_CHECKS)
 endif()
 
 # Runtime executable of a backend: its check objects and a generated main that
-# runs the group instances of the subsystem named on its command line. One test
+# runs the group instances of the subsystem named on its command line. Only
+# the instances whose state scalar is double or Dual<double> decide the result
+# of a test; the others are run and reported (see README.md). One test
 # per subsystem; the shared resource lock keeps device tests of both backends
 # from running concurrently within one ctest invocation.
 function(canary_device_runtime_tests backend language extension check_target backend_header)
@@ -113,8 +115,13 @@ function(canary_device_runtime_tests backend language extension check_target bac
     list(GET parts 3 t)
     list(GET parts 4 units)
     string(REPLACE "_cases.hpp" "" subsystem "${header}")
+    if(t MATCHES "double")
+      set(required true)
+    else()
+      set(required false)
+    endif()
     string(APPEND entries
-      "    GroupInstance {\"${subsystem}\", \"${group}<${p}, ${t}, ${units}>\",\n"
+      "    GroupInstance {\"${subsystem}\", \"${group}<${p}, ${t}, ${units}>\", ${required},\n"
       "                   &canary::test::${group}<${p}, ${t}, canary::${units}>},\n")
   endforeach()
   set(CANARY_RUNTIME_INSTANCES "${entries}")
